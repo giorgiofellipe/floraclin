@@ -22,12 +22,13 @@
  * (including users in tenant B), corrupting reports.
  */
 
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
 import { finalizeEncounter } from '@/lib/encounter-finalize'
 import { recordPayment } from '@/db/queries/financial'
+import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { round2 } from '@/lib/financial/penalties'
@@ -119,7 +120,7 @@ export async function POST(
       const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
       const amount = round2(Number(totalAmount))
       try {
-        await recordPayment(ctx.tenantId, ctx.userId, {
+        const payment = await recordPayment(ctx.tenantId, ctx.userId, {
           installmentId: result.firstInstallmentId,
           amount,
           paymentMethod,
@@ -130,6 +131,7 @@ export async function POST(
             expectedRate: body.cardPayment.expectedRate,
           },
         })
+        if (payment.nfse.documentIds.length > 0) after(() => processDocuments(payment.nfse.documentIds))
       } catch (error) {
         paymentError = cardPaymentErrorMessage(error, { area: 'encounter-finalize', tenantId: ctx.tenantId })
       }

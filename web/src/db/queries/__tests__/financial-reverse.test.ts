@@ -4,6 +4,15 @@ import { chain, chainCapturing, isLock, routedTx, tableOf, whereParams } from '@
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+vi.mock('@/db/queries/nfse', () => ({
+  getNfseSettings: vi.fn().mockResolvedValue(null),
+  listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('@/lib/nfse/emission', () => ({
+  createDocuments: vi.fn().mockResolvedValue([]),
+  markReversalInTx: vi.fn().mockResolvedValue([]),
+}))
+
 const cancelCardPaymentTxMock = vi.fn()
 vi.mock('../card-payments', () => ({
   cancelCardPaymentTx: (...args: unknown[]) => cancelCardPaymentTxMock(...args),
@@ -49,6 +58,7 @@ function makeTx() {
     select: vi.fn(),
     insert: vi.fn(),
     update: vi.fn(),
+    transaction: vi.fn(async (cb: (sp: unknown) => unknown) => cb({})),
   }
 }
 
@@ -85,9 +95,9 @@ describe('reversePayment', () => {
 
     tx.insert.mockReturnValueOnce(chain(undefined)) // createAuditLog
 
-    const result = await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, 'estorno de teste')
+    const result = await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, 'estorno de teste', { cancelNfse: true })
 
-    expect(result).toEqual({ success: true })
+    expect(result).toEqual({ success: true, nfseCancelDocumentIds: [] })
     expect(cashInsert.value).toMatchObject({ type: 'outflow', amount: '900.00' })
   })
 
@@ -134,7 +144,7 @@ describe('reversePayment', () => {
 
     tx.insert.mockReturnValueOnce(chain(undefined)) // createAuditLog
 
-    await reversePayment(TENANT, USER_ID, 'p1')
+    await reversePayment(TENANT, USER_ID, 'p1', undefined, { cancelNfse: true })
 
     expect(rewrite.value).toMatchObject({ fineCovered: '14.75' })
   })
@@ -163,7 +173,7 @@ describe('reversePayment', () => {
     tx.update.mockReturnValueOnce(chainCapturing(undefined, entryUpdate))
     tx.insert.mockReturnValueOnce(chain(undefined)) // createAuditLog
 
-    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
 
     expect(cashInsert.value).toMatchObject({ type: 'outflow', amount: '100.00' })
     expect(installmentUpdate.value).toMatchObject({ status: 'cancelled', amountPaid: '0' })
@@ -219,7 +229,7 @@ describe('reversePayment locking', () => {
       return []
     })
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
-    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
     return { log, paymentRecords, installments, financialEntries }
   }
 
@@ -292,7 +302,7 @@ describe('reversePayment outflow link and card payments', () => {
     })
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
-    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
 
     const link = log.find((q) => q.op === 'update' && tableOf(q) === cashMovements)
     expect(link?.capture.value).toEqual({ reversedByMovementId: 'out-1' })
@@ -341,9 +351,13 @@ describe('reversePayment outflow link and card payments', () => {
     })
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
-    const result = await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID)
+    const result = await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
 
-    expect(result).toEqual({ success: true, card: { cancelledRepasses: 2, receivedRepasses: 1 } })
+    expect(result).toEqual({
+      success: true,
+      card: { cancelledRepasses: 2, receivedRepasses: 1 },
+      nfseCancelDocumentIds: [],
+    })
     expect(cancelCardPaymentTxMock).toHaveBeenCalledTimes(1)
     expect(cancelCardPaymentTxMock).toHaveBeenCalledWith(tx, TENANT, USER_ID, CARD_PAYMENT_ID)
     const reversals = log.filter(

@@ -4,6 +4,15 @@ import { chain, chainCapturing, isLock, routedTx, selectSql, tableOf, whereParam
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+vi.mock('@/db/queries/nfse', () => ({
+  getNfseSettings: vi.fn().mockResolvedValue(null),
+  listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('@/lib/nfse/emission', () => ({
+  createDocuments: vi.fn().mockResolvedValue([]),
+  markReversalInTx: vi.fn().mockResolvedValue([]),
+}))
+
 const enqueueMetaEventMock = vi.fn()
 const resolveMetaEventPrerequisitesMock = vi.fn()
 const claimAndSendPendingEventMock = vi.fn()
@@ -149,7 +158,7 @@ describe('bulkPayInstallments', () => {
 
     const auditInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing(undefined, auditInsert)) // auditLogs
-    const results = await bulkPayInstallments(TENANT, USER_ID, {
+    const { results } = await bulkPayInstallments(TENANT, USER_ID, {
       installmentIds: [INSTALLMENT_ID],
       paymentMethod: 'pix',
       paidAt,
@@ -230,7 +239,7 @@ describe('bulkPayInstallments', () => {
     tx.select.mockReturnValueOnce(chain([{ status: 'pending', totalAmount: '750.00' }])) // meta gate 1 fails
 
     tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
-    const results = await bulkPayInstallments(TENANT, USER_ID, {
+    const { results } = await bulkPayInstallments(TENANT, USER_ID, {
       installmentIds: [INSTALLMENT_ID],
       paymentMethod: 'pix',
       paidAt,

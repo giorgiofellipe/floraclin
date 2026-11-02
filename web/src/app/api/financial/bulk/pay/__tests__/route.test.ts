@@ -41,11 +41,12 @@ const validBody = { installmentIds: [installmentId], paymentMethod: 'pix' }
 const AUTH_OK = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
 
 const RESULTS = [{ installmentId, paymentRecord: { id: 'pay-1' }, allocation: {} }]
+const NFSE = { mode: null, documentIds: [], promptPaymentRecordIds: [] }
 
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
-  vi.mocked(bulkPayInstallments).mockResolvedValue(RESULTS as never)
+  vi.mocked(bulkPayInstallments).mockResolvedValue({ results: RESULTS, nfse: NFSE } as never)
 })
 
 describe('POST /api/financial/bulk/pay', () => {
@@ -96,7 +97,7 @@ describe('POST /api/financial/bulk/pay', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ success: true, data: RESULTS })
+    expect(body).toEqual({ success: true, data: RESULTS, nfse: NFSE })
     expect(bulkPayInstallments).toHaveBeenCalledWith('tenant-1', 'user-1', {
       installmentIds: [installmentId],
       paymentMethod: 'pix',

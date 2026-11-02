@@ -165,3 +165,8 @@ export type BulkUncancelInput = z.infer<typeof bulkUncancelSchema>
 export type FinancialFilterInput = z.infer<typeof financialFilterSchema>
 export type RevenueFilterInput = z.infer<typeof revenueFilterSchema>
 export type LedgerFilterInput = z.infer<typeof ledgerFilterSchema>
+
+export const reversePaymentSchema = z.object({
+  reason: z.string().optional(),
+  cancelNfse: z.boolean(),
+})

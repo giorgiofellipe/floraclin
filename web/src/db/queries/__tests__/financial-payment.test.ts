@@ -4,6 +4,15 @@ import { chain, chainCapturing, isLock, routedTx, tableOf } from '@/tests/mocks/
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+vi.mock('@/db/queries/nfse', () => ({
+  getNfseSettings: vi.fn().mockResolvedValue(null),
+  listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('@/lib/nfse/emission', () => ({
+  createDocuments: vi.fn().mockResolvedValue([]),
+  markReversalInTx: vi.fn().mockResolvedValue([]),
+}))
+
 const enqueueMetaEventMock = vi.fn()
 const resolveMetaEventPrerequisitesMock = vi.fn()
 const claimAndSendPendingEventMock = vi.fn()
