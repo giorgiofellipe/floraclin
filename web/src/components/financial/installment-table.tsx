@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Dialog,
   DialogContent,
@@ -17,6 +18,10 @@ import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { round2 } from '@/lib/financial/penalties'
 import type { CardPaymentSummary } from '@/lib/financial/card-repasses'
 import { PartialPaymentDialog } from './partial-payment-dialog'
+import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
+import { NfsePaymentChip } from '@/components/nfse/nfse-payment-chip'
+import type { NfseDocumentSummary } from '@/lib/nfse/types'
+import type { NfseIntake } from '@/types'
 import {
   BanknoteIcon,
   Undo2Icon,
@@ -28,6 +33,7 @@ import {
   ChevronDownIcon,
 } from 'lucide-react'
 import { useReversePayment } from '@/hooks/mutations/use-financial-mutations'
+import { useNfseStatus } from '@/hooks/queries/use-nfse-documents'
 import { toast } from 'sonner'
 
 interface PaymentRecord {
@@ -41,6 +47,7 @@ interface PaymentRecord {
   recordedAt: string
   notes: string | null
   card?: CardPaymentSummary | null
+  nfse?: NfseDocumentSummary | null
 }
 
 function cardLabel(card: CardPaymentSummary): string {
@@ -116,6 +123,10 @@ export function InstallmentTable({
   const [payDialogInstallment, setPayDialogInstallment] = useState<Installment | null>(null)
   const [reverseDialogPayment, setReverseDialogPayment] = useState<PaymentRecord | null>(null)
   const [reversalReason, setReversalReason] = useState('')
+  const [cancelNfse, setCancelNfse] = useState(true)
+  const [emitIds, setEmitIds] = useState<string[] | null>(null)
+  const [nfseSeen, setNfseSeen] = useState(false)
+  const { data: nfseStatus } = useNfseStatus()
   const reversePayment = useReversePayment()
 
   const { data: entryData, isLoading } = useQuery({
@@ -133,7 +144,16 @@ export function InstallmentTable({
 
   const installments: Installment[] = entryData?.installments ?? []
   const entryStatus: string = entryData?.status ?? 'pending'
+  const nfseEnabled =
+    nfseSeen ||
+    nfseStatus?.configured === true ||
+    installments.some((inst) => inst.paymentRecords?.some((pr) => pr.nfse))
   const isEntryCancelled = entryStatus === 'cancelled' || entryStatus === 'renegotiated'
+
+  function handleNfse(nfse: NfseIntake) {
+    if (nfse.mode !== null) setNfseSeen(true)
+    if (nfse.promptPaymentRecordIds.length > 0) setEmitIds(nfse.promptPaymentRecordIds)
+  }
 
   if (isLoading) {
     return (
@@ -143,6 +163,8 @@ export function InstallmentTable({
       </div>
     )
   }
+
+  const hasIssuedNfse = reverseDialogPayment?.nfse?.status === 'issued'
 
   return (
     <>
@@ -329,6 +351,13 @@ export function InstallmentTable({
                           </div>
                         </div>
 
+                        <NfsePaymentChip
+                          payment={pr}
+                          canEmit={nfseEnabled && !isEntryCancelled}
+                          canCancel={nfseStatus?.canCancel === true}
+                          onEmit={(id) => setEmitIds([id])}
+                        />
+
                         {/* Reverse button */}
                         <Button
                           size="sm"
@@ -338,6 +367,7 @@ export function InstallmentTable({
                           onClick={() => {
                             setReverseDialogPayment(pr)
                             setReversalReason('')
+                            setCancelNfse(true)
                           }}
                         >
                           <Undo2Icon className="h-3 w-3" />
@@ -380,6 +410,12 @@ export function InstallmentTable({
               </div>
             )}
           </DialogHeader>
+          {hasIssuedNfse && (
+            <label className="flex items-center gap-2 text-sm text-charcoal">
+              <Checkbox checked={cancelNfse} onCheckedChange={(checked) => setCancelNfse(Boolean(checked))} />
+              Cancelar a NFS-e também
+            </label>
+          )}
           <div className="space-y-2">
             <label className="text-xs uppercase tracking-wider font-medium text-mid">
               Motivo do estorno
@@ -402,6 +438,7 @@ export function InstallmentTable({
                   await reversePayment.mutateAsync({
                     paymentRecordId: reverseDialogPayment.id,
                     reason: reversalReason.trim() || undefined,
+                    cancelNfse: hasIssuedNfse && cancelNfse,
                   })
                   toast.success('Pagamento estornado com sucesso')
                   setReverseDialogPayment(null)
@@ -435,6 +472,17 @@ export function InstallmentTable({
           defaultPaymentMethod={entryData?.paymentMethod ?? undefined}
           defaultCardInstallmentCount={entryData?.cardInstallmentCount ?? undefined}
           onSuccess={onPaymentComplete}
+          onNfse={handleNfse}
+        />
+      )}
+
+      {emitIds && (
+        <EmitNfseDialog
+          paymentRecordIds={emitIds}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEmitIds(null)
+          }}
         />
       )}
     </>

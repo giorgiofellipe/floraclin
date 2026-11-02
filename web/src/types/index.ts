@@ -53,3 +53,9 @@ export interface PaginatedResult<T> {
   limit: number
   totalPages: number
 }
+
+export interface NfseIntake {
+  mode: 'ask' | 'always' | null
+  documentIds: string[]
+  promptPaymentRecordIds: string[]
+}

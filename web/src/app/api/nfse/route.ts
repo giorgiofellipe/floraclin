@@ -20,13 +20,13 @@ import { BusinessError } from '@/lib/errors'
 import { requireRole } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { competenceIsPastMonth, defaultCompetenceDate } from '@/lib/nfse/competence'
-import { nfseEnvironment } from '@/lib/nfse/config'
+import { NFSE_MAX_PER_REQUEST, nfseEnvironment } from '@/lib/nfse/config'
 import { createDocuments, processDocument, processDocuments } from '@/lib/nfse/emission'
 import type { NfseProcessResult } from '@/lib/nfse/types'
 
 export const maxDuration = 300
 
-const MAX_IDS = 20
+const MAX_IDS = NFSE_MAX_PER_REQUEST
 const EMIT_ROLES = ['owner', 'receptionist', 'financial'] as const
 const TAKER_EDIT_ROLES = ['owner', 'receptionist']
 
