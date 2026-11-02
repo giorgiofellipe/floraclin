@@ -150,3 +150,50 @@ describe('PatientHeader', () => {
     expect(receptionist.queryByRole('link', { name: /Novo diagrama/ })).toBeNull()
   })
 })
+
+describe('PatientHeader phone Mais menu', () => {
+  async function openMais(props: Partial<React.ComponentProps<typeof PatientHeader>> = {}) {
+    renderWithProviders(
+      <PatientHeader
+        patient={makePatient()}
+        role="practitioner"
+        hasActiveService={false}
+        {...callbacks}
+        {...props}
+      />,
+    )
+    const mobile = within(screen.getByTestId('patient-header-mobile'))
+    fireEvent.click(mobile.getByRole('button', { name: 'Mais' }))
+    await screen.findByRole('menuitem', { name: /Novo documento/ })
+  }
+
+  it('lists the secondary actions with Email when the patient has one', async () => {
+    await openMais()
+
+    expect(screen.getByRole('menuitem', { name: /Novo diagrama/ })).toHaveAttribute(
+      'href',
+      `/pacientes/${PATIENT_ID}/diagramas/novo`,
+    )
+    expect(screen.getByRole('menuitem', { name: /Ligar/ })).toHaveAttribute('href', 'tel:+5511987654321')
+    expect(screen.getByRole('menuitem', { name: /Abrir no WhatsApp Web/ })).toBeInTheDocument()
+    expect(screen.getByRole('menuitem', { name: /Email/ })).toHaveAttribute(
+      'href',
+      'mailto:maria@example.com',
+    )
+  })
+
+  it('hides Novo diagrama for a receptionist and Email for a patient without one', async () => {
+    await openMais({ role: 'receptionist', patient: makePatient({ email: null }) })
+
+    expect(screen.queryByRole('menuitem', { name: /Novo diagrama/ })).toBeNull()
+    expect(screen.queryByRole('menuitem', { name: /Email/ })).toBeNull()
+  })
+
+  it('opens the document flow from Novo documento', async () => {
+    await openMais()
+
+    fireEvent.click(screen.getByRole('menuitem', { name: /Novo documento/ }))
+
+    expect(callbacks.onNewDocument).toHaveBeenCalledOnce()
+  })
+})
