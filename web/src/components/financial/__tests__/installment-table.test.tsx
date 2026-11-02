@@ -325,7 +325,7 @@ describe('InstallmentTable NFS-e reversal', () => {
     retryable: false,
   }
 
-  function mockEntry(nfse: typeof issuedNfse | null) {
+  function mockEntry(nfse: typeof issuedNfse | null, card?: object) {
     return vi.spyOn(globalThis, 'fetch').mockClear().mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -344,6 +344,7 @@ describe('InstallmentTable NFS-e reversal', () => {
                 recordedAt: '2026-09-01T12:00:00.000Z',
                 notes: null,
                 nfse,
+                card,
               },
             ],
           },
@@ -382,5 +383,22 @@ describe('InstallmentTable NFS-e reversal', () => {
     fireEvent.click(screen.getByText('Confirmar Estorno'))
 
     await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: false }))
+  })
+
+  it('asks to cancel the note and sends cancelNfse true for a card payment covering several records, even without a note on the clicked one', async () => {
+    const fetchSpy = mockEntry(null, {
+      terminalName: 'Stone',
+      method: 'credit_card',
+      installmentCount: 6,
+      pendingRepasses: 0,
+      receivedRepasses: 0,
+      linkedPaymentCount: 2,
+    })
+    await openReverseDialog()
+
+    expect(screen.getByText('Cancelar a NFS-e também')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Confirmar Estorno'))
+
+    await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: true }))
   })
 })

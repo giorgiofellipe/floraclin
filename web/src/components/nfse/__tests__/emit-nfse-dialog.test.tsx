@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { EmitNfseDialog } from '../emit-nfse-dialog'
@@ -17,6 +17,7 @@ function mockPreview(competenceIsPastMonth: boolean) {
             missing: [],
             email: 'maria@example.com',
             canEditTaker: true,
+            current: null,
           },
         ],
         defaultCompetence: '2026-09-30',
@@ -37,6 +38,9 @@ function renderDialog() {
 }
 
 describe('EmitNfseDialog', () => {
+  afterEach(() => vi.restoreAllMocks())
+
+
   it('offers the service date and today when the competence is a past month, showing the service day unshifted', async () => {
     mockPreview(true)
     renderDialog()

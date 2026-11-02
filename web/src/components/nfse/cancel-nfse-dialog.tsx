@@ -16,13 +16,16 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
 import { useCancelNfse } from '@/hooks/queries/use-nfse-documents'
+import { NFSE_CANCEL_JUSTIFICATION_MAX, NFSE_CANCEL_JUSTIFICATION_MIN } from '@/lib/nfse/config'
 import type { NfseCancelReason } from '@/lib/nfse/types'
 
-const REASON_ITEMS: Record<string, string> = {
-  '1': 'Erro na emissão',
-  '2': 'Serviço não prestado',
-  '9': 'Outros',
-}
+const REASONS: { value: NfseCancelReason; label: string }[] = [
+  { value: 1, label: 'Erro na emissão' },
+  { value: 2, label: 'Serviço não prestado' },
+  { value: 9, label: 'Outros' },
+]
+
+const REASON_ITEMS = Object.fromEntries(REASONS.map(({ value, label }) => [String(value), label]))
 
 interface CancelNfseDialogProps {
   documentId: string
@@ -32,16 +35,16 @@ interface CancelNfseDialogProps {
 
 function CancelNfseForm({ documentId, onOpenChange }: Omit<CancelNfseDialogProps, 'open'>) {
   const cancel = useCancelNfse()
-  const [reason, setReason] = useState('1')
+  const [reason, setReason] = useState<NfseCancelReason>(1)
   const [justification, setJustification] = useState('')
   const length = justification.trim().length
-  const valid = length >= 15 && length <= 255
+  const valid = length >= NFSE_CANCEL_JUSTIFICATION_MIN && length <= NFSE_CANCEL_JUSTIFICATION_MAX
 
   async function handleConfirm() {
     try {
       const result = await cancel.mutateAsync({
         documentId,
-        reason: Number(reason) as NfseCancelReason,
+        reason,
         justification: justification.trim(),
       })
       if (result.errorMessage) toast.error(result.errorMessage)
@@ -57,7 +60,8 @@ function CancelNfseForm({ documentId, onOpenChange }: Omit<CancelNfseDialogProps
       <div className="space-y-3">
         <div className="space-y-1">
           <Label className="text-xs uppercase tracking-wider font-medium text-mid">Motivo</Label>
-          <Select items={REASON_ITEMS} value={reason} onValueChange={(v) => setReason(v ?? '1')}>
+          <Select items={REASON_ITEMS} value={String(reason)}
+            onValueChange={(v) => setReason(REASONS.find((r) => String(r.value) === v)?.value ?? 1)}>
             <SelectTrigger className="w-full">
               <SelectValue />
             </SelectTrigger>
@@ -68,11 +72,11 @@ function CancelNfseForm({ documentId, onOpenChange }: Omit<CancelNfseDialogProps
           <Label className="text-xs uppercase tracking-wider font-medium text-mid">Justificativa</Label>
           <Textarea
             rows={3}
-            maxLength={255}
+            maxLength={NFSE_CANCEL_JUSTIFICATION_MAX}
             value={justification}
             onChange={(e) => setJustification(e.target.value)}
           />
-          <p className="text-[10px] text-mid tabular-nums">{length}/255 (mínimo 15)</p>
+          <p className="text-[10px] text-mid tabular-nums">{length}/{NFSE_CANCEL_JUSTIFICATION_MAX} (mínimo {NFSE_CANCEL_JUSTIFICATION_MIN})</p>
         </div>
       </div>
       <DialogFooter>

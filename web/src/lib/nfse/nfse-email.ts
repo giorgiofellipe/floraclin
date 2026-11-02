@@ -5,6 +5,7 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { sendEmailWithAttachments } from '@/lib/email'
 import { renderEmailLayout } from '@/lib/email-layout'
+import { BusinessError } from '@/lib/errors'
 
 export const PATIENT_EMAIL_MISSING = 'PATIENT_EMAIL_MISSING'
 
@@ -14,7 +15,7 @@ export async function sendNfseEmail(documentId: string): Promise<void> {
   const accessKey = loaded?.document.accessKey
   if (!loaded || !nfseXml || !accessKey) throw new Error('NFS-e not issued')
   const { document, patient } = loaded
-  if (!patient.email) throw new Error(PATIENT_EMAIL_MISSING)
+  if (!patient.email) throw new BusinessError(PATIENT_EMAIL_MISSING, 'O paciente não tem email cadastrado.')
 
   const [clinic] = await db
     .select({ name: tenants.name, email: tenants.email })
@@ -28,7 +29,7 @@ export async function sendNfseEmail(documentId: string): Promise<void> {
 
   await sendEmailWithAttachments({
     to: patient.email,
-    subject: `NFS-e ${document.nfseNumber ?? ''} - ${clinic.name}`,
+    subject: `NFS-e ${label} - ${clinic.name}`,
     html: renderEmailLayout({
       preheader: `NFS-e emitida por ${clinic.name}.`,
       heading: 'Sua NFS-e foi emitida',

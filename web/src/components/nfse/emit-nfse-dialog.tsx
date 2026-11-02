@@ -23,8 +23,10 @@ import {
   useEmitNfse,
   useNfsePreview,
   type NfsePreviewPatient,
+  type NfseTakerField,
   type NfseTakerInput,
 } from '@/hooks/queries/use-nfse-documents'
+import { NFSE_STATUS_LABELS } from './status-labels'
 import type { NfseCompetenceChoice, NfseProcessResult } from '@/lib/nfse/types'
 
 interface EmitNfseDialogProps {
@@ -55,14 +57,6 @@ const EMPTY_TAKER: TakerForm = {
   state: '',
 }
 
-const RESULT_LABELS: Record<string, string> = {
-  issued: 'Emitida',
-  pending: 'Na fila',
-  processing: 'Processando',
-  failed: 'Falhou',
-  cancelled: 'Cancelada',
-}
-
 function toTakerInput(patientId: string, form: TakerForm): NfseTakerInput {
   return {
     patientId,
@@ -83,6 +77,10 @@ function takerComplete(form: TakerForm): boolean {
   return Boolean(
     form.cpf && form.zip && form.street.trim() && form.number.trim() && form.neighborhood.trim() && form.city.trim() && form.state.trim(),
   )
+}
+
+function initialTaker(patient: NfsePreviewPatient): TakerForm {
+  return { ...EMPTY_TAKER, ...patient.current }
 }
 
 function needsTaker(patient: NfsePreviewPatient): boolean {
@@ -127,7 +125,7 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
             <li key={result.id} className="rounded-md border border-[#E8ECEF] px-3 py-2">
               <span className="font-medium text-charcoal">
                 {results.length > 1 ? `NFS-e ${index + 1}: ` : ''}
-                {RESULT_LABELS[result.status] ?? result.status}
+                {NFSE_STATUS_LABELS[result.status]}
               </span>
               {result.errorMessage && <p className="mt-1 text-xs text-red-600">{result.errorMessage}</p>}
             </li>
@@ -142,20 +140,21 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
 
   const hasEmail = preview.patients.some((p) => p.email)
   const sendEmail = hasEmail && (sendEmailChoice ?? preview.settings.emailPatient)
+  const formOf = (p: NfsePreviewPatient) => takers[p.patientId] ?? initialTaker(p)
   const blocked = (p: NfsePreviewPatient) => needsTaker(p) && !p.canEditTaker
-  const ready = preview.patients.filter((p) => !blocked(p) && (!needsTaker(p) || takerComplete(takers[p.patientId] ?? EMPTY_TAKER)))
+  const ready = preview.patients.filter((p) => !blocked(p) && (!needsTaker(p) || takerComplete(formOf(p))))
   const readyIds = ready.flatMap((p) => p.paymentRecordIds)
   const serviceDate = formatBrDate(parseBrDate(preview.defaultCompetence))
   const todayDate = formatBrDate(parseBrDate(brToday()))
 
-  function setField(patientId: string, field: keyof TakerForm, value: string) {
-    setTakers((prev) => ({ ...prev, [patientId]: { ...(prev[patientId] ?? EMPTY_TAKER), [field]: value } }))
+  function setField(patient: NfsePreviewPatient, field: keyof TakerForm, value: string) {
+    setTakers((prev) => ({ ...prev, [patient.patientId]: { ...(prev[patient.patientId] ?? initialTaker(patient)), [field]: value } }))
   }
 
   async function handleEmit() {
     const takerInputs = ready
       .filter(needsTaker)
-      .map((p) => toTakerInput(p.patientId, takers[p.patientId] ?? EMPTY_TAKER))
+      .map((p) => toTakerInput(p.patientId, formOf(p)))
     try {
       const data = await emit.mutateAsync({
         paymentRecordIds: readyIds,
@@ -173,7 +172,8 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
     <>
       <div className="space-y-4">
         {preview.patients.map((patient) => {
-          const form = takers[patient.patientId] ?? EMPTY_TAKER
+          const form = formOf(patient)
+          const invalid = (field: keyof TakerForm) => patient.missing.includes(field as NfseTakerField) && !form[field].trim()
           return (
             <div key={patient.patientId} className="space-y-2 rounded-md border border-[#E8ECEF] p-3">
               <p className="text-sm font-medium text-charcoal">
@@ -191,8 +191,8 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
                     <MaskedInput
                       mask={maskCPF}
                       value={form.cpf}
-                      aria-invalid={patient.missing.includes('cpf') && !form.cpf}
-                      onChange={(e) => setField(patient.patientId, 'cpf', e.target.value)}
+                      aria-invalid={invalid('cpf')}
+                      onChange={(e) => setField(patient, 'cpf', e.target.value)}
                     />
                   </div>
                   <div className="col-span-3 space-y-1">
@@ -200,42 +200,44 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
                     <MaskedInput
                       mask={maskCEP}
                       value={form.zip}
-                      aria-invalid={patient.missing.includes('zip') && !form.zip}
-                      onChange={(e) => setField(patient.patientId, 'zip', e.target.value)}
+                      aria-invalid={invalid('zip')}
+                      onChange={(e) => setField(patient, 'zip', e.target.value)}
                     />
                   </div>
                   <div className="col-span-4 space-y-1">
                     <Label className="text-xs">Rua</Label>
-                    <Input value={form.street} onChange={(e) => setField(patient.patientId, 'street', e.target.value)} />
+                    <Input value={form.street} aria-invalid={invalid('street')} onChange={(e) => setField(patient, 'street', e.target.value)} />
                   </div>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">Número</Label>
-                    <Input value={form.number} onChange={(e) => setField(patient.patientId, 'number', e.target.value)} />
+                    <Input value={form.number} aria-invalid={invalid('number')} onChange={(e) => setField(patient, 'number', e.target.value)} />
                   </div>
                   <div className="col-span-3 space-y-1">
                     <Label className="text-xs">Complemento</Label>
                     <Input
                       value={form.complement}
-                      onChange={(e) => setField(patient.patientId, 'complement', e.target.value)}
+                      onChange={(e) => setField(patient, 'complement', e.target.value)}
                     />
                   </div>
                   <div className="col-span-3 space-y-1">
                     <Label className="text-xs">Bairro</Label>
                     <Input
                       value={form.neighborhood}
-                      onChange={(e) => setField(patient.patientId, 'neighborhood', e.target.value)}
+                      aria-invalid={invalid('neighborhood')}
+                      onChange={(e) => setField(patient, 'neighborhood', e.target.value)}
                     />
                   </div>
                   <div className="col-span-4 space-y-1">
                     <Label className="text-xs">Cidade</Label>
-                    <Input value={form.city} onChange={(e) => setField(patient.patientId, 'city', e.target.value)} />
+                    <Input value={form.city} aria-invalid={invalid('city')} onChange={(e) => setField(patient, 'city', e.target.value)} />
                   </div>
                   <div className="col-span-2 space-y-1">
                     <Label className="text-xs">UF</Label>
                     <Input
                       maxLength={2}
                       value={form.state}
-                      onChange={(e) => setField(patient.patientId, 'state', e.target.value)}
+                      aria-invalid={invalid('state')}
+                      onChange={(e) => setField(patient, 'state', e.target.value)}
                     />
                   </div>
                 </div>

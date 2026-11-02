@@ -18,24 +18,41 @@ const issued: NfseDocumentSummary = {
   retryable: false,
 }
 
-async function openMenu(canCancel: boolean) {
+async function openMenu(nfse: NfseDocumentSummary, canCancel: boolean) {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <NfsePaymentChip payment={{ id: 'pay-1', nfse: issued } as never} canEmit canCancel={canCancel} onEmit={() => {}} />
+      <NfsePaymentChip payment={{ id: 'pay-1', nfse }} canEmit canCancel={canCancel} onEmit={() => {}} />
     </QueryClientProvider>,
   )
   await userEvent.click(screen.getByRole('button'))
 }
 
 describe('NfsePaymentChip', () => {
-  it('hides "Cancelar NFS-e" from a role that cannot cancel', async () => {
-    await openMenu(false)
+  it.each([
+    { canCancel: false, visible: false },
+    { canCancel: true, visible: true },
+  ])('shows "Cancelar NFS-e" only to a role that can cancel (canCancel=$canCancel)', async ({ canCancel, visible }) => {
+    await openMenu(issued, canCancel)
     expect(await screen.findByText('Ver PDF')).toBeInTheDocument()
-    expect(screen.queryByText('Cancelar NFS-e')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cancelar NFS-e') !== null).toBe(visible)
   })
 
-  it('shows "Cancelar NFS-e" to a role that can cancel', async () => {
-    await openMenu(true)
-    expect(await screen.findByText('Cancelar NFS-e')).toBeInTheDocument()
+  it('keeps the PDF and XML of a cancelled note downloadable', async () => {
+    await openMenu({ ...issued, status: 'cancelled' }, true)
+    expect(await screen.findByText('Ver PDF')).toBeInTheDocument()
+    expect(screen.getByText('Baixar XML')).toBeInTheDocument()
+    expect(screen.queryByText('Reenviar email')).not.toBeInTheDocument()
+  })
+
+  it('lets a role that can cancel retry a pending cancellation, opening the cancel dialog', async () => {
+    await openMenu({ ...issued, cancelRequested: true }, true)
+    await userEvent.click(await screen.findByText('Tentar cancelar de novo'))
+    expect(await screen.findByText('Justificativa')).toBeInTheDocument()
+  })
+
+  it('hides the cancellation retry from a role that cannot cancel', async () => {
+    await openMenu({ ...issued, cancelRequested: true }, false)
+    await screen.findByText('Ver PDF')
+    expect(screen.queryByText('Tentar cancelar de novo')).not.toBeInTheDocument()
   })
 })

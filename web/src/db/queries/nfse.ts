@@ -1,5 +1,5 @@
 import { findMunicipality } from '@bullcode/fiscal'
-import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, ne, notExists, or, sql } from 'drizzle-orm'
+import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, not, notExists, notInArray, or, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import {
   appointments,
@@ -26,18 +26,31 @@ import { rowsFromExecuteResult } from './admin-tenants'
 
 export type DbExecutor = typeof db
 export type NfseDocumentRow = typeof nfseDocuments.$inferSelect
+export type NfseClaim = { id: string; claimedAt: Date }
 
 const MAX_AUTO_ATTEMPTS = 5
-const MAX_CANCEL_ATTEMPTS = 10
+export const MAX_CANCEL_ATTEMPTS = 10
 const STALE_CLAIM_MS = 15 * 60 * 1000
 const ALWAYS_BACKFILL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const FINAL_ERROR_CODES = ['reconcile_ambiguous', 'payment_reversed']
+const TRANSIENT_ERROR_CODES = ['provider_error', 'reconcile_unavailable']
+export const NOTHING_AT_SEFIN_CODES = [
+  'invalid_request',
+  'missing_taker_data',
+  'not_configured',
+  'certificate_expired',
+  'unauthorized',
+]
+export const SEFIN_REJECTED_CODE = 'invalid_request'
+export const REVERSAL_CANCEL_REASON: NfseCancelReason = 2
+export const REVERSAL_JUSTIFICATION = 'Pagamento estornado no FloraClin.'
 
-// ── settings ──
+const { certificatePfx: _pfx, certificatePassword: _password, ...publicSettingsColumns } = getTableColumns(nfseSettings)
 
 type SettingsRow = typeof nfseSettings.$inferSelect
+type PublicSettingsRow = Omit<SettingsRow, 'certificatePfx' | 'certificatePassword'>
 
-function toPublic(row: SettingsRow): NfseSettingsPublic {
+function toPublic(row: PublicSettingsRow): NfseSettingsPublic {
   return {
     certificate: {
       cnpj: row.cnpj,
@@ -62,18 +75,17 @@ function toPublic(row: SettingsRow): NfseSettingsPublic {
   }
 }
 
-async function selectSettings(tenantId: string): Promise<SettingsRow | null> {
-  const [row] = await db.select().from(nfseSettings).where(eq(nfseSettings.tenantId, tenantId)).limit(1)
-  return row ?? null
-}
-
 export async function getNfseSettings(tenantId: string): Promise<NfseSettingsPublic | null> {
-  const row = await selectSettings(tenantId)
+  const [row] = await db
+    .select(publicSettingsColumns)
+    .from(nfseSettings)
+    .where(eq(nfseSettings.tenantId, tenantId))
+    .limit(1)
   return row ? toPublic(row) : null
 }
 
 export async function getNfseSettingsWithSecrets(tenantId: string): Promise<NfseSettingsWithSecrets | null> {
-  const row = await selectSettings(tenantId)
+  const [row] = await db.select().from(nfseSettings).where(eq(nfseSettings.tenantId, tenantId)).limit(1)
   if (!row) return null
   return {
     ...toPublic(row),
@@ -138,8 +150,6 @@ export async function saveFiscalSettings(
     .where(eq(nfseSettings.tenantId, tenantId))
 }
 
-// ── DPS numbering ──
-
 export async function nextDpsNumber(
   tx: DbExecutor,
   key: { cnpj: string; municipalityCode: string; series: string },
@@ -153,8 +163,6 @@ export async function nextDpsNumber(
   `)
   return String(rowsFromExecuteResult<{ last_number: string | number }>(result)[0].last_number)
 }
-
-// ── documents: create and claim ──
 
 export async function insertPendingDocuments(
   tx: DbExecutor,
@@ -186,7 +194,7 @@ function claimable(mode: 'auto' | 'manual') {
       eq(nfseDocuments.status, 'pending'),
       and(
         eq(nfseDocuments.status, 'failed'),
-        eq(nfseDocuments.errorCode, 'provider_error'),
+        inArray(nfseDocuments.errorCode, TRANSIENT_ERROR_CODES),
         lt(nfseDocuments.attemptCount, MAX_AUTO_ATTEMPTS),
       ),
       and(stale, lt(nfseDocuments.attemptCount, MAX_AUTO_ATTEMPTS)),
@@ -196,13 +204,15 @@ function claimable(mode: 'auto' | 'manual') {
     eq(nfseDocuments.status, 'pending'),
     and(
       eq(nfseDocuments.status, 'failed'),
-      or(isNull(nfseDocuments.errorCode), sql`${nfseDocuments.errorCode} NOT IN (${sql.join(FINAL_ERROR_CODES.map((c) => sql`${c}`), sql`, `)})`),
+      or(isNull(nfseDocuments.errorCode), notInArray(nfseDocuments.errorCode, FINAL_ERROR_CODES)),
     ),
     stale,
   )
 }
 
-export async function claimDocument(id: string, mode: 'auto' | 'manual'): Promise<NfseDocumentRow | null> {
+export type ClaimedNfseDocument = NfseDocumentRow & NfseClaim
+
+export async function claimDocument(id: string, mode: 'auto' | 'manual'): Promise<ClaimedNfseDocument | null> {
   const [row] = await db
     .update(nfseDocuments)
     .set({
@@ -213,7 +223,7 @@ export async function claimDocument(id: string, mode: 'auto' | 'manual'): Promis
     })
     .where(and(eq(nfseDocuments.id, id), claimable(mode)))
     .returning()
-  return row ?? null
+  return (row as ClaimedNfseDocument | undefined) ?? null
 }
 
 export async function listRetryableDocumentIds(limit: number): Promise<string[]> {
@@ -225,8 +235,6 @@ export async function listRetryableDocumentIds(limit: number): Promise<string[]>
     .limit(limit)
   return rows.map((r) => r.id)
 }
-
-// ── documents: outcomes ──
 
 export async function saveDpsIdentity(
   id: string,
@@ -243,11 +251,19 @@ export async function saveDpsIdentity(
     .where(eq(nfseDocuments.id, id))
 }
 
+function ownsClaim(claim: NfseClaim) {
+  return and(
+    eq(nfseDocuments.id, claim.id),
+    eq(nfseDocuments.status, 'processing'),
+    eq(nfseDocuments.claimedAt, claim.claimedAt),
+  )
+}
+
 export async function markIssued(
-  id: string,
+  claim: NfseClaim,
   data: { accessKey: string; nfseNumber: string | null; nfseXml: string },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const updated = await db
     .update(nfseDocuments)
     .set({
       status: 'issued',
@@ -260,21 +276,42 @@ export async function markIssued(
       issuedAt: new Date(),
       updatedAt: new Date(),
     })
-    .where(eq(nfseDocuments.id, id))
+    .where(ownsClaim(claim))
+    .returning({ id: nfseDocuments.id })
+  return updated.length > 0
 }
 
-export async function markFailed(id: string, code: string, message: string): Promise<void> {
+export async function markFailed(claim: NfseClaim, code: string, message: string): Promise<void> {
   await db
     .update(nfseDocuments)
     .set({ status: 'failed', errorCode: code, errorMessage: message, claimedAt: null, updatedAt: new Date() })
-    .where(eq(nfseDocuments.id, id))
+    .where(ownsClaim(claim))
 }
 
-export async function releaseClaim(id: string): Promise<void> {
+export async function failExhaustedClaims(message: string): Promise<number> {
+  const updated = await db
+    .update(nfseDocuments)
+    .set({ status: 'failed', errorCode: 'provider_error', errorMessage: message, claimedAt: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(nfseDocuments.status, 'processing'),
+        gte(nfseDocuments.attemptCount, MAX_AUTO_ATTEMPTS),
+        lt(nfseDocuments.claimedAt, new Date(Date.now() - STALE_CLAIM_MS)),
+      ),
+    )
+    .returning({ id: nfseDocuments.id })
+  return updated.length
+}
+
+export async function saveRetryIntent(
+  tenantId: string,
+  id: string,
+  data: { emailRequested: boolean; competenceDate?: string },
+): Promise<void> {
   await db
     .update(nfseDocuments)
-    .set({ status: 'pending', claimedAt: null, updatedAt: new Date() })
-    .where(and(eq(nfseDocuments.id, id), eq(nfseDocuments.status, 'processing')))
+    .set({ ...data, updatedAt: new Date() })
+    .where(and(eq(nfseDocuments.tenantId, tenantId), eq(nfseDocuments.id, id)))
 }
 
 export async function markEmailSent(id: string): Promise<void> {
@@ -283,8 +320,6 @@ export async function markEmailSent(id: string): Promise<void> {
     .set({ emailSentAt: new Date(), updatedAt: new Date() })
     .where(eq(nfseDocuments.id, id))
 }
-
-// ── documents: cancellation and reversal ──
 
 export async function requestCancellation(
   tx: DbExecutor,
@@ -304,15 +339,17 @@ export async function requestCancellation(
     .where(and(inArray(nfseDocuments.id, ids), ne(nfseDocuments.status, 'cancelled')))
 }
 
-export async function markCancelled(id: string): Promise<void> {
-  await db
+export async function markCancelled(id: string): Promise<boolean> {
+  const updated = await db
     .update(nfseDocuments)
     .set({ status: 'cancelled', cancelledAt: new Date(), errorMessage: null, updatedAt: new Date() })
-    .where(eq(nfseDocuments.id, id))
+    .where(and(eq(nfseDocuments.id, id), eq(nfseDocuments.status, 'issued')))
+    .returning({ id: nfseDocuments.id })
+  return updated.length > 0
 }
 
-export async function markCancelAttemptFailed(id: string, message: string): Promise<void> {
-  await db
+export async function markCancelAttemptFailed(id: string, message: string): Promise<number> {
+  const [row] = await db
     .update(nfseDocuments)
     .set({
       cancelAttemptCount: sql`${nfseDocuments.cancelAttemptCount} + 1`,
@@ -320,10 +357,29 @@ export async function markCancelAttemptFailed(id: string, message: string): Prom
       updatedAt: new Date(),
     })
     .where(eq(nfseDocuments.id, id))
+    .returning({ cancelAttemptCount: nfseDocuments.cancelAttemptCount })
+  return row?.cancelAttemptCount ?? 0
 }
 
 export async function markPendingReversed(tx: DbExecutor, paymentRecordIds: string[]): Promise<void> {
   if (paymentRecordIds.length === 0) return
+  const unsettled = and(
+    inArray(nfseDocuments.paymentRecordId, paymentRecordIds),
+    inArray(nfseDocuments.status, ['pending', 'failed']),
+  )
+  const mayHaveReachedSefin = and(
+    isNotNull(nfseDocuments.dpsId),
+    or(isNull(nfseDocuments.errorCode), notInArray(nfseDocuments.errorCode, [SEFIN_REJECTED_CODE, ...FINAL_ERROR_CODES])),
+  )
+  await tx
+    .update(nfseDocuments)
+    .set({
+      cancelRequestedAt: new Date(),
+      cancelReason: REVERSAL_CANCEL_REASON,
+      cancelJustification: REVERSAL_JUSTIFICATION,
+      updatedAt: new Date(),
+    })
+    .where(and(unsettled, mayHaveReachedSefin))
   await tx
     .update(nfseDocuments)
     .set({
@@ -333,12 +389,7 @@ export async function markPendingReversed(tx: DbExecutor, paymentRecordIds: stri
       claimedAt: null,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        inArray(nfseDocuments.paymentRecordId, paymentRecordIds),
-        inArray(nfseDocuments.status, ['pending', 'failed']),
-      ),
-    )
+    .where(and(unsettled, not(mayHaveReachedSefin!)))
 }
 
 export async function listCancellationsToRetry(limit: number): Promise<string[]> {
@@ -357,8 +408,6 @@ export async function listCancellationsToRetry(limit: number): Promise<string[]>
     .limit(limit)
   return rows.map((r) => r.id)
 }
-
-// ── documents: reads ──
 
 export async function loadDocumentForProcessing(id: string) {
   const [row] = await db

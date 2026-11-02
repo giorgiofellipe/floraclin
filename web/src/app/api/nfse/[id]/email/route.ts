@@ -3,7 +3,8 @@ import { z } from 'zod'
 import { getDocument } from '@/db/queries/nfse'
 import { handleApiError } from '@/lib/api-error'
 import { requireWrite } from '@/lib/write-access'
-import { PATIENT_EMAIL_MISSING, sendNfseEmail } from '@/lib/nfse/nfse-email'
+import { BusinessError } from '@/lib/errors'
+import { sendNfseEmail } from '@/lib/nfse/nfse-email'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -19,9 +20,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     try {
       await sendNfseEmail(id)
     } catch (error) {
-      if (error instanceof Error && error.message === PATIENT_EMAIL_MISSING) {
+      if (error instanceof BusinessError && error.code === 'PATIENT_EMAIL_MISSING') {
         return NextResponse.json(
-          { error: 'O paciente não tem email cadastrado.', code: PATIENT_EMAIL_MISSING },
+          { error: 'O paciente não tem email cadastrado.', code: error.code },
           { status: 409 },
         )
       }

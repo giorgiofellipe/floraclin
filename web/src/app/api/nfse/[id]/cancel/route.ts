@@ -5,11 +5,7 @@ import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
 import { requireWrite } from '@/lib/write-access'
 import { requestCancel } from '@/lib/nfse/emission'
-
-const cancelSchema = z.object({
-  reason: z.union([z.literal(1), z.literal(2), z.literal(9)]),
-  justification: z.string().trim().min(15, 'Mínimo de 15 caracteres').max(255, 'Máximo de 255 caracteres'),
-})
+import { nfseCancelSchema } from '@/validations/nfse'
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -17,7 +13,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (blocked) return blocked
     const { id } = await params
 
-    const parsed = cancelSchema.safeParse(await request.json())
+    const parsed = nfseCancelSchema.safeParse(await request.json())
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },

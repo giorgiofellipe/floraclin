@@ -4,6 +4,7 @@ import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import {
   claimDocument,
+  failExhaustedClaims,
   getDocument,
   getNfseSettings,
   getNfseSettingsWithSecrets,
@@ -17,11 +18,17 @@ import {
   markFailed,
   markIssued,
   markPendingReversed,
+  MAX_CANCEL_ATTEMPTS,
   nextDpsNumber,
+  NOTHING_AT_SEFIN_CODES,
+  SEFIN_REJECTED_CODE,
   requestCancellation,
+  REVERSAL_CANCEL_REASON,
+  REVERSAL_JUSTIFICATION,
   saveDpsIdentity,
+  saveRetryIntent,
+  type ClaimedNfseDocument,
   type DbExecutor,
-  type NfseDocumentRow,
 } from '@/db/queries/nfse'
 import { appointments, financialEntries, installments, nfseDocuments, paymentRecords, procedureRecords } from '@/db/schema'
 import { createAuditLog } from '@/lib/audit'
@@ -45,23 +52,14 @@ import type {
 import { readNfseNumber } from './xml'
 
 const BATCH_SIZE = 20
-const REVERSAL_CANCEL_REASON: NfseCancelReason = 2
-const REVERSAL_JUSTIFICATION = 'Pagamento estornado no FloraClin.'
 const REVERSED_MESSAGE = 'O pagamento foi estornado.'
 const UNAVAILABLE_MESSAGE = 'Sefin Nacional indisponível. Tentaremos de novo.'
-const NEEDS_A_PERSON = new Set([
-  'invalid_request',
-  'missing_taker_data',
-  'not_configured',
-  'certificate_expired',
-  'unauthorized',
-  'reconcile_unavailable',
-])
-const NOTHING_AT_SEFIN_CODES = new Set(['invalid_request', 'missing_taker_data'])
+const EXHAUSTED_MESSAGE = 'A emissão não foi concluída depois de várias tentativas. Tente de novo.'
+const NOTHING_AT_SEFIN = new Set(NOTHING_AT_SEFIN_CODES)
 
 type LoadedDocument = NonNullable<Awaited<ReturnType<typeof loadDocumentForProcessing>>>
 
-async function selectDocument(id: string): Promise<NfseDocumentRow | null> {
+async function selectDocument(id: string) {
   const [row] = await db.select().from(nfseDocuments).where(eq(nfseDocuments.id, id))
   return row ?? null
 }
@@ -76,9 +74,13 @@ async function finish(id: string): Promise<NfseProcessResult> {
   }
 }
 
-async function fail(id: string, code: string, message: string): Promise<NfseProcessResult> {
-  await markFailed(id, code, message)
-  return finish(id)
+async function fail(claimed: ClaimedNfseDocument, code: string, message: string): Promise<NfseProcessResult> {
+  await markFailed(claimed, code, message)
+  return finish(claimed.id)
+}
+
+function couldHaveReachedSefin(doc: { dpsId: string | null; errorCode: string | null }): boolean {
+  return doc.dpsId !== null && doc.errorCode !== SEFIN_REJECTED_CODE
 }
 
 async function readReversalState(id: string) {
@@ -90,7 +92,13 @@ async function readReversalState(id: string) {
   return row
 }
 
-// ── creation ──
+function competenceFor(
+  choice: NfseCompetenceChoice,
+  service: { performedAt: Date | null; appointmentDate: string | null; paidAt: Date },
+  today: string,
+): string {
+  return choice === 'today' ? today : defaultCompetenceDate({ ...service, today })
+}
 
 export async function createDocuments(
   tx: DbExecutor,
@@ -138,27 +146,17 @@ export async function createDocuments(
       patientId: r.patientId,
       environment: args.environment,
       value: r.amount,
-      competenceDate:
-        args.competence === 'today'
-          ? today
-          : defaultCompetenceDate({
-              performedAt: r.performedAt,
-              appointmentDate: r.appointmentDate,
-              paidAt: r.paidAt,
-              today,
-            }),
+      competenceDate: competenceFor(args.competence, r, today),
       emailRequested: args.emailRequested,
       createdBy: args.userId,
     })),
   )
 }
 
-// ── processing ──
-
 type SnapshotResult = { ok: true; snapshot: NfseSnapshot } | { ok: false; code: string; message: string }
 
 async function buildSnapshot(
-  claimed: NfseDocumentRow,
+  claimed: ClaimedNfseDocument,
   loaded: LoadedDocument,
   settings: NfseSettingsWithSecrets,
 ): Promise<SnapshotResult> {
@@ -224,7 +222,7 @@ async function buildSnapshot(
     },
     description:
       installmentCount > 1
-        ? `${entry.description} - parcela ${installment.installmentNumber}/${installmentCount}`
+        ? `${entry.description} - Parcela ${installment.installmentNumber}/${installmentCount}`
         : entry.description,
     value: Number(claimed.value),
     competenceDate: claimed.competenceDate,
@@ -249,18 +247,19 @@ async function sendEmailSafely(id: string): Promise<void> {
   try {
     await sendNfseEmail(id)
   } catch (error) {
-    if (error instanceof Error && error.message === PATIENT_EMAIL_MISSING) return
+    if (error instanceof BusinessError && error.code === PATIENT_EMAIL_MISSING) return
     reportSideEffectFailure(error, { area: 'nfse', step: 'email', extra: { documentId: id } })
   }
 }
 
 async function completeIssued(
-  claimed: NfseDocumentRow,
+  claimed: ClaimedNfseDocument,
   loaded: LoadedDocument,
   issued: { accessKey: string; nfseXml: string },
 ): Promise<NfseProcessResult> {
   const nfseNumber = readNfseNumber(issued.nfseXml)
-  await markIssued(claimed.id, { accessKey: issued.accessKey, nfseNumber, nfseXml: issued.nfseXml })
+  const owned = await markIssued(claimed, { accessKey: issued.accessKey, nfseNumber, nfseXml: issued.nfseXml })
+  if (!owned) return finish(claimed.id)
   try {
     await createAuditLog({
       tenantId: claimed.tenantId,
@@ -286,61 +285,65 @@ async function completeIssued(
   return finish(claimed.id)
 }
 
-async function run(claimed: NfseDocumentRow): Promise<NfseProcessResult> {
+async function run(claimed: ClaimedNfseDocument): Promise<NfseProcessResult> {
   const id = claimed.id
   const loaded = await loadDocumentForProcessing(id)
-  if (!loaded) return fail(id, 'invalid_request', 'Pagamento não encontrado.')
+  if (!loaded) return fail(claimed, 'invalid_request', 'Pagamento não encontrado.')
 
-  const lastCode = claimed.errorCode ?? ''
-  const reconcileFirst = claimed.attemptCount > 1 && !NOTHING_AT_SEFIN_CODES.has(lastCode)
+  const isRetry = claimed.attemptCount > 1
+  const mayHaveReachedSefin = isRetry && couldHaveReachedSefin(claimed)
   const reversed = loaded.paymentRecord.reversedAt !== null
-  if (reversed && !(reconcileFirst && claimed.dpsId)) return fail(id, 'payment_reversed', REVERSED_MESSAGE)
+  if (reversed && !mayHaveReachedSefin) return fail(claimed, 'payment_reversed', REVERSED_MESSAGE)
 
   const settings = await getNfseSettingsWithSecrets(claimed.tenantId)
   if (!settings?.configured) {
-    return fail(id, 'not_configured', 'Configure a NFS-e e o certificado digital nas configurações.')
+    return fail(claimed, 'not_configured', 'Configure a NFS-e e o certificado digital nas configurações.')
   }
   let gateway
   try {
     gateway = createNfseGateway(settings, claimed.environment)
   } catch (error) {
-    if (error instanceof NfseGatewayError) return fail(id, error.code, error.message)
+    if (error instanceof NfseGatewayError) return fail(claimed, error.code, error.message)
     throw error
   }
 
   let snapshot = claimed.payloadSnapshot
-  if (!snapshot || NEEDS_A_PERSON.has(lastCode)) {
-    const built = await buildSnapshot(claimed, loaded, settings)
-    if (!built.ok) return fail(id, built.code, built.message)
-    snapshot = built.snapshot
-  }
-
-  if (reconcileFirst) {
+  if (mayHaveReachedSefin && snapshot) {
     let found
     try {
       found = await gateway.reconcile(snapshot)
     } catch {
-      return fail(id, 'reconcile_unavailable', 'Não foi possível confirmar na Sefin se a nota já foi emitida. Tente de novo.')
+      return fail(
+        claimed,
+        'reconcile_unavailable',
+        'Não foi possível confirmar na Sefin se a nota já foi emitida. Tentaremos de novo.',
+      )
     }
     if (found.kind === 'issued') return completeIssued(claimed, loaded, found)
     if (found.kind === 'ambiguous') {
       return fail(
-        id,
+        claimed,
         'reconcile_ambiguous',
         'Já existe uma NFS-e com este número de DPS que não corresponde a este pagamento. Verifique manualmente.',
       )
     }
   }
 
-  if (reversed || (await readReversalState(id)).reversedAt) return fail(id, 'payment_reversed', REVERSED_MESSAGE)
+  if (reversed || (await readReversalState(id)).reversedAt) return fail(claimed, 'payment_reversed', REVERSED_MESSAGE)
+
+  if (!snapshot || NOTHING_AT_SEFIN.has(claimed.errorCode ?? '')) {
+    const built = await buildSnapshot(claimed, loaded, settings)
+    if (!built.ok) return fail(claimed, built.code, built.message)
+    snapshot = built.snapshot
+  }
 
   let issued
   try {
     issued = await gateway.emit(snapshot)
   } catch (error) {
-    if (error instanceof NfseGatewayError) return fail(id, error.code, error.message)
+    if (error instanceof NfseGatewayError) return fail(claimed, error.code, error.message)
     reportSideEffectFailure(error, { area: 'nfse', step: 'emit', extra: { documentId: id } })
-    return fail(id, 'provider_error', UNAVAILABLE_MESSAGE)
+    return fail(claimed, 'provider_error', UNAVAILABLE_MESSAGE)
   }
   return completeIssued(claimed, loaded, issued)
 }
@@ -352,10 +355,22 @@ export async function processDocument(id: string, mode: 'auto' | 'manual' = 'aut
     return await run(claimed)
   } catch (error) {
     reportSideEffectFailure(error, { area: 'nfse', step: 'process', extra: { documentId: id } })
-    const current = await selectDocument(id)
-    if (current?.status === 'processing') await markFailed(id, 'provider_error', UNAVAILABLE_MESSAGE)
+    await markFailed(claimed, 'provider_error', UNAVAILABLE_MESSAGE)
     return finish(id)
   }
+}
+
+export async function updateRetryIntent(
+  tenantId: string,
+  documentId: string,
+  intent: { competence: NfseCompetenceChoice; emailRequested: boolean },
+): Promise<void> {
+  const loaded = await loadDocumentForProcessing(documentId)
+  if (!loaded || loaded.document.tenantId !== tenantId) throw new BusinessError('NFSE_NOT_FOUND', 'Nota não encontrada.')
+  const competenceDate = couldHaveReachedSefin(loaded.document)
+    ? undefined
+    : competenceFor(intent.competence, { ...loaded, paidAt: loaded.paymentRecord.paidAt }, brToday())
+  await saveRetryIntent(tenantId, documentId, { emailRequested: intent.emailRequested, competenceDate })
 }
 
 export async function processDocuments(
@@ -375,8 +390,6 @@ export async function processDocuments(
   return results
 }
 
-// ── cancellation and reversal ──
-
 async function cancelDocument(id: string, userId?: string): Promise<'cancelled' | 'failed'> {
   const doc = await selectDocument(id)
   if (!doc) return 'failed'
@@ -391,14 +404,21 @@ async function cancelDocument(id: string, userId?: string): Promise<'cancelled' 
       doc.cancelReason,
       doc.cancelJustification ?? REVERSAL_JUSTIFICATION,
     )
-    await markCancelled(id)
   } catch (error) {
     if (!(error instanceof NfseGatewayError)) {
       reportSideEffectFailure(error, { area: 'nfse', step: 'cancel', extra: { documentId: id } })
     }
-    await markCancelAttemptFailed(id, error instanceof NfseGatewayError ? error.message : UNAVAILABLE_MESSAGE)
+    const attempts = await markCancelAttemptFailed(id, error instanceof NfseGatewayError ? error.message : UNAVAILABLE_MESSAGE)
+    if (attempts === MAX_CANCEL_ATTEMPTS) {
+      reportSideEffectFailure(new Error('NFS-e cancellation attempts exhausted'), {
+        area: 'nfse',
+        step: 'cancel-exhausted',
+        extra: { documentId: id },
+      })
+    }
     return 'failed'
   }
+  if (!(await markCancelled(id))) return 'cancelled'
 
   const auditUserId = userId ?? doc.createdBy
   if (auditUserId) {
@@ -431,7 +451,7 @@ export async function requestCancel(args: {
 }): Promise<void> {
   const doc = await getDocument(args.tenantId, args.documentId)
   if (!doc) throw new BusinessError('NFSE_NOT_FOUND', 'Nota não encontrada.')
-  if (doc.status !== 'issued' && doc.status !== 'processing') {
+  if (doc.status !== 'issued') {
     throw new BusinessError('NFSE_NOT_CANCELLABLE', 'Só é possível cancelar uma nota emitida.')
   }
   await requestCancellation(db, [doc.id], args.reason, args.justification)
@@ -455,8 +475,6 @@ export async function markReversalInTx(
   await requestCancellation(tx, toCancel, REVERSAL_CANCEL_REASON, REVERSAL_JUSTIFICATION)
   return toCancel
 }
-
-// ── cron ──
 
 async function backfillAlwaysDocuments(deadlineAt: number): Promise<number> {
   const missing = await listAlwaysPaymentsMissingDocuments(BATCH_SIZE)
@@ -501,15 +519,7 @@ async function guarded<T>(step: string, fallback: T, work: () => Promise<T>): Pr
 
 export async function runNfseCron(
   deadlineAt: number,
-): Promise<{ backfilled: number; processed: number; cancellations: number }> {
-  const backfilled = await guarded('backfill', 0, () => backfillAlwaysDocuments(deadlineAt))
-
-  const processed = await guarded('process', 0, async () => {
-    if (Date.now() >= deadlineAt) return 0
-    const results = await processDocuments(await listRetryableDocumentIds(BATCH_SIZE), 'auto', deadlineAt)
-    return results.length
-  })
-
+): Promise<{ cancellations: number; exhausted: number; backfilled: number; processed: number }> {
   const cancellations = await guarded('cancel', 0, async () => {
     let attempted = 0
     for (const id of await listCancellationsToRetry(BATCH_SIZE)) {
@@ -520,5 +530,15 @@ export async function runNfseCron(
     return attempted
   })
 
-  return { backfilled, processed, cancellations }
+  const exhausted = await guarded('exhausted', 0, () => failExhaustedClaims(EXHAUSTED_MESSAGE))
+
+  const backfilled = await guarded('backfill', 0, () => backfillAlwaysDocuments(deadlineAt))
+
+  const processed = await guarded('process', 0, async () => {
+    if (Date.now() >= deadlineAt) return 0
+    const results = await processDocuments(await listRetryableDocumentIds(BATCH_SIZE), 'auto', deadlineAt)
+    return results.length
+  })
+
+  return { cancellations, exhausted, backfilled, processed }
 }

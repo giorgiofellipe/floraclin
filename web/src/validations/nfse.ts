@@ -1,10 +1,59 @@
-import { findMunicipality } from '@bullcode/fiscal'
+import { findMunicipality, findMunicipalityCode } from '@bullcode/fiscal'
 import { z } from 'zod'
+import { isValidCep, isValidCpf } from '@/lib/br-documents'
+import {
+  NFSE_CANCEL_JUSTIFICATION_MAX,
+  NFSE_CANCEL_JUSTIFICATION_MIN,
+  NFSE_MAX_PER_REQUEST,
+  NFSE_PFX_MAX_BASE64_LENGTH,
+} from '@/lib/nfse/config'
 import { NFSE_SERVICE_PRESETS } from '@/lib/nfse/presets'
 import type { NfseFiscalSettingsInput, NfseServicePresetId } from '@/lib/nfse/types'
 
+const takerAddressSchema = z
+  .object({
+    zip: z.string().refine(isValidCep, 'CEP inválido'),
+    street: z.string().trim().min(1, 'Informe o logradouro').max(200),
+    number: z.string().trim().min(1, 'Informe o número').max(20),
+    complement: z.string().trim().max(100).nullable(),
+    neighborhood: z.string().trim().min(1, 'Informe o bairro').max(100),
+    city: z.string().trim().min(1, 'Informe a cidade').max(100),
+    state: z.string().trim().length(2, 'UF inválida'),
+  })
+  .superRefine((value, ctx) => {
+    if (!findMunicipalityCode(value.city, value.state)) {
+      ctx.addIssue({ code: 'custom', path: ['city'], message: 'Cidade e UF não encontradas' })
+    }
+  })
+
+export const nfseEmitSchema = z.object({
+  paymentRecordIds: z.array(z.guid()).min(1).max(NFSE_MAX_PER_REQUEST),
+  competence: z.enum(['service', 'today']),
+  sendEmail: z.boolean(),
+  takers: z
+    .array(
+      z.object({
+        patientId: z.guid(),
+        cpf: z.string().refine(isValidCpf, 'CPF inválido'),
+        address: takerAddressSchema,
+      }),
+    )
+    .max(NFSE_MAX_PER_REQUEST)
+    .refine((takers) => new Set(takers.map((t) => t.patientId)).size === takers.length, 'Paciente repetido')
+    .optional(),
+})
+
+export const nfseCancelSchema = z.object({
+  reason: z.union([z.literal(1), z.literal(2), z.literal(9)]),
+  justification: z
+    .string()
+    .trim()
+    .min(NFSE_CANCEL_JUSTIFICATION_MIN, `Mínimo de ${NFSE_CANCEL_JUSTIFICATION_MIN} caracteres`)
+    .max(NFSE_CANCEL_JUSTIFICATION_MAX, `Máximo de ${NFSE_CANCEL_JUSTIFICATION_MAX} caracteres`),
+})
+
 export const nfseCertificateUploadSchema = z.object({
-  pfxBase64: z.string().min(1, 'Selecione o certificado').max(65536, 'Certificado grande demais'),
+  pfxBase64: z.string().min(1, 'Selecione o certificado').max(NFSE_PFX_MAX_BASE64_LENGTH, 'Certificado grande demais'),
   password: z.string().min(1, 'Informe a senha').max(200),
 })
 

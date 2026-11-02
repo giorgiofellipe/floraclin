@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq, inArray, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import {
@@ -50,6 +50,7 @@ import { GET as listEmission, POST as emit } from '../route'
 import { GET as getPdf } from '../[id]/pdf/route'
 import { POST as cancel } from '../[id]/cancel/route'
 import { GET as cron } from '../../cron/nfse-retry/route'
+import { GET as getFinancialEntryRoute } from '../../financial/[id]/route'
 
 const TENANT = '00000000-0000-0000-0000-0000000f8a01'
 const TENANT_OTHER = '00000000-0000-0000-0000-0000000f8a02'
@@ -188,6 +189,10 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
     mocks.gateway.cancel.mockResolvedValue(undefined)
   })
 
+  afterEach(() => {
+    vi.unstubAllEnvs()
+  })
+
   afterAll(async () => {
     await clean()
     await db.delete(paymentRecords).where(inArray(paymentRecords.id, PAYMENTS))
@@ -196,25 +201,43 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
     await db.delete(patients).where(inArray(patients.id, [PATIENT, PATIENT_BARE, PATIENT_OTHER]))
   })
 
-  describe('preview', () => {
+  describe('GET /api/nfse', () => {
     it('groups by patient and lists the missing taker fields', async () => {
       const res = await listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1},${PAY_2},${PAY_BARE}`))
       expect(res.status).toBe(200)
       const { data } = await res.json()
       const byId = Object.fromEntries(data.patients.map((p: { patientId: string }) => [p.patientId, p]))
       expect(byId[PATIENT]).toMatchObject({ patientName: 'Maria Souza', total: 200, missing: [], email: 'maria@example.com', canEditTaker: true })
+      expect(byId[PATIENT].current).toEqual({ cpf: '529.982.247-25', ...VALID_ADDRESS, complement: '' })
+      expect(byId[PATIENT_BARE].current).toEqual({ cpf: '', zip: '', street: '', number: '', complement: '', neighborhood: '', city: '', state: '' })
       expect(byId[PATIENT].paymentRecordIds.sort()).toEqual([PAY_1, PAY_2].sort())
       expect(byId[PATIENT_BARE].missing).toEqual(['cpf', 'zip', 'street', 'number', 'neighborhood', 'city', 'state'])
       expect(data).toMatchObject({ defaultCompetence: '2026-10-30', competenceIsPastMonth: true, settings: { emailPatient: true } })
     })
+
+    it("rejects a foreign tenant's payment record", async () => {
+      const res = await listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1},${PAY_OTHER}`))
+      expect(res.status).toBe(404)
+    })
+
+    it('returns 409 NFSE_NOT_CONFIGURED when the certificate is not saved', async () => {
+      await db.update(nfseSettings).set({ configuredAt: null }).where(eq(nfseSettings.tenantId, TENANT))
+      const res = await listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1}`))
+      expect(res.status).toBe(409)
+      expect((await res.json()).code).toBe('NFSE_NOT_CONFIGURED')
+    })
+
+    it('hides current taker data from roles that cannot edit it', async () => {
+      auth.role = 'financial'
+      const res = await listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1}`))
+      const { data } = await res.json()
+      expect(data.patients[0]).toMatchObject({ canEditTaker: false, current: null })
+    })
   })
 
   describe('POST /api/nfse', () => {
-    it.each([
-      ['preview', () => listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1},${PAY_OTHER}`))],
-      ['emit', () => emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_1, PAY_OTHER] })))],
-    ])("rejects a foreign tenant's payment record (%s)", async (_name, call) => {
-      const res = await call()
+    it("rejects a foreign tenant's payment record", async () => {
+      const res = await emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_1, PAY_OTHER] })))
       expect(res.status).toBe(404)
       expect(await docsFor(PAYMENTS)).toHaveLength(0)
     })
@@ -230,12 +253,20 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
     })
 
     it('concurrent POSTs create one row', async () => {
+      let release!: () => void
+      const barrier = new Promise<void>((resolve) => {
+        release = resolve
+      })
       mocks.gateway.emit.mockImplementation(async () => {
-        await new Promise((r) => setTimeout(r, 50))
+        await barrier
         return { accessKey: ACCESS_KEY, nfseXml: NFSE_XML }
       })
 
-      const results = await Promise.all([emit(post('/api/nfse', emitBody())), emit(post('/api/nfse', emitBody()))])
+      const first = emit(post('/api/nfse', emitBody()))
+      await vi.waitFor(() => expect(mocks.gateway.emit).toHaveBeenCalled())
+      const second = await emit(post('/api/nfse', emitBody()))
+      release()
+      const results = [await first, second]
 
       expect(results.map((r) => r.status).sort()).toEqual([200, 409])
       const loser = results.find((r) => r.status === 409)!
@@ -288,6 +319,7 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       expect(bare.cpf).toBe('390.533.447-05')
       expect(createAuditLog).toHaveBeenCalledWith(
         expect.objectContaining({ entityType: 'patient', entityId: PATIENT_BARE, action: 'update', tenantId: TENANT }),
+        expect.anything(),
       )
     })
 
@@ -308,6 +340,71 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       )
       expect(res.status).toBe(400)
       expect(await docsFor([PAY_BARE])).toHaveLength(0)
+    })
+
+    it('returns 409 NFSE_NOT_CONFIGURED when the certificate is not saved', async () => {
+      await db.update(nfseSettings).set({ configuredAt: null }).where(eq(nfseSettings.tenantId, TENANT))
+      const res = await emit(post('/api/nfse', emitBody()))
+      expect(res.status).toBe(409)
+      expect((await res.json()).code).toBe('NFSE_NOT_CONFIGURED')
+      expect(await docsFor([PAY_1])).toHaveLength(0)
+    })
+
+    it('applies the request competence and email choice when retrying a failed row', async () => {
+      const [failed] = await db
+        .insert(nfseDocuments)
+        .values({
+          tenantId: TENANT,
+          paymentRecordId: PAY_1,
+          patientId: PATIENT,
+          environment: 'restricted',
+          value: '100.00',
+          competenceDate: '2026-10-30',
+          emailRequested: false,
+          status: 'failed',
+          errorCode: 'provider_error',
+          errorMessage: 'Falhou',
+          createdBy: USER,
+        })
+        .returning({ id: nfseDocuments.id })
+
+      const res = await emit(post('/api/nfse', emitBody({ competence: 'today', sendEmail: true })))
+
+      expect(res.status).toBe(200)
+      const [row] = await db.select().from(nfseDocuments).where(eq(nfseDocuments.id, failed.id))
+      expect(row.competenceDate).toBe(brToday())
+      expect(row.emailRequested).toBe(true)
+    })
+
+    it('rejects a city that does not exist in the state and saves nothing', async () => {
+      const res = await emit(
+        post('/api/nfse', emitBody({ paymentRecordIds: [PAY_BARE], takers: [{ patientId: PATIENT_BARE, cpf: '39053344705', address: { ...TAKER_ADDRESS, city: 'Cidade Inexistente' } }] })),
+      )
+      expect(res.status).toBe(400)
+      const [bare] = await db.select().from(patients).where(eq(patients.id, PATIENT_BARE))
+      expect(bare.cpf).toBeNull()
+      expect(bare.address).toBeNull()
+    })
+
+    it('rejects a repeated taker patient', async () => {
+      const taker = { patientId: PATIENT_BARE, cpf: '39053344705', address: TAKER_ADDRESS }
+      const res = await emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_BARE], takers: [taker, taker] })))
+      expect(res.status).toBe(400)
+    })
+
+    it('merges the taker address into the existing one', async () => {
+      await db
+        .update(patients)
+        .set({ address: { ...VALID_ADDRESS, reference: 'Ao lado do banco' } })
+        .where(eq(patients.id, PATIENT))
+
+      const res = await emit(
+        post('/api/nfse', emitBody({ takers: [{ patientId: PATIENT, cpf: '529.982.247-25', address: { ...TAKER_ADDRESS, number: '2000' } }] })),
+      )
+
+      expect(res.status).toBe(200)
+      const [patient] = await db.select().from(patients).where(eq(patients.id, PATIENT))
+      expect(patient.address).toMatchObject({ number: '2000', reference: 'Ao lado do banco' })
     })
 
     it('uses today as competence when asked', async () => {
@@ -333,6 +430,22 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
     })
   })
 
+  describe('GET /api/financial/[id]', () => {
+    it('strips NFS-e metadata from the response for practitioners', async () => {
+      await insertIssued(PAY_1)
+      const call = async () => {
+        const res = await getFinancialEntryRoute(new Request(`http://localhost/api/financial/${ENTRY}`), ctx(ENTRY))
+        const body = await res.json()
+        return body.installments[0].paymentRecords.find((p: { id: string }) => p.id === PAY_1)
+      }
+
+      expect((await call()).nfse).toMatchObject({ status: 'issued' })
+
+      auth.role = 'practitioner'
+      expect(await call()).not.toHaveProperty('nfse')
+    })
+  })
+
   describe('pdf', () => {
     it('pdf is not served to another tenant', async () => {
       const id = await insertIssued(PAY_1)
@@ -352,7 +465,6 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       vi.stubEnv('CRON_SECRET', 'segredo')
       const res = await cron(new Request('http://localhost/api/cron/nfse-retry'))
       expect(res.status).toBe(401)
-      vi.unstubAllEnvs()
     })
   })
 })

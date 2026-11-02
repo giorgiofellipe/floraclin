@@ -125,7 +125,6 @@ export function InstallmentTable({
   const [reversalReason, setReversalReason] = useState('')
   const [cancelNfse, setCancelNfse] = useState(true)
   const [emitIds, setEmitIds] = useState<string[] | null>(null)
-  const [nfseSeen, setNfseSeen] = useState(false)
   const { data: nfseStatus } = useNfseStatus()
   const reversePayment = useReversePayment()
 
@@ -144,14 +143,9 @@ export function InstallmentTable({
 
   const installments: Installment[] = entryData?.installments ?? []
   const entryStatus: string = entryData?.status ?? 'pending'
-  const nfseEnabled =
-    nfseSeen ||
-    nfseStatus?.configured === true ||
-    installments.some((inst) => inst.paymentRecords?.some((pr) => pr.nfse))
   const isEntryCancelled = entryStatus === 'cancelled' || entryStatus === 'renegotiated'
 
   function handleNfse(nfse: NfseIntake) {
-    if (nfse.mode !== null) setNfseSeen(true)
     if (nfse.promptPaymentRecordIds.length > 0) setEmitIds(nfse.promptPaymentRecordIds)
   }
 
@@ -164,7 +158,8 @@ export function InstallmentTable({
     )
   }
 
-  const hasIssuedNfse = reverseDialogPayment?.nfse?.status === 'issued'
+  const offerNfseCancel =
+    reverseDialogPayment?.nfse?.status === 'issued' || (reverseDialogPayment?.card?.linkedPaymentCount ?? 0) > 1
 
   return (
     <>
@@ -353,7 +348,7 @@ export function InstallmentTable({
 
                         <NfsePaymentChip
                           payment={pr}
-                          canEmit={nfseEnabled && !isEntryCancelled}
+                          canEmit={nfseStatus?.configured === true && !isEntryCancelled}
                           canCancel={nfseStatus?.canCancel === true}
                           onEmit={(id) => setEmitIds([id])}
                         />
@@ -410,7 +405,7 @@ export function InstallmentTable({
               </div>
             )}
           </DialogHeader>
-          {hasIssuedNfse && (
+          {offerNfseCancel && (
             <label className="flex items-center gap-2 text-sm text-charcoal">
               <Checkbox checked={cancelNfse} onCheckedChange={(checked) => setCancelNfse(Boolean(checked))} />
               Cancelar a NFS-e também
@@ -438,7 +433,7 @@ export function InstallmentTable({
                   await reversePayment.mutateAsync({
                     paymentRecordId: reverseDialogPayment.id,
                     reason: reversalReason.trim() || undefined,
-                    cancelNfse: hasIssuedNfse && cancelNfse,
+                    cancelNfse: offerNfseCancel && cancelNfse,
                   })
                   toast.success('Pagamento estornado com sucesso')
                   setReverseDialogPayment(null)

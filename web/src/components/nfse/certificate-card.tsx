@@ -5,6 +5,7 @@ import { differenceInCalendarDays, format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import { AlertTriangleIcon, KeyRoundIcon, Loader2Icon, ShieldCheckIcon } from 'lucide-react'
 import { toast } from 'sonner'
+import { SectionTitle } from './section-title'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -37,6 +38,11 @@ async function fileToBase64(file: File): Promise<string> {
 
 function formatCnpj(cnpj: string): string {
   return cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5')
+}
+
+function expiryLabel(daysLeft: number): string {
+  if (daysLeft < 0) return 'Vencido'
+  return `Vence em ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'}`
 }
 
 export function CertificateCard() {
@@ -82,7 +88,7 @@ export function CertificateCard() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2Icon className="h-5 w-5 animate-spin text-[#4A6B52]" />
+        <Loader2Icon className="h-5 w-5 animate-spin text-sage" />
       </div>
     )
   }
@@ -93,17 +99,12 @@ export function CertificateCard() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-1">
-        <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-          Certificado digital
-        </h3>
-        <div className="flex-1 h-px bg-[#E8ECEF]" />
-      </div>
+      <SectionTitle>Certificado digital</SectionTitle>
 
       {certificate && (
         <div className="space-y-2 rounded-lg border border-[#E8ECEF] p-4 text-sm">
           <div className="flex items-center gap-2">
-            <KeyRoundIcon className="h-4 w-4 text-[#4A6B52]" />
+            <KeyRoundIcon className="h-4 w-4 text-sage" />
             <span className="font-medium text-charcoal">
               {certificate.subject.split(':')[0]}
             </span>
@@ -123,7 +124,7 @@ export function CertificateCard() {
               className={`flex items-center gap-1.5 text-xs ${daysLeft < 0 ? 'text-red-600' : 'text-amber-700'}`}
             >
               <AlertTriangleIcon className="h-3.5 w-3.5" />
-              {daysLeft < 0 ? 'Vencido' : `Vence em ${daysLeft} ${daysLeft === 1 ? 'dia' : 'dias'}`}
+              {expiryLabel(daysLeft)}
             </div>
           )}
           {!showForm && (
@@ -161,7 +162,7 @@ export function CertificateCard() {
             />
           </div>
           <p className="flex items-center gap-1.5 text-xs text-mid">
-            <ShieldCheckIcon className="h-3.5 w-3.5 text-[#4A6B52]" />
+            <ShieldCheckIcon className="h-3.5 w-3.5 text-sage" />
             O certificado e a senha ficam criptografados e nunca são exibidos de novo.
           </p>
           <div className="flex gap-2">

@@ -43,6 +43,7 @@ import {
   processDocument,
   requestCancel,
   runNfseCron,
+  updateRetryIntent,
 } from '../emission'
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
@@ -67,6 +68,8 @@ const CNPJ = '99111222000133'
 const ACCESS_KEY = '42082032264643544000154000000000000426100762796533'
 const NFSE_XML = '<NFSe><infNFSe><nNFSe>7</nNFSe></infNFSe></NFSe>'
 const PAID_AT = new Date('2026-10-30T15:00:00Z')
+const UNAVAILABLE = 'Sefin Nacional indisponível. Tentaremos de novo.'
+const ISSUED = { kind: 'issued', accessKey: ACCESS_KEY, nfseXml: NFSE_XML } as const
 
 const VALID_PATIENT = {
   fullName: 'Maria Souza',
@@ -165,6 +168,14 @@ async function auditCount(entityId: string, action: 'create' | 'update') {
 
 const reverse = (id: string) => db.update(paymentRecords).set({ reversedAt: new Date() }).where(eq(paymentRecords.id, id))
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => {
+    resolve = r
+  })
+  return { promise, resolve }
+}
+
 describeIntegration('nfse emission (integration, requires test DB)', () => {
   beforeAll(async () => {
     await db.execute(sql`INSERT INTO floraclin.users (id, email, full_name) VALUES (${USER}, 'nfse-emission@example.com', 'Nfse Emission') ON CONFLICT DO NOTHING`)
@@ -204,6 +215,7 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
     await clean()
     await db.update(paymentRecords).set({ reversedAt: null, recordedAt: new Date() }).where(inArray(paymentRecords.id, PAYMENTS))
     await db.update(patients).set({ phone: '11999990001', ...VALID_PATIENT }).where(eq(patients.id, PATIENT))
+    await db.update(financialEntries).set({ installmentCount: 1 }).where(eq(financialEntries.id, ENTRY))
     await saveCertificate(TENANT, USER, cert)
     await saveFiscalSettings(TENANT, USER, fiscal)
     mocks.createNfseGateway.mockReturnValue(mocks.gateway)
@@ -244,17 +256,47 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
   })
 
   describe('processDocument', () => {
-    it('claims a document once under concurrent processing', async () => {
+    it('claims a document once while another worker is emitting it', async () => {
       const id = await insertDoc(PAY_1)
+      const emitting = deferred<void>()
+      const release = deferred<void>()
       mocks.gateway.emit.mockImplementation(async () => {
-        await new Promise((r) => setTimeout(r, 50))
+        emitting.resolve()
+        await release.promise
         return { accessKey: ACCESS_KEY, nfseXml: NFSE_XML }
       })
 
-      await Promise.all([processDocument(id), processDocument(id)])
+      const first = processDocument(id)
+      await emitting.promise
+      const second = await processDocument(id)
+      release.resolve()
+      await first
 
+      expect(second.status).toBe('processing')
       expect(mocks.gateway.emit).toHaveBeenCalledTimes(1)
       expect((await row(id)).status).toBe('issued')
+    })
+
+    it('ignores the late result of a worker whose claim went stale', async () => {
+      const id = await insertDoc(PAY_1)
+      const emitting = deferred<void>()
+      const release = deferred<void>()
+      mocks.gateway.emit.mockImplementation(async () => {
+        emitting.resolve()
+        await release.promise
+        return { accessKey: ACCESS_KEY, nfseXml: '<NFSe><infNFSe><nNFSe>9</nNFSe></infNFSe></NFSe>' }
+      })
+      mocks.gateway.reconcile.mockResolvedValue(ISSUED)
+
+      const stale = processDocument(id)
+      await emitting.promise
+      await db.update(nfseDocuments).set({ claimedAt: new Date(Date.now() - 20 * 60_000) }).where(eq(nfseDocuments.id, id))
+      await processDocument(id)
+      release.resolve()
+      await stale
+
+      expect(await row(id)).toMatchObject({ status: 'issued', nfseNumber: '7' })
+      expect(await auditCount(id, 'create')).toBe(1)
     })
 
     it('persists the DPS identity before calling Sefin', async () => {
@@ -269,6 +311,15 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
 
       expect(seen).toMatchObject({ dpsNumber: 1, dpsId: 'DPS355030829911122200013300800000000000000001' })
       expect(seen?.payloadSnapshot).toMatchObject({ dpsNumber: '1', providerCnpj: CNPJ, value: 100, description: 'Limpeza de pele' })
+    })
+
+    it('describes an installment of a split entry as "Parcela N/M"', async () => {
+      await db.update(financialEntries).set({ installmentCount: 3 }).where(eq(financialEntries.id, ENTRY))
+      const id = await insertDoc(PAY_1)
+
+      await processDocument(id)
+
+      expect(mocks.gateway.emit).toHaveBeenCalledWith(expect.objectContaining({ description: 'Limpeza de pele - Parcela 1/3' }))
     })
 
     it('stores the issued note and reads its number from the XML', async () => {
@@ -288,6 +339,44 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
       await processDocument(id, 'manual')
       expect(mocks.gateway.reconcile).toHaveBeenCalledWith(expect.objectContaining({ dpsNumber: '1' }))
       expect(await row(id)).toMatchObject({ status: 'issued', dpsNumber: 1 })
+    })
+
+    it('reconciles with the stored DPS before renumbering, so a changed municipality does not emit a second note', async () => {
+      const id = await insertDoc(PAY_1)
+      mocks.gateway.emit.mockRejectedValueOnce(new NfseGatewayError('provider_error', UNAVAILABLE))
+      await processDocument(id)
+      mocks.gateway.reconcile.mockRejectedValueOnce(new NfseGatewayError('provider_error', UNAVAILABLE))
+      await processDocument(id)
+      expect((await row(id)).errorCode).toBe('reconcile_unavailable')
+
+      await saveFiscalSettings(TENANT, USER, { ...fiscal, municipalityCode: '3304557' })
+      mocks.gateway.reconcile.mockImplementation(async (s: NfseSnapshot) =>
+        s.municipalityCode === '3550308' && s.dpsNumber === '1' ? ISSUED : { kind: 'not_found' },
+      )
+      await processDocument(id, 'manual')
+
+      expect(mocks.gateway.emit).toHaveBeenCalledTimes(1)
+      expect(await row(id)).toMatchObject({ status: 'issued', accessKey: ACCESS_KEY })
+    })
+
+    it('still reconciles after a later pre-send error hides an earlier emit timeout', async () => {
+      const id = await insertDoc(PAY_1)
+      mocks.gateway.emit.mockRejectedValueOnce(new NfseGatewayError('provider_error', UNAVAILABLE))
+      await processDocument(id)
+      mocks.createNfseGateway.mockImplementationOnce(() => {
+        throw new NfseGatewayError('certificate_expired', 'Certificado vencido.')
+      })
+      await processDocument(id, 'manual')
+      expect((await row(id)).errorCode).toBe('certificate_expired')
+
+      await saveFiscalSettings(TENANT, USER, { ...fiscal, municipalityCode: '3304557' })
+      mocks.gateway.reconcile.mockImplementation(async (s: NfseSnapshot) =>
+        s.municipalityCode === '3550308' && s.dpsNumber === '1' ? ISSUED : { kind: 'not_found' },
+      )
+      await processDocument(id, 'manual')
+
+      expect(mocks.gateway.emit).toHaveBeenCalledTimes(1)
+      expect(await row(id)).toMatchObject({ status: 'issued', accessKey: ACCESS_KEY })
     })
 
     it('reconciles before resending a row that may have reached Sefin', async () => {
@@ -387,16 +476,12 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
       expect(mocks.gateway.emit).toHaveBeenCalledWith(expect.objectContaining({ taker: expect.objectContaining({ cpf: '52998224725' }) }))
     })
 
-    it('fails with not_configured and certificate_expired without calling Sefin', async () => {
+    it('fails with not_configured without calling Sefin', async () => {
       const id = await insertDoc(PAY_1)
-      mocks.createNfseGateway.mockImplementation(() => {
-        throw new NfseGatewayError('certificate_expired', 'O certificado digital expirou.')
-      })
-      await processDocument(id)
-      expect(await row(id)).toMatchObject({ status: 'failed', errorCode: 'certificate_expired' })
-
       await db.delete(nfseSettings).where(eq(nfseSettings.tenantId, TENANT))
-      await processDocument(id, 'manual')
+
+      await processDocument(id)
+
       expect(await row(id)).toMatchObject({ status: 'failed', errorCode: 'not_configured' })
       expect(mocks.gateway.emit).not.toHaveBeenCalled()
     })
@@ -419,13 +504,6 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
       await processCancellation(cancelling)
       expect(mocks.createNfseGateway).toHaveBeenCalledWith(expect.anything(), 'production')
     })
-
-    it('writes one audit entry per issued note', async () => {
-      const id = await insertDoc(PAY_1)
-      await processDocument(id)
-      await processDocument(id, 'manual')
-      expect(await auditCount(id, 'create')).toBe(1)
-    })
   })
 
   describe('email', () => {
@@ -446,6 +524,15 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
         }),
       )
       expect((await row(id)).emailSentAt).not.toBeNull()
+    })
+
+    it('names the email after the access key when the XML has no number', async () => {
+      const id = await insertDoc(PAY_1, { emailRequested: true })
+      mocks.gateway.emit.mockResolvedValue({ accessKey: ACCESS_KEY, nfseXml: '<NFSe><infNFSe/></NFSe>' })
+
+      await processDocument(id)
+
+      expect(mocks.sendEmail).toHaveBeenCalledWith(expect.objectContaining({ subject: `NFS-e ${ACCESS_KEY} - Clinica a` }))
     })
 
     it('issues the note when the email cannot be sent', async () => {
@@ -472,19 +559,19 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
   })
 
   describe('reversal and cancellation', () => {
-    it('requests cancellation for processing rows always and for issued rows only when asked', async () => {
-      const pending = await insertDoc(PAY_1)
-      const processing = await insertDoc(PAY_2, { status: 'processing', claimedAt: new Date() })
-      const issued = await insertDoc(PAY_3, { status: 'issued', accessKey: ACCESS_KEY })
+    it('a reversal after an emit timeout lets the next cron run reconcile, adopt and cancel the note', async () => {
+      const id = await insertDoc(PAY_1)
+      mocks.gateway.emit.mockRejectedValueOnce(new NfseGatewayError('provider_error', UNAVAILABLE))
+      await processDocument(id)
+      await reverse(PAY_1)
+      await db.transaction((tx) => markReversalInTx(tx as unknown as typeof db, [PAY_1], false))
+      mocks.gateway.reconcile.mockResolvedValue(ISSUED)
 
-      const kept = await db.transaction((tx) => markReversalInTx(tx as unknown as typeof db, PAYMENTS, false))
-      expect(kept).toEqual([processing])
-      expect((await row(issued)).cancelRequestedAt).toBeNull()
-      expect(await row(pending)).toMatchObject({ status: 'failed', errorCode: 'payment_reversed' })
+      await runNfseCron(Date.now() + 60_000)
 
-      const cancelled = await db.transaction((tx) => markReversalInTx(tx as unknown as typeof db, PAYMENTS, true))
-      expect(cancelled.sort()).toEqual([processing, issued].sort())
-      expect((await row(issued)).cancelRequestedAt).not.toBeNull()
+      expect(mocks.gateway.emit).toHaveBeenCalledTimes(1)
+      expect(mocks.gateway.cancel).toHaveBeenCalledWith(ACCESS_KEY, 2, 'Pagamento estornado no FloraClin.')
+      expect((await row(id)).status).toBe('cancelled')
     })
 
     it('requestCancel cancels an issued note and audits it', async () => {
@@ -495,6 +582,33 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
       expect(mocks.gateway.cancel).toHaveBeenCalledWith(ACCESS_KEY, 1, 'Erro na emissão da nota.')
       expect((await row(id)).status).toBe('cancelled')
       expect(await auditCount(id, 'update')).toBe(1)
+    })
+
+    it('requestCancel refuses a note that is not issued yet', async () => {
+      const id = await insertDoc(PAY_1, { status: 'processing', claimedAt: new Date() })
+
+      await expect(
+        requestCancel({ tenantId: TENANT, userId: USER, documentId: id, reason: 1, justification: 'Erro na emissão da nota.' }),
+      ).rejects.toMatchObject({ code: 'NFSE_NOT_CANCELLABLE' })
+      expect((await row(id)).cancelRequestedAt).toBeNull()
+    })
+
+    it('reports once when cancellation attempts run out', async () => {
+      const id = await insertDoc(PAY_1, {
+        status: 'issued',
+        accessKey: ACCESS_KEY,
+        cancelRequestedAt: new Date(),
+        cancelReason: 2,
+        cancelJustification: 'Pagamento estornado no FloraClin.',
+        cancelAttemptCount: 9,
+      })
+      mocks.gateway.cancel.mockRejectedValue(new NfseGatewayError('provider_error', UNAVAILABLE))
+
+      await processCancellation(id)
+      await processCancellation(id)
+
+      expect(mocks.report).toHaveBeenCalledTimes(1)
+      expect(mocks.report).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ step: 'cancel-exhausted' }))
     })
 
     it('cron retries a requested cancellation until Sefin accepts it', async () => {
@@ -515,14 +629,64 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
     })
   })
 
+  describe('updateRetryIntent', () => {
+    it.each([
+      ['invalid_request', MAY_HAVE_REACHED_SEFIN.dpsId, 'today' as const, brToday()],
+      ['missing_taker_data', MAY_HAVE_REACHED_SEFIN.dpsId, 'today' as const, '2026-10-01'],
+      ['missing_taker_data', null, 'service' as const, '2026-10-30'],
+      ['provider_error', null, 'today' as const, brToday()],
+      ['provider_error', MAY_HAVE_REACHED_SEFIN.dpsId, 'today' as const, '2026-10-01'],
+    ])('after %s with DPS %s and competence %s sets competence %s', async (errorCode, dpsId, competence, expected) => {
+      const id = await insertDoc(PAY_1, { status: 'failed', errorCode, dpsId, competenceDate: '2026-10-01' })
+
+      await updateRetryIntent(TENANT, id, { competence, emailRequested: true })
+
+      expect(await row(id)).toMatchObject({ competenceDate: expected, emailRequested: true })
+    })
+
+    it("does not touch another tenant's note", async () => {
+      const id = await insertDoc(PAY_1, { status: 'failed', errorCode: 'missing_taker_data' })
+
+      await expect(updateRetryIntent(TENANT_OTHER, id, { competence: 'today', emailRequested: true })).rejects.toMatchObject({
+        code: 'NFSE_NOT_FOUND',
+      })
+      expect((await row(id)).emailRequested).toBe(false)
+    })
+  })
+
   describe('runNfseCron', () => {
-    it('does not retry a row that needs a person', async () => {
-      const id = await insertDoc(PAY_1, { status: 'failed', errorCode: 'missing_taker_data', attemptCount: 1 })
+    it('runs cancellations before retries so a slow retry batch cannot starve them', async () => {
+      const deadline = Date.now() + 60_000
+      const cancelling = await insertDoc(PAY_1, {
+        status: 'issued',
+        accessKey: ACCESS_KEY,
+        cancelRequestedAt: new Date(),
+        cancelReason: 2,
+        cancelJustification: 'Pagamento estornado no FloraClin.',
+      })
+      await insertDoc(PAY_2)
+      const now = vi.spyOn(Date, 'now')
+      mocks.gateway.emit.mockImplementation(async () => {
+        now.mockReturnValue(deadline + 1)
+        return { accessKey: ACCESS_KEY, nfseXml: NFSE_XML }
+      })
+
+      try {
+        await runNfseCron(deadline)
+      } finally {
+        now.mockRestore()
+      }
+
+      expect((await row(cancelling)).status).toBe('cancelled')
+    })
+
+    it('hands a stale claim with no attempts left to a person', async () => {
+      const id = await insertDoc(PAY_1, { status: 'processing', claimedAt: new Date(Date.now() - 20 * 60_000), attemptCount: 5 })
 
       await runNfseCron(Date.now() + 60_000)
 
+      expect(await row(id)).toMatchObject({ status: 'failed', errorCode: 'provider_error', claimedAt: null })
       expect(mocks.gateway.emit).not.toHaveBeenCalled()
-      expect(await row(id)).toMatchObject({ status: 'failed', errorCode: 'missing_taker_data', attemptCount: 1 })
     })
 
     it('backfills an always-mode payment whose row was never written', async () => {

@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SectionTitle } from './section-title'
 import { CertificateCard } from './certificate-card'
 import {
   NfseApiError,
@@ -132,15 +133,6 @@ function toInput(form: FormState): NfseFiscalSettingsInput {
     emissionMode: form.emissionMode,
     emailPatient: form.emailPatient,
   }
-}
-
-function SectionTitle({ children }: { children: string }) {
-  return (
-    <div className="flex items-center gap-2 mb-1">
-      <h3 className="uppercase tracking-wider text-xs font-medium text-mid">{children}</h3>
-      <div className="flex-1 h-px bg-[#E8ECEF]" />
-    </div>
-  )
 }
 
 function FieldError({ message }: { message?: string }) {
@@ -376,25 +368,33 @@ function FiscalSettingsForm({
   )
 }
 
+function FiscalSettingsSection({ cnpj }: { cnpj: string }) {
+  const { data: settings, isLoading } = useNfseSettings()
+
+  if (isLoading || !settings) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2Icon className="h-5 w-5 animate-spin text-sage" />
+      </div>
+    )
+  }
+
+  return (
+    <FiscalSettingsForm
+      key={`${cnpj}-${settings.data?.configured ?? false}`}
+      data={settings.data}
+      suggestedCode={settings.suggestedMunicipalityCode}
+    />
+  )
+}
+
 export function NfseSettingsTab() {
   const { data: certificate } = useNfseCertificate()
-  const { data: settings, isLoading } = useNfseSettings()
 
   return (
     <div className="space-y-8">
       <CertificateCard />
-      {certificate &&
-        (isLoading || !settings ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2Icon className="h-5 w-5 animate-spin text-[#4A6B52]" />
-          </div>
-        ) : (
-          <FiscalSettingsForm
-            key={`${certificate.cnpj}-${settings.data?.configured ?? false}`}
-            data={settings.data}
-            suggestedCode={settings.suggestedMunicipalityCode}
-          />
-        ))}
+      {certificate && <FiscalSettingsSection cnpj={certificate.cnpj} />}
     </div>
   )
 }

@@ -179,13 +179,30 @@ describe('createNfseGateway', () => {
     const mismatches = [
       { taker: '11144477735' },
       { vServ: '150.51' },
-      { dCompet: '2026-10-29' },
+      { dCompet: '2026-10-28' },
       { desc: 'Outro serviço' },
     ]
     for (const mismatch of mismatches) {
       sefin.getNfseXml.mockResolvedValue(nfseXml(mismatch))
       await expect(gateway.emit(snapshot)).rejects.toMatchObject({ code: 'reconcile_ambiguous' })
     }
+  })
+
+  it('treats an E0014 whose note Sefin cannot find yet as transient', async () => {
+    sefin.emit.mockRejectedValue(duplicate())
+    sefin.findAccessKeyByDpsId.mockResolvedValue(null)
+    await expect(createNfseGateway(settings(), 'restricted').emit(snapshot)).rejects.toMatchObject({ code: 'provider_error' })
+  })
+
+  it('moves dCompet back to the BR day of dhEmi in the first minute after BR midnight', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-03T03:00:30Z'))
+    try {
+      await createNfseGateway(settings(), 'restricted').emit({ ...snapshot, competenceDate: '2026-11-03' })
+    } finally {
+      vi.useRealTimers()
+    }
+    expect(tag(sefin.emit.mock.calls[0][0], 'dCompet')).toBe('2026-11-02')
   })
 
   it('refuses to sign for another CNPJ', async () => {
@@ -209,6 +226,12 @@ describe('reconcile', () => {
     sefin.findAccessKeyByDpsId.mockResolvedValue(null)
     await expect(createNfseGateway(settings(), 'restricted').reconcile(snapshot)).resolves.toEqual({ kind: 'not_found' })
     expect(sefin.findAccessKeyByDpsId).toHaveBeenCalledWith('DPS355030826464354400015400800000000000000042')
+  })
+
+  it('adopts a note whose dCompet was moved back a day at emission', async () => {
+    sefin.findAccessKeyByDpsId.mockResolvedValue(ACCESS_KEY)
+    sefin.getNfseXml.mockResolvedValue(nfseXml({ dCompet: '2026-10-29' }))
+    await expect(createNfseGateway(settings(), 'restricted').reconcile(snapshot)).resolves.toMatchObject({ kind: 'issued' })
   })
 })
 

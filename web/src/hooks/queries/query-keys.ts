@@ -20,6 +20,8 @@ export const queryKeys = {
     all: ['nfse'] as const,
     certificate: ['nfse', 'certificate'] as const,
     settings: ['nfse', 'settings'] as const,
+    status: ['nfse', 'status'] as const,
+    preview: (paymentRecordIds: string[]) => ['nfse', 'preview', paymentRecordIds] as const,
   },
   financial: {
     all: ['financial'] as const,

@@ -9,6 +9,7 @@ import {
   signDps,
   type DpsInput,
 } from '@bullcode/fiscal/nfse'
+import { shiftBrYmd, toBrYmd } from '@/lib/dates'
 import { NFSE_APP_VERSION, NFSE_CLOCK_SKEW_MS } from './config'
 import type { NfseCancelReason, NfseEnvironment, NfseSettingsWithSecrets, NfseSnapshot } from './types'
 
@@ -80,13 +81,19 @@ function loadValidCertificate(settings: NfseSettingsWithSecrets): Certificate {
   return certificate
 }
 
+function competenceNotAfter(competence: string, dhEmi: Date): string {
+  const emissionDay = toBrYmd(dhEmi)
+  return competence > emissionDay ? emissionDay : competence
+}
+
 function toDpsInput(snapshot: NfseSnapshot, environment: NfseEnvironment): DpsInput {
   const { taker, service } = snapshot
   const isMeEpp = snapshot.simplesNacionalOption === 3
+  const dhEmi = new Date(Date.now() - NFSE_CLOCK_SKEW_MS)
   return {
     environment,
-    dhEmi: new Date(Date.now() - NFSE_CLOCK_SKEW_MS),
-    dCompet: snapshot.competenceDate,
+    dhEmi,
+    dCompet: competenceNotAfter(snapshot.competenceDate, dhEmi),
     serie: snapshot.series,
     nDPS: snapshot.dpsNumber,
     cLocEmi: snapshot.municipalityCode,
@@ -162,7 +169,9 @@ export function createNfseGateway(settings: NfseSettingsWithSecrets, environment
       const matches =
         found.takerDocument === snapshot.taker.cpf &&
         found.serviceValueCents === Math.round(snapshot.value * 100) &&
-        found.competenceDate === snapshot.competenceDate &&
+        // emit moves dCompet back one day when the backdated dhEmi falls before BR midnight
+        (found.competenceDate === snapshot.competenceDate ||
+          found.competenceDate === shiftBrYmd(snapshot.competenceDate, -1)) &&
         found.description === snapshot.description
       return matches ? { kind: 'issued', accessKey, nfseXml } : { kind: 'ambiguous' }
     } catch (error) {
@@ -188,6 +197,8 @@ export function createNfseGateway(settings: NfseSettingsWithSecrets, environment
         if (!hasCode(error, DPS_ALREADY_ISSUED)) throw toGatewayError(error)
         const existing = await reconcile(snapshot)
         if (existing.kind === 'issued') return { accessKey: existing.accessKey, nfseXml: existing.nfseXml }
+        // E0014 proves Sefin holds this DPS, so not_found is lookup lag
+        if (existing.kind === 'not_found') throw new NfseGatewayError('provider_error', UNAVAILABLE_MESSAGE)
         throw new NfseGatewayError('reconcile_ambiguous', AMBIGUOUS_MESSAGE)
       }
     },

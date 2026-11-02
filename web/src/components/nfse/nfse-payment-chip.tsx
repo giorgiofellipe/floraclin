@@ -13,6 +13,7 @@ import {
 import { useResendNfseEmail } from '@/hooks/queries/use-nfse-documents'
 import type { NfseDocumentSummary } from '@/lib/nfse/types'
 import { CancelNfseDialog } from './cancel-nfse-dialog'
+import { NFSE_STATUS_LABELS } from './status-labels'
 
 interface NfsePaymentChipProps {
   payment: { id: string; nfse?: NfseDocumentSummary | null }
@@ -22,13 +23,13 @@ interface NfsePaymentChipProps {
 }
 
 function chipOf(nfse: NfseDocumentSummary): { label: string; className: string } {
-  if (nfse.status === 'cancelled') return { label: 'Cancelada', className: 'bg-neutral-100 text-mid' }
-  if (nfse.status === 'failed') return { label: 'Falhou', className: 'bg-red-50 text-red-700' }
+  if (nfse.status === 'cancelled') return { label: NFSE_STATUS_LABELS.cancelled, className: 'bg-neutral-100 text-mid' }
+  if (nfse.status === 'failed') return { label: NFSE_STATUS_LABELS.failed, className: 'bg-red-50 text-red-700' }
   if (nfse.status === 'pending' || nfse.status === 'processing') {
-    return { label: 'Processando', className: 'bg-sky-50 text-sky-700' }
+    return { label: NFSE_STATUS_LABELS.processing, className: 'bg-sky-50 text-sky-700' }
   }
   if (nfse.cancelRequested) return { label: 'Cancelamento pendente', className: 'bg-amber-50 text-amber-700' }
-  return { label: 'Emitida', className: 'bg-emerald-50 text-emerald-700' }
+  return { label: NFSE_STATUS_LABELS.issued, className: 'bg-emerald-50 text-emerald-700' }
 }
 
 export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, onEmit }: NfsePaymentChipProps) {
@@ -37,8 +38,9 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
   const nfse = payment.nfse ?? null
   const active = nfse && nfse.status !== 'cancelled' ? nfse : null
   const canRetry = nfse?.status === 'failed' && nfse.retryable
-  const canDownload = nfse?.status === 'issued'
-  const canCancel = roleCanCancel && nfse?.status === 'issued' && !nfse.cancelRequested
+  const hasDocument = nfse?.status === 'issued' || nfse?.status === 'cancelled'
+  const canResend = nfse?.status === 'issued'
+  const canCancel = roleCanCancel && nfse?.status === 'issued'
   const canEmitNew = canEmit && !active
 
   async function handleResend(id: string) {
@@ -53,7 +55,7 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
   if (!nfse && !canEmitNew) return null
 
   const chip = nfse ? chipOf(nfse) : null
-  const hasMenu = canDownload || canCancel || canRetry || canEmitNew
+  const hasMenu = hasDocument || canCancel || canRetry || canEmitNew
 
   return (
     <>
@@ -81,7 +83,7 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
             }
           />
           <DropdownMenuContent align="end">
-            {canDownload && nfse && (
+            {hasDocument && nfse && (
               <>
                 <DropdownMenuItem onClick={() => window.open(`/api/nfse/${nfse.id}/pdf`, '_blank', 'noopener,noreferrer')}>
                   Ver PDF
@@ -89,10 +91,16 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
                 <DropdownMenuItem onClick={() => window.open(`/api/nfse/${nfse.id}/xml`, '_blank', 'noopener,noreferrer')}>
                   Baixar XML
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => handleResend(nfse.id)}>Reenviar email</DropdownMenuItem>
+                {canResend && (
+                  <DropdownMenuItem onClick={() => handleResend(nfse.id)}>Reenviar email</DropdownMenuItem>
+                )}
               </>
             )}
-            {canCancel && <DropdownMenuItem onClick={() => setCancelOpen(true)}>Cancelar NFS-e</DropdownMenuItem>}
+            {canCancel && (
+              <DropdownMenuItem onClick={() => setCancelOpen(true)}>
+                {nfse?.cancelRequested ? 'Tentar cancelar de novo' : 'Cancelar NFS-e'}
+              </DropdownMenuItem>
+            )}
             {canRetry && <DropdownMenuItem onClick={() => onEmit(payment.id)}>Tentar de novo</DropdownMenuItem>}
             {canEmitNew && <DropdownMenuItem onClick={() => onEmit(payment.id)}>Emitir NFS-e</DropdownMenuItem>}
           </DropdownMenuContent>

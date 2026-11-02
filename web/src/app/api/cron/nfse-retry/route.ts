@@ -7,7 +7,7 @@ const MONITOR_SLUG = 'nfse-retry'
 const MONITOR_SCHEDULE = '15 * * * *'
 
 export const maxDuration = 300
-const SOFT_DEADLINE_MS = 240_000
+const SOFT_DEADLINE_MS = 200_000
 
 export async function GET(request: Request) {
   const cronSecret = process.env.CRON_SECRET

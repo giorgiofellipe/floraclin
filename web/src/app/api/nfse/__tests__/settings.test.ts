@@ -80,7 +80,7 @@ describeIntegration('NFS-e certificate and settings API (integration, requires t
   })
 
   it('rejects an expired certificate', async () => {
-    const res = await putCertificate(upload({ validFrom: new Date('2020-01-01'), validTo: new Date('2021-01-01') }))
+    const res = await putCertificate(upload({ validFrom: new Date('2020-01-01T00:00:00Z'), validTo: new Date('2021-01-01T00:00:00Z') }))
 
     expect(res.status).toBe(400)
     expect((await res.json()).code).toBe('CERTIFICATE_EXPIRED')

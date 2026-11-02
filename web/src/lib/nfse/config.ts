@@ -4,6 +4,9 @@ export const NFSE_DPS_SERIES = '00800'
 export const NFSE_APP_VERSION = 'floraclin'
 export const NFSE_CLOCK_SKEW_MS = 60_000
 export const NFSE_MAX_PER_REQUEST = 20
+export const NFSE_CANCEL_JUSTIFICATION_MIN = 15
+export const NFSE_CANCEL_JUSTIFICATION_MAX = 255
+export const NFSE_PFX_MAX_BASE64_LENGTH = 65_536
 
 const ENVIRONMENTS: readonly NfseEnvironment[] = ['production', 'restricted']
 

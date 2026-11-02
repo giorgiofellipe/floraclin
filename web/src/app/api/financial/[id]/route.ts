@@ -20,6 +20,16 @@ export async function GET(
       return NextResponse.json({ error: 'Cobrança não encontrada' }, { status: 404 })
     }
 
+    if (ctx.role === 'practitioner') {
+      return NextResponse.json({
+        ...entry,
+        installments: entry.installments.map((inst) => ({
+          ...inst,
+          paymentRecords: inst.paymentRecords.map(({ nfse: _nfse, ...payment }) => payment),
+        })),
+      })
+    }
+
     return NextResponse.json(entry)
   } catch (error) {
     return handleApiError(error, request)

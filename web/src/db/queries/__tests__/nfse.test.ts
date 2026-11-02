@@ -157,26 +157,17 @@ describeIntegration('nfse queries (integration, requires test DB)', () => {
     expect(second).toHaveLength(1)
   })
 
-  it('auto claim skips rows that need a person; manual claim takes them', async () => {
-    const needsPerson = await insertDoc(PAYMENT_1, { status: 'failed', errorCode: 'missing_taker_data' })
-    expect(await claimDocument(needsPerson, 'auto')).toBeNull()
-    const claimed = await claimDocument(needsPerson, 'manual')
-    expect(claimed?.status).toBe('processing')
-    expect(claimed?.attemptCount).toBe(1)
-  })
-
-  it('auto claim takes a transient failure with attempts left and not one at attempt 5', async () => {
-    const retryable = await insertDoc(PAYMENT_1, { status: 'failed', errorCode: 'provider_error', attemptCount: 4 })
-    expect(await claimDocument(retryable, 'auto')).not.toBeNull()
-    await clearDocuments()
-    const exhausted = await insertDoc(PAYMENT_1, { status: 'failed', errorCode: 'provider_error', attemptCount: 5 })
-    expect(await claimDocument(exhausted, 'auto')).toBeNull()
-  })
-
-  it('no claim takes a final row', async () => {
-    const id = await insertDoc(PAYMENT_1, { status: 'failed', errorCode: 'reconcile_ambiguous' })
-    expect(await claimDocument(id, 'auto')).toBeNull()
-    expect(await claimDocument(id, 'manual')).toBeNull()
+  it.each([
+    ['provider_error', 4, true, true],
+    ['reconcile_unavailable', 4, true, true],
+    ['provider_error', 5, false, true],
+    ['missing_taker_data', 1, false, true],
+    ['reconcile_ambiguous', 1, false, false],
+    ['payment_reversed', 1, false, false],
+  ])('a failed row with %s at attempt %i: auto claim %s, manual claim %s', async (errorCode, attemptCount, auto, manual) => {
+    const id = await insertDoc(PAYMENT_1, { status: 'failed', errorCode, attemptCount })
+    expect(Boolean(await claimDocument(id, 'auto'))).toBe(auto)
+    if (!auto) expect(Boolean(await claimDocument(id, 'manual'))).toBe(manual)
   })
 
   it('stale processing at attempt 5 is not auto-claimed, a fresh claim is never taken twice', async () => {
@@ -189,12 +180,6 @@ describeIntegration('nfse queries (integration, requires test DB)', () => {
     await clearDocuments()
     const staleOk = await insertDoc(PAYMENT_1, { status: 'processing', claimedAt: stale, attemptCount: 1 })
     expect(await claimDocument(staleOk, 'auto')).not.toBeNull()
-  })
-
-  it('concurrent claims of one pending row succeed exactly once', async () => {
-    const id = await insertDoc(PAYMENT_1)
-    const results = await Promise.all([claimDocument(id, 'auto'), claimDocument(id, 'auto')])
-    expect(results.filter(Boolean)).toHaveLength(1)
   })
 
   it('getNfseSettings never returns certificate secrets', async () => {

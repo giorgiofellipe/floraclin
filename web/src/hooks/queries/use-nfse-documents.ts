@@ -13,6 +13,7 @@ export interface NfsePreviewPatient {
   paymentRecordIds: string[]
   total: number
   missing: NfseTakerField[]
+  current: Record<'cpf' | 'zip' | 'street' | 'number' | 'complement' | 'neighborhood' | 'city' | 'state', string> | null
   email: string | null
   canEditTaker: boolean
 }
@@ -43,7 +44,7 @@ function postJson(body: unknown): RequestInit {
 
 export function useNfseStatus() {
   return useQuery({
-    queryKey: [...queryKeys.nfse.all, 'status'] as const,
+    queryKey: queryKeys.nfse.status,
     queryFn: async () =>
       (
         await request<{ data: { configured: boolean; canCancel: boolean } }>(
@@ -58,7 +59,7 @@ export function useNfseStatus() {
 
 export function useNfsePreview(paymentRecordIds: string[], enabled = true) {
   return useQuery({
-    queryKey: [...queryKeys.nfse.all, 'preview', paymentRecordIds] as const,
+    queryKey: queryKeys.nfse.preview(paymentRecordIds),
     queryFn: async () =>
       (
         await request<{ data: NfsePreview }>(
@@ -76,7 +77,6 @@ function useInvalidateFinancial() {
   const queryClient = useQueryClient()
   return () => {
     queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
-    queryClient.invalidateQueries({ queryKey: ['financial', 'detail'] })
     queryClient.invalidateQueries({ queryKey: queryKeys.nfse.all })
   }
 }

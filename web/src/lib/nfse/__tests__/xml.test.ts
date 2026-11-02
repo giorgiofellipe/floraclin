@@ -1,11 +1,9 @@
-import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { readNfseNumber } from '../xml'
 
 describe('readNfseNumber', () => {
   it('reads the number from an authorized NFS-e', () => {
-    const xml = readFileSync(join(__dirname, 'fixtures', 'nfse-170303.xml'), 'utf8')
+    const xml = '<NFSe xmlns="http://www.sped.fazenda.gov.br/nfse" versao="1.00"><infNFSe Id="NFS1"><nNFSe>1</nNFSe></infNFSe></NFSe>'
     expect(readNfseNumber(xml)).toBe('1')
   })
 
