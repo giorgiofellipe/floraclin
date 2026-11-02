@@ -282,7 +282,7 @@ export function ProcedureDetailView({
           the previous window.print() shortcut here. */}
       <div className="flex items-center justify-between mb-6" data-print-hide>
         <button
-          onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
+          onClick={() => router.push(`/pacientes/${patientId}?tab=atendimentos`)}
           className="inline-flex items-center gap-1.5 text-[13px] text-mid hover:text-forest transition-colors"
         >
           <ArrowLeft className="size-3.5" />

@@ -2,37 +2,12 @@
 
 import { useState, useCallback } from 'react'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import Link from 'next/link'
-import {
-  ArrowLeft,
-  ArrowRight,
-  Plus,
-  CalendarPlus,
-  Receipt,
-  Phone,
-  Mail,
-  MapPin,
-  Cake,
-  MessageSquarePlus,
-  ExternalLink,
-  FileQuestion,
-} from 'lucide-react'
-import { buttonVariants } from '@/components/ui/button'
-import { cn, maskCPF } from '@/lib/utils'
-import { GENDER_LABELS } from '@/lib/constants'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
-import { PatientTabs, type PatientTabKey } from './patient-tabs'
+import { PatientHeader } from './patient-header'
+import { PatientSectionNav } from './patient-section-nav'
+import { resolveSection, type PatientSectionKey } from './patient-sections'
+import { PatientSummary } from './patient-summary'
+import { PatientAgendaSection } from './patient-agenda-section'
+import { PatientDiagramsSection } from './patient-diagrams-section'
 import { PatientDataTab } from './patient-data-tab'
 import { PatientAnamnesisTab } from './patient-anamnesis-tab'
 import { PatientProceduresTab } from './patient-procedures-tab'
@@ -45,52 +20,11 @@ import { PatientPackagesTab } from '@/components/packages/patient-packages-tab'
 import { PatientDocumentsTab } from '@/components/clinical-documents/patient-documents-tab'
 import { IssueDocumentDialog } from '@/components/clinical-documents/issue-document-dialog'
 import { RequestDocumentsDialog } from './request-documents-dialog'
-import { toast } from 'sonner'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { AppointmentForm } from '@/components/scheduling/appointment-form'
-import { FileText } from 'lucide-react'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
-import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
-import { ReadOnlyGuard, useReadOnly, useWriteGuard } from '@/components/layout/subscription-access'
-
-// ─── Helpers ────────────────────────────────────────────────────────
-
-function calculateAge(birthDate: string): number {
-  const today = new Date()
-  const birth = new Date(birthDate)
-  let age = today.getFullYear() - birth.getFullYear()
-  const monthDiff = today.getMonth() - birth.getMonth()
-  if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-    age--
-  }
-  return age
-}
-
-function formatBirthDate(birthDate: string): string {
-  const date = new Date(birthDate + 'T12:00:00')
-  return new Intl.DateTimeFormat('pt-BR', {
-    day: '2-digit',
-    month: 'long',
-    year: 'numeric',
-  }).format(date)
-}
-
-const VALID_TABS: PatientTabKey[] = [
-  'dados',
-  'anamnese',
-  'evolucoes',
-  'procedimentos',
-  'pacotes',
-  'documentos',
-  'fotos',
-  'termos',
-  'financeiro',
-  'timeline',
-]
-
-// ─── Component ──────────────────────────────────────────────────────
 
 interface PatientDetailContentProps {
   patient: Patient
@@ -111,304 +45,85 @@ export function PatientDetailContent({
   const pathname = usePathname()
   const searchParams = useSearchParams()
 
-  const readOnly = useReadOnly()
-  const guardWrite = useWriteGuard()
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [showAppointmentForm, setShowAppointmentForm] = useState(false)
-  const [openingWhatsapp, setOpeningWhatsapp] = useState(false)
   const [showIssueDocument, setShowIssueDocument] = useState(false)
   const [showRequestDocuments, setShowRequestDocuments] = useState(false)
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
 
-  const [tab, setTabState] = useState<PatientTabKey>(() => {
-    const candidate: PatientTabKey = VALID_TABS.includes(activeTab as PatientTabKey)
-      ? (activeTab as PatientTabKey)
-      : 'dados'
-    // RA-5: if the URL asks for 'evolucoes' but the viewer can't see it,
-    // fall back to 'dados' so we never render an invalid hidden tab.
-    if (candidate === 'evolucoes' && role !== 'owner' && role !== 'practitioner') {
-      return 'dados'
-    }
-    return candidate
-  })
+  const [section, setSectionState] = useState<PatientSectionKey>(() =>
+    resolveSection(activeTab, role),
+  )
 
-  const setTab = useCallback((newTab: PatientTabKey) => {
-    setTabState(newTab)
-    const params = new URLSearchParams(searchParams.toString())
-    if (newTab === 'dados') {
-      params.delete('tab')
-    } else {
-      params.set('tab', newTab)
-    }
-    const qs = params.toString()
-    router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
-  }, [router, pathname, searchParams])
-
-  const age = patient.birthDate ? calculateAge(patient.birthDate) : null
-  const normalizedPhone = tryNormalizeBrPhoneForWhatsApp(patient.phone)
-  const telHref = normalizedPhone.ok
-    ? `tel:+${normalizedPhone.phone}`
-    : `tel:${patient.phone.replace(/\D/g, '')}`
-  const waHref = toWaMeUrl(patient.phone)
-
-  async function handleOpenWhatsapp() {
-    setOpeningWhatsapp(true)
-    try {
-      const res = await fetch('/api/whatsapp/conversations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ patientId: patient.id }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ error: 'Erro ao abrir conversa' }))
-        throw new Error(err.error || 'Erro ao abrir conversa')
+  const setSection = useCallback(
+    (next: PatientSectionKey) => {
+      setSectionState(next)
+      const params = new URLSearchParams(searchParams.toString())
+      if (next === 'resumo') {
+        params.delete('tab')
+      } else {
+        params.set('tab', next)
       }
-      const data = await res.json()
-      router.push(`/whatsapp?conversa=${data.data.conversation.id}`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao abrir conversa')
-    } finally {
-      setOpeningWhatsapp(false)
-    }
-  }
+      const qs = params.toString()
+      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+    },
+    [router, pathname, searchParams],
+  )
 
-  function getInitials(name: string) {
-    const parts = name.trim().split(/\s+/)
-    if (parts.length === 1) return parts[0].charAt(0).toUpperCase()
-    return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase()
+  const patientRef = {
+    id: patient.id,
+    fullName: patient.fullName,
+    cpf: patient.cpf,
+    birthDate: patient.birthDate,
+    phone: patient.phone,
   }
 
   return (
-    <div className="space-y-5">
-      {/* Back link */}
-      <Link
-        href="/pacientes"
-        className="inline-flex items-center gap-1.5 text-[13px] text-mid hover:text-forest transition-colors"
-      >
-        <ArrowLeft className="size-3.5" />
-        Voltar para lista
-      </Link>
+    <div className="space-y-5 pb-20 md:pb-0">
+      <PatientHeader
+        patient={patient}
+        role={role}
+        hasActiveService={hasActiveService}
+        whatsappApiEnabled={whatsappApiEnabled}
+        onNewAppointment={() => setShowAppointmentForm(true)}
+        onNewCharge={() => setShowPaymentForm(true)}
+        onNewDocument={() => setShowIssueDocument(true)}
+        onRequestDocuments={() => setShowRequestDocuments(true)}
+      />
 
-      {/* Patient header card */}
-      <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden">
-        {/* Top accent line */}
-        <div className="h-[2px] bg-gradient-to-r from-forest via-sage to-mint" />
+      <div className="space-y-5 md:grid md:grid-cols-[200px_1fr] md:items-start md:gap-5 md:space-y-0">
+        <PatientSectionNav active={section} role={role} onChange={setSection} />
 
-        <div className="p-6 sm:p-8">
-          <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
-            {/* Left: avatar + info */}
-            <div className="flex items-start gap-5">
-              {/* Avatar */}
-              <div className="flex size-16 shrink-0 items-center justify-center rounded-full bg-sage/15 text-xl font-semibold text-sage">
-                {getInitials(patient.fullName)}
-              </div>
-
-              <div className="space-y-2.5 min-w-0">
-                {/* Name + gender */}
-                <div>
-                  <h1 className="text-[22px] font-semibold text-charcoal leading-tight truncate">
-                    {patient.fullName}
-                  </h1>
-                  {patient.gender && (
-                    <p className="text-[13px] text-mid mt-0.5">
-                      {GENDER_LABELS[patient.gender] ?? patient.gender}
-                    </p>
-                  )}
-                </div>
-
-                {/* Details row */}
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[13px] text-mid">
-                  {age !== null && patient.birthDate && (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Cake className="size-3.5 text-sage" />
-                      {age} anos
-                      <span className="text-mid/40">({formatBirthDate(patient.birthDate)})</span>
-                    </span>
-                  )}
-                  <Popover>
-                    <PopoverTrigger className="inline-flex items-center gap-1.5 cursor-pointer hover:text-forest transition-colors rounded-md px-1 -mx-1 py-0.5">
-                      <Phone className="size-3.5 text-sage" />
-                      {formatBrPhone(patient.phone)}
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-1.5" align="start">
-                      <div className="flex flex-col gap-0.5">
-                        <a
-                          href={telHref}
-                          className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                        >
-                          <Phone className="size-3.5 text-sage" />
-                          Ligar
-                        </a>
-                        {whatsappApiEnabled && normalizedPhone.ok && (
-                          <>
-                            <button
-                              type="button"
-                              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={guardWrite(handleOpenWhatsapp)}
-                              disabled={openingWhatsapp}
-                            >
-                              <MessageSquarePlus className="size-3.5 text-[#25D366]" />
-                              {openingWhatsapp ? 'Abrindo...' : 'Iniciar conversa'}
-                            </button>
-                            <button
-                              type="button"
-                              data-testid="request-documents"
-                              className="flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                              onClick={guardWrite(() => setShowRequestDocuments(true))}
-                            >
-                              <FileQuestion className="size-3.5 text-[#25D366]" />
-                              Solicitar documentos
-                            </button>
-                          </>
-                        )}
-                        {waHref && (
-                          <a
-                            href={waHref}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors"
-                          >
-                            <ExternalLink className="size-3.5 text-[#25D366]" />
-                            Abrir no WhatsApp Web
-                          </a>
-                        )}
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  {patient.email && (
-                    <a
-                      href={`mailto:${patient.email}`}
-                      className="inline-flex items-center gap-1.5 hover:text-forest transition-colors rounded-md px-1 -mx-1 py-0.5"
-                    >
-                      <Mail className="size-3.5 text-sage" />
-                      {patient.email}
-                    </a>
-                  )}
-                  {patient.cpf && (
-                    <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
-                      {maskCPF(patient.cpf)}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Right: actions */}
-            <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
-              <TooltipProvider delay={300}>
-                {readOnly ? (
-                  <ReadOnlyGuard label="Novo Agendamento">
-                    <Button
-                      variant="outline"
-                      size="icon-sm"
-                      className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                    >
-                      <CalendarPlus className="size-4" />
-                    </Button>
-                  </ReadOnlyGuard>
-                ) : (
-                  <Tooltip>
-                    <TooltipTrigger
-                      render={
-                        <Button
-                          variant="outline"
-                          size="icon-sm"
-                          className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                          onClick={() => setShowAppointmentForm(true)}
-                        >
-                          <CalendarPlus className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <TooltipContent side="bottom"><p>Novo Agendamento</p></TooltipContent>
-                  </Tooltip>
-                )}
-
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={guardWrite(() => setShowPaymentForm(true))}
-                      >
-                        <Receipt className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom"><p>Nova Cobrança</p></TooltipContent>
-                </Tooltip>
-
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        variant="outline"
-                        size="icon-sm"
-                        className="border-sage/20 text-sage hover:bg-sage/5 transition-colors size-10 rounded-xl"
-                        onClick={guardWrite(() => setShowIssueDocument(true))}
-                      >
-                        <FileText className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <TooltipContent side="bottom"><p>Novo Documento</p></TooltipContent>
-                </Tooltip>
-
-              </TooltipProvider>
-
-              <ReadOnlyGuard label={hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}>
-                <Link
-                  href={`/pacientes/${patient.id}/atendimento`}
-                  className={cn(
-                    buttonVariants({ size: 'default' }),
-                    'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md',
-                  )}
-                >
-                  {hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'}
-                  <ArrowRight className="size-4" />
-                </Link>
-              </ReadOnlyGuard>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tab navigation */}
-      <PatientTabs activeTab={tab} onTabChange={setTab} role={role} />
-
-      {/* Tab content */}
-      <div className="min-h-[400px]">
-        <div className="rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] p-6">
-          {tab === 'dados' && <PatientDataTab patient={patient} />}
-          {tab === 'anamnese' && <PatientAnamnesisTab patientId={patient.id} patientName={patient.fullName} patientPhone={patient.phone} whatsappApiEnabled={whatsappApiEnabled} />}
-          {tab === 'evolucoes' && (
+        <div className="min-h-[400px] min-w-0 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] md:p-6">
+          {section === 'resumo' && (
+            <PatientSummary patientId={patient.id} role={role} onNavigate={setSection} />
+          )}
+          {section === 'atendimentos' && <PatientProceduresTab patientId={patient.id} />}
+          {section === 'diagramas' && <PatientDiagramsSection patientId={patient.id} role={role} />}
+          {section === 'evolucoes' && (
             <PatientEvolutionsTab
               patientId={patient.id}
               canEdit={role === 'owner' || role === 'practitioner'}
             />
           )}
-          {tab === 'procedimentos' && (
-            <PatientProceduresTab patientId={patient.id} />
-          )}
-          {tab === 'pacotes' && (
-            <PatientPackagesTab patientId={patient.id} patientName={patient.fullName} />
-          )}
-          {tab === 'documentos' && (
-            <PatientDocumentsTab
-              patient={{
-                id: patient.id,
-                fullName: patient.fullName,
-                cpf: patient.cpf,
-                birthDate: patient.birthDate,
-                phone: patient.phone,
-              }}
+          {section === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
+          {section === 'anamnese' && (
+            <PatientAnamnesisTab
+              patientId={patient.id}
+              patientName={patient.fullName}
+              patientPhone={patient.phone}
+              whatsappApiEnabled={whatsappApiEnabled}
             />
           )}
-          {tab === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
-          {tab === 'termos' && (
+          {section === 'agenda' && <PatientAgendaSection patientId={patient.id} />}
+          {section === 'financeiro' && (
+            <PatientFinancialTab patientId={patient.id} patientName={patient.fullName} />
+          )}
+          {section === 'pacotes' && (
+            <PatientPackagesTab patientId={patient.id} patientName={patient.fullName} />
+          )}
+          {section === 'termos' && (
             <PatientConsentTab
               patientId={patient.id}
               patientName={patient.fullName}
@@ -417,15 +132,9 @@ export function PatientDetailContent({
               whatsappApiEnabled={whatsappApiEnabled}
             />
           )}
-          {tab === 'financeiro' && (
-            <PatientFinancialTab
-              patientId={patient.id}
-              patientName={patient.fullName}
-            />
-          )}
-          {tab === 'timeline' && (
-            <PatientTimelineTab patientId={patient.id} />
-          )}
+          {section === 'documentos' && <PatientDocumentsTab patient={patientRef} />}
+          {section === 'dados' && <PatientDataTab patient={patient} />}
+          {section === 'historico' && <PatientTimelineTab patientId={patient.id} />}
         </div>
       </div>
 
@@ -435,7 +144,7 @@ export function PatientDetailContent({
         defaultPatient={patient}
         onSuccess={() => {
           setShowPaymentForm(false)
-          setTab('financeiro')
+          setSection('financeiro')
         }}
       />
 
@@ -445,11 +154,8 @@ export function PatientDetailContent({
         practitioners={practitioners}
         procedureTypes={procedureTypes}
         defaultPatient={patient}
-        onSaved={() => {
-          setShowAppointmentForm(false)
-        }}
+        onSaved={() => setShowAppointmentForm(false)}
       />
-
 
       <RequestDocumentsDialog
         patientId={patient.id}
@@ -461,13 +167,7 @@ export function PatientDetailContent({
       <IssueDocumentDialog
         open={showIssueDocument}
         onOpenChange={setShowIssueDocument}
-        patient={{
-          id: patient.id,
-          fullName: patient.fullName,
-          cpf: patient.cpf,
-          birthDate: patient.birthDate,
-          phone: patient.phone,
-        }}
+        patient={patientRef}
       />
     </div>
   )

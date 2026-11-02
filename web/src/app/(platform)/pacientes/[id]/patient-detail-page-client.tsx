@@ -6,7 +6,8 @@ import { usePatient } from '@/hooks/queries/use-patients'
 import { useProcedures } from '@/hooks/queries/use-procedures'
 import { PatientDetailContent } from '@/components/patients/patient-detail-content'
 import PatientDetailLoading from './loading'
-import type { Role } from '@/types'
+import { isOpenStatus } from '@/lib/procedure-status'
+import type { ProcedureStatus, Role } from '@/types'
 
 interface PatientDetailPageClientProps {
   patientId: string
@@ -29,12 +30,8 @@ export function PatientDetailPageClient({ patientId, whatsappApiEnabled = false,
     notFound()
   }
 
-  // Check if there's an active (non-executed) procedure — drafts count too,
-  // since the wizard resumes them at the planning step.
-  const hasActiveService = proceduresResult?.some(
-    (p: { status: string }) =>
-      p.status === 'draft' || p.status === 'planned' || p.status === 'approved'
-  ) ?? false
+  const hasActiveService =
+    proceduresResult?.some((p: { status: ProcedureStatus }) => isOpenStatus(p.status)) ?? false
 
   return (
     <PatientDetailContent
