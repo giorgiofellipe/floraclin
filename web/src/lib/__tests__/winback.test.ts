@@ -42,6 +42,7 @@ describe('getWinbackOffer', () => {
 
   it('keeps the promotion code id out of what the client gets', () => {
     const validated = {
+      kind: 'winback' as const,
       promotionCodeId: 'promo_123',
       endsAt: '2026-11-04T02:59:59.999Z',
       label: '30% de desconto nos 3 primeiros meses',

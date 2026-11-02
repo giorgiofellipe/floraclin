@@ -343,6 +343,7 @@ describe('deliverLifecycleMessage', () => {
   describe('win-back offer on WhatsApp', () => {
     const winback = LIFECYCLE_MESSAGES.find((m) => m.key === 'trial_winback')!
     const offer = {
+      kind: 'winback' as const,
       promotionCodeId: 'promo_1',
       label: '30% de desconto nos 3 primeiros meses',
       endsAt: '2026-11-07T02:59:59.999Z',

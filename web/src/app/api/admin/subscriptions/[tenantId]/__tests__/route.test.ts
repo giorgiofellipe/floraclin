@@ -9,6 +9,7 @@ const m = vi.hoisted(() => ({
   createAuditLog: vi.fn(),
   getStripeSubscriptionState: vi.fn(),
   report: vi.fn(),
+  getUserFullName: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ requirePlatformAdmin: vi.fn(async () => ({ userId: 'admin-1' })) }))
@@ -18,6 +19,7 @@ vi.mock('@/db/queries/subscriptions', () => ({
   updateSubscriptionPeriod: m.updateSubscriptionPeriod,
   updateSubscriptionPlan: m.updateSubscriptionPlan,
   updateSubscriptionStatus: m.updateSubscriptionStatus,
+  getUserFullName: m.getUserFullName,
 }))
 vi.mock('@/db/queries/whatsapp-credits', () => ({ getCreditUsage: vi.fn() }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.createAuditLog }))
@@ -29,7 +31,7 @@ vi.mock('@/lib/api-error', () => ({
   },
 }))
 
-import { PATCH } from '../route'
+import { GET, PATCH } from '../route'
 
 const PAST = new Date(Date.now() - 3 * 86_400_000)
 const FUTURE = new Date(Date.now() + 30 * 86_400_000)
@@ -273,5 +275,28 @@ describe('PATCH /api/admin/subscriptions/[tenantId]', () => {
     m.getSubscription.mockResolvedValue(row({ status: 'active', source: 'gift' }))
     const res = await patch({ status: 'expired' })
     expect(res.status).toBe(200)
+  })
+})
+
+describe('GET /api/admin/subscriptions/[tenantId] feedback discount', () => {
+  const get = () =>
+    GET(new Request('http://x/api/admin/subscriptions/t1'), { params: Promise.resolve({ tenantId: 't1' }) })
+
+  it('says who flagged the feedback discount and when', async () => {
+    const at = new Date('2026-10-29T15:00:00.000Z')
+    m.getSubscription.mockResolvedValue(
+      row({ source: 'trial', feedbackDiscountGrantedAt: at, feedbackDiscountGrantedBy: 'admin-0' }),
+    )
+    m.getUserFullName.mockResolvedValue('Admin Zero')
+    const { data } = await (await get()).json()
+    expect(m.getUserFullName).toHaveBeenCalledWith('admin-0')
+    expect(data.feedbackDiscount).toEqual({ grantedAt: at.toISOString(), grantedBy: 'admin-0', grantedByName: 'Admin Zero' })
+  })
+
+  it('reports no feedback discount, without a user lookup, when unflagged', async () => {
+    m.getSubscription.mockResolvedValue(row({ source: 'trial', feedbackDiscountGrantedAt: null, feedbackDiscountGrantedBy: null }))
+    const { data } = await (await get()).json()
+    expect(data.feedbackDiscount).toBeNull()
+    expect(m.getUserFullName).not.toHaveBeenCalled()
   })
 })

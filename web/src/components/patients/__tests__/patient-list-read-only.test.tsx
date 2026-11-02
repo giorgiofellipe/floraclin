@@ -21,7 +21,7 @@ const EMPTY = { data: [], total: 0, page: 1, limit: 20, totalPages: 0 }
 
 function renderList(readOnly: boolean) {
   return render(
-    <SubscriptionAccessProvider readOnly={readOnly} reason={readOnly ? 'trial' : null} tenantId="t1" canSubscribe plans={[]} winback={null}>
+    <SubscriptionAccessProvider readOnly={readOnly} reason={readOnly ? 'trial' : null} tenantId="t1" canSubscribe plans={[]}>
       <PatientList result={EMPTY as never} />
     </SubscriptionAccessProvider>,
   )

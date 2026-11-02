@@ -2,6 +2,7 @@
 
 import { useId, useState } from 'react'
 import { CheckIcon, Loader2, LockKeyholeIcon, RefreshCwIcon, ShieldCheckIcon } from 'lucide-react'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -9,10 +10,12 @@ import { formatBrDayMonth } from '@/lib/dates'
 import type { TrialRecap } from '@/lib/trial-recap'
 import { durationPhrase, winbackPriceCents, type PublicWinbackOffer } from '@/lib/winback'
 import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/offer-copy'
+import { feedbackOfferHeadline, type PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import type { PaywallPlan } from '@/components/layout/subscription-access'
+import { DISCOUNT_UNAVAILABLE_CODE } from '@/lib/billing-discount-copy'
 
-/** What the plan cards and the entry price read: the win-back or the referral offer. */
-export type EntryOffer = PublicWinbackOffer | PublicReferralOffer
+/** What the plan cards and the entry price read: the feedback, win-back or referral offer. */
+export type EntryOffer = PublicFeedbackOffer | PublicWinbackOffer | PublicReferralOffer
 
 /** The badge on the highlighted plan. A recommendation, not a popularity
  *  claim: we only say "most chosen" once the numbers say so. */
@@ -64,6 +67,7 @@ function offerTermsLine(plan: PaywallPlan, offer: EntryOffer): string {
  *  trial-ending modal. Errors land in a toast; the button re-enables. */
 export function usePlanCheckout() {
   const [pending, setPending] = useState<string | null>(null)
+  const router = useRouter()
 
   async function go(key: string, url: string, body: unknown, fallbackError: string) {
     setPending(key)
@@ -74,7 +78,10 @@ export function usePlanCheckout() {
         body: JSON.stringify(body),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error || fallbackError)
+      if (!res.ok) {
+        if (data.code === DISCOUNT_UNAVAILABLE_CODE) router.refresh()
+        throw new Error(data.error || fallbackError)
+      }
       if (data.url) {
         window.location.href = data.url
         return
@@ -255,8 +262,7 @@ export function TrialRecapTiles({ recap, title }: { recap: TrialRecap | null; ti
   )
 }
 
-export function WinbackBadge({ offer }: { offer: PublicWinbackOffer | null }) {
-  if (!offer) return null
+function WinbackBadge({ offer }: { offer: PublicWinbackOffer }) {
   return (
     <p
       data-testid="winback-offer"
@@ -268,17 +274,24 @@ export function WinbackBadge({ offer }: { offer: PublicWinbackOffer | null }) {
   )
 }
 
-export function ReferralBadge({ offer }: { offer: PublicReferralOffer | null }) {
-  if (!offer) return null
+/** A discount applied at checkout without a code: its headline, as a pill. */
+function AutoAppliedOfferPill({ testId, headline }: { testId: string; headline: string }) {
   return (
     <p
-      data-testid="referral-offer"
+      data-testid={testId}
       className="mx-auto inline-flex max-w-full flex-wrap items-center justify-center gap-x-1.5 rounded-full border border-sage/40 bg-white px-4 py-1.5 text-center text-sm text-forest"
     >
-      <span className="font-semibold">{referralOfferHeadline(offer)}</span>{' '}
+      <span className="font-semibold">{headline}</span>{' '}
       <span>Aplicado automaticamente no pagamento.</span>
     </p>
   )
+}
+
+export function OfferBadge({ offer }: { offer: EntryOffer | null }) {
+  if (offer?.kind === 'feedback') return <AutoAppliedOfferPill testId="feedback-offer" headline={feedbackOfferHeadline(offer)} />
+  if (offer?.kind === 'winback') return <WinbackBadge offer={offer} />
+  if (offer?.kind === 'referral') return <AutoAppliedOfferPill testId="referral-offer" headline={referralOfferHeadline(offer)} />
+  return null
 }
 
 /** Risk reducers. Each is true today: cancellation is self-serve in

@@ -26,6 +26,7 @@ export interface WinbackOffer {
 
 /** Validated against Stripe: the coupon's terms and the plans it covers. */
 export interface ValidatedWinbackOffer extends WinbackOffer {
+  kind: 'winback'
   label: string
   percentOff: number | null
   amountOffCents: number | null
@@ -45,7 +46,7 @@ export interface WinbackRow extends SubscriptionAccessRow {
   tenantId?: string
   firstPaidAt?: Date | string | null
   /** Checked against Stripe's first-time-customer rule when present (see
-   *  getValidatedWinbackOffer); a `trial` row is not expected to have one. */
+   *  getValidatedWinbackOffer). */
   stripeCustomerId?: string | null
 }
 
@@ -109,6 +110,7 @@ export function winbackOfferLabel(
 export function publicWinbackOffer(offer: ValidatedWinbackOffer | null): PublicWinbackOffer | null {
   if (!offer) return null
   return {
+    kind: 'winback',
     label: offer.label,
     endsAt: offer.endsAt,
     percentOff: offer.percentOff,

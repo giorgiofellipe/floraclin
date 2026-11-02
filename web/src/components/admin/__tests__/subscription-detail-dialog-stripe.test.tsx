@@ -19,6 +19,7 @@ vi.mock('@/hooks/mutations/use-admin-subscription-mutations', () => ({
   useUpdateSubscription: () => ({ mutateAsync, isPending: false }),
   useGiftSubscription: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useExtendTrial: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useSetFeedbackDiscount: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('../tenant-referrals-panel', () => ({ TenantReferralsPanel: () => null }))

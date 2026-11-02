@@ -10,7 +10,7 @@ vi.mock('@/db/queries/referrals', () => ({
 vi.mock('@/lib/stripe', () => ({ checkPromotionCode: vi.fn(), customerHasPriorPurchase: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 
-import { chooseCheckoutDiscount, getValidatedReferralOffer, publicReferralOffer, type ReferralOfferDeps, type ReferralOfferRow } from '../offer'
+import { getValidatedReferralOffer, publicReferralOffer, type ReferralOfferDeps, type ReferralOfferRow } from '../offer'
 import type { PromotionCodeTerms } from '@/lib/stripe'
 
 const NOW = new Date('2026-10-21T13:00:00.000Z')
@@ -181,18 +181,5 @@ describe('publicReferralOffer', () => {
     expect(pub).not.toHaveProperty('referralId')
     expect(pub?.referrerName).toBe('Clínica Bela')
     expect(publicReferralOffer(null)).toBeNull()
-  })
-})
-
-describe('chooseCheckoutDiscount', () => {
-  const w = { promotionCodeId: 'w' }
-  const r = { promotionCodeId: 'r' }
-  it.each([
-    [w, null, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, r, { kind: 'referral', promotionCodeId: 'r' }],
-    [w, r, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, null, { kind: null, promotionCodeId: null }],
-  ])('%j + %j', (winback, referral, expected) => {
-    expect(chooseCheckoutDiscount(winback, referral)).toEqual(expected)
   })
 })

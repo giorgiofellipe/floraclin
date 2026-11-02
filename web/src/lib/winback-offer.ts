@@ -38,10 +38,8 @@ const STRIPE_DEPS: WinbackDeps = {
  * `applies_to` covers and whose price meets the code's `minimum_amount`,
  * with the label and terms taken from the coupon. With
  * `first_time_transaction`, a clinic whose Stripe customer has ever paid or
- * subscribed gets nothing. Our row rules that out for free: checkout makes a
- * fresh Stripe customer each time and only a completed one is stored, which
- * also moves the row off `trial`. Stripe is asked only if a `trial` row ever
- * carries a customer id (defence in depth; not expected today). Only for a
+ * subscribed gets nothing: checkout stores the customer before the first
+ * session, so Stripe is asked whenever the row carries one. Only for a
  * clinic that used the trial (a patient and an appointment, not deleted):
  * the discount is there to bring back clinics that got going, so a clinic
  * that never started sees full prices everywhere, checkout included.
@@ -66,25 +64,12 @@ export async function getValidatedWinbackOffer(
   const customerId = row?.stripeCustomerId
   if (terms.firstTimeTransaction && customerId && (await deps.priorPurchase(customerId, now))) return null
 
-  const minimum = terms.minimumAmountCents
-  const restrictTo = terms.productIds
-  const covered = (
-    await Promise.all(
-      sellable.map(async (plan) => {
-        if (!restrictTo && minimum == null) return plan
-        const info = await deps.priceInfo(plan.stripePriceId, now)
-        if (!info) return null
-        // Stripe checks the minimum against its price before the discount; a
-        // price with no fixed BRL amount cannot be shown to meet it.
-        if (minimum != null && (info.unitAmountCents == null || info.unitAmountCents < minimum)) return null
-        return !restrictTo || restrictTo.includes(info.productId) ? plan : null
-      }),
-    )
-  ).filter((p): p is (typeof sellable)[number] => p !== null)
+  const covered = await plansCoveredBy(terms, sellable, now, deps.priceInfo)
   if (covered.length === 0) return null
 
   return {
     ...offer,
+    kind: 'winback',
     label: winbackOfferLabel(
       terms,
       covered.map((p) => p.name),
@@ -96,4 +81,32 @@ export async function getValidatedWinbackOffer(
     durationInMonths: terms.durationInMonths,
     planSlugs: covered.map((p) => p.slug),
   }
+}
+
+/**
+ * The plans a promotion code would discount at checkout: those whose Stripe
+ * product the coupon's `applies_to` covers and whose price meets the code's
+ * `minimum_amount`. A plan whose price lookup failed counts as not covered.
+ * Shared by every offer that attaches a promotion code (win-back, feedback).
+ */
+export async function plansCoveredBy<P extends { stripePriceId: string }>(
+  terms: PromotionCodeTerms,
+  sellable: P[],
+  now: Date,
+  priceInfo: WinbackDeps['priceInfo'],
+): Promise<P[]> {
+  const minimum = terms.minimumAmountCents
+  const restrictTo = terms.productIds
+  const covers = await Promise.all(
+    sellable.map(async (plan): Promise<boolean> => {
+      if (!restrictTo && minimum == null) return true
+      const info = await priceInfo(plan.stripePriceId, now)
+      if (!info) return false
+      // Stripe checks the minimum against its price before the discount; a
+      // price with no fixed BRL amount cannot be shown to meet it.
+      if (minimum != null && (info.unitAmountCents == null || info.unitAmountCents < minimum)) return false
+      return !restrictTo || restrictTo.includes(info.productId)
+    }),
+  )
+  return sellable.filter((_, i) => covers[i])
 }

@@ -5,6 +5,7 @@ import { tenantSubscriptions, plans } from '@/db/schema'
 import { and, eq } from 'drizzle-orm'
 import { constructWebhookEvent, retrieveSubscription, subscriptionPeriod } from '@/lib/stripe'
 import {
+  clearCheckoutSessionId,
   getPlanBySlug,
   updateSubscriptionPlan,
   updateSubscriptionPeriod,
@@ -15,6 +16,7 @@ import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { scheduleSubscribeConversion } from '@/lib/meta/platform-conversions'
 import { handleReferralStripeEvent } from '@/lib/referral/events'
+import { cancelDuplicateSubscription } from '@/lib/duplicate-subscription'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,6 +45,9 @@ export async function POST(request: NextRequest) {
     switch (event.type) {
       case 'checkout.session.completed':
         await handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session, new Date(event.created * 1000))
+        break
+      case 'checkout.session.expired':
+        await forgetCheckoutSession(event.data.object as Stripe.Checkout.Session)
         break
       case 'invoice.paid':
         await handleInvoicePaid(event.data.object as Stripe.Invoice)
@@ -76,7 +81,13 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ received: true })
 }
 
+async function forgetCheckoutSession(session: Stripe.Checkout.Session) {
+  const tenantId = session.metadata?.tenantId
+  if (tenantId) await clearCheckoutSessionId(tenantId, session.id)
+}
+
 async function handleCheckoutCompleted(session: Stripe.Checkout.Session, completedAt: Date) {
+  await forgetCheckoutSession(session)
   const tenantId = session.metadata?.tenantId
   const planSlug = session.metadata?.planSlug
   if (!tenantId || !planSlug) return
@@ -114,6 +125,7 @@ async function handleCheckoutCompleted(session: Stripe.Checkout.Session, complet
     // their trial lapsed would otherwise keep the expired boundary until that
     // event happens to arrive, and read as lapsed in the meantime.
     period = subscriptionPeriod(current)
+    if (await cancelDuplicateSubscription(tenantId, stripeSubscriptionId)) return
   }
 
   await updateSubscriptionPlan(tenantId, plan.id, 'stripe', {
