@@ -2,6 +2,7 @@ import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { DiagramPointRecord, DiagramWithPoints } from '@/db/queries/face-diagrams'
 import { ProcedureForm } from '../procedure-form'
 
 const mockCreate = vi.fn(async () => ({ data: { id: 'created-proc-id' } }))
@@ -17,7 +18,7 @@ vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
 }))
 
-function point(id: string, x: number) {
+function point(id: string, x: number): DiagramPointRecord {
   return {
     id,
     x: String(x),
@@ -29,18 +30,18 @@ function point(id: string, x: number) {
     technique: null,
     depth: null,
     notes: null,
+    sortOrder: 0,
   }
 }
 
-const sourceDiagram = {
+const sourceDiagram: { groupId: string; views: DiagramWithPoints[] } = {
   groupId: 'group-1',
   views: [
     { id: 'd1', viewType: 'front', points: [point('a', 10)] },
     { id: 'd2', viewType: 'left_profile', points: [point('b', 20)] },
     { id: 'd3', viewType: 'right_profile', points: [point('c', 30)] },
   ],
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-} as any
+}
 
 describe('ProcedureForm with a source quotation diagram', () => {
   beforeEach(() => {

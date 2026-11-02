@@ -30,8 +30,9 @@ export function useConsentHistory(patientId: string | undefined) {
 
 export function usePendingConsents(patientId: string) {
   return useQuery<PendingConsentItem[]>({
-    queryKey: ['consent', 'pending', patientId],
+    queryKey: queryKeys.consent.pending(patientId),
     queryFn: async () => (await fetchJson(`/api/consent/pending/${patientId}`)).data,
     enabled: !!patientId,
+    refetchOnWindowFocus: true,
   })
 }

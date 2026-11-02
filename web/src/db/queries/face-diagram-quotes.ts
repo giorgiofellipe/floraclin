@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { faceDiagramQuotes } from '@/db/schema'
-import { and, desc, eq } from 'drizzle-orm'
+import { and, desc, eq, isNull, lt, or, sql } from 'drizzle-orm'
 import type { QuotationLine } from '@/validations/face-diagram-group'
 
 export interface DiagramQuote {
@@ -99,4 +99,40 @@ export async function markQuoteWhatsapp(
       whatsappMessageId: input.whatsappMessageId,
     })
     .where(and(eq(faceDiagramQuotes.tenantId, tenantId), eq(faceDiagramQuotes.id, quoteId)))
+}
+
+/**
+ * Claims the quote for a WhatsApp send so concurrent requests cannot both send it.
+ * A claim left by a crashed request expires after two minutes.
+ */
+export async function claimQuoteWhatsapp(tenantId: string, quoteId: string): Promise<boolean> {
+  const claimed = await db
+    .update(faceDiagramQuotes)
+    .set({ whatsappRequestedAt: sql`now()` })
+    .where(
+      and(
+        eq(faceDiagramQuotes.tenantId, tenantId),
+        eq(faceDiagramQuotes.id, quoteId),
+        isNull(faceDiagramQuotes.whatsappStatus),
+        or(
+          isNull(faceDiagramQuotes.whatsappRequestedAt),
+          lt(faceDiagramQuotes.whatsappRequestedAt, sql`now() - interval '2 minutes'`),
+        ),
+      ),
+    )
+    .returning({ id: faceDiagramQuotes.id })
+  return claimed.length > 0
+}
+
+export async function releaseQuoteWhatsappClaim(tenantId: string, quoteId: string): Promise<void> {
+  await db
+    .update(faceDiagramQuotes)
+    .set({ whatsappRequestedAt: null })
+    .where(
+      and(
+        eq(faceDiagramQuotes.tenantId, tenantId),
+        eq(faceDiagramQuotes.id, quoteId),
+        isNull(faceDiagramQuotes.whatsappStatus),
+      ),
+    )
 }

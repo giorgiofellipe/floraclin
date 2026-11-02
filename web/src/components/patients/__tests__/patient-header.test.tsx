@@ -3,6 +3,7 @@ import { screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { renderWithProviders } from '@/tests/test-utils'
 import { toWaMeUrl } from '@/lib/phone'
 import type { Patient } from '@/db/queries/patients'
+import { SubscriptionAccessProvider } from '@/components/layout/subscription-access'
 import { PatientHeader } from '../patient-header'
 
 const push = vi.fn()
@@ -152,15 +153,20 @@ describe('PatientHeader', () => {
 })
 
 describe('PatientHeader phone Mais menu', () => {
-  async function openMais(props: Partial<React.ComponentProps<typeof PatientHeader>> = {}) {
+  async function openMais(
+    props: Partial<React.ComponentProps<typeof PatientHeader>> = {},
+    { readOnly = false } = {},
+  ) {
     renderWithProviders(
-      <PatientHeader
-        patient={makePatient()}
-        role="practitioner"
-        hasActiveService={false}
-        {...callbacks}
-        {...props}
-      />,
+      <SubscriptionAccessProvider readOnly={readOnly} reason={readOnly ? 'trial' : null} tenantId="t1" canSubscribe plans={[]}>
+        <PatientHeader
+          patient={makePatient()}
+          role="practitioner"
+          hasActiveService={false}
+          {...callbacks}
+          {...props}
+        />
+      </SubscriptionAccessProvider>,
     )
     const mobile = within(screen.getByTestId('patient-header-mobile'))
     fireEvent.click(mobile.getByRole('button', { name: 'Mais' }))
@@ -187,6 +193,12 @@ describe('PatientHeader phone Mais menu', () => {
 
     expect(screen.queryByRole('menuitem', { name: /Novo diagrama/ })).toBeNull()
     expect(screen.queryByRole('menuitem', { name: /Email/ })).toBeNull()
+  })
+
+  it('hides Novo diagrama while the subscription is read-only', async () => {
+    await openMais({}, { readOnly: true })
+
+    expect(screen.queryByRole('menuitem', { name: /Novo diagrama/ })).toBeNull()
   })
 
   it('opens the document flow from Novo documento', async () => {

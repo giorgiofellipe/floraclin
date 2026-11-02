@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { PgDialect } from 'drizzle-orm/pg-core'
+import type { SQL } from 'drizzle-orm'
 
 /**
  * Approving with unsigned terms must store the required consent set and leave
@@ -8,6 +10,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const { state, auditMock } = vi.hoisted(() => ({
   state: {
     executeResponses: [] as Array<{ rows: Array<Record<string, unknown>> }>,
+    executed: [] as unknown[],
     updates: [] as Array<{ table: string; set: Record<string, unknown> }>,
   },
   auditMock: vi.fn(async () => undefined),
@@ -24,7 +27,10 @@ vi.mock('@/db/schema', () => ({
 }))
 vi.mock('@/db/client', () => {
   const tx = {
-    execute: () => Promise.resolve(state.executeResponses.shift() ?? { rows: [] }),
+    execute: (query: unknown) => {
+      state.executed.push(query)
+      return Promise.resolve(state.executeResponses.shift() ?? { rows: [] })
+    },
     insert: () => ({
       values: () => ({
         returning: () => Promise.resolve([{ id: 'x' }]),
@@ -83,6 +89,7 @@ function queueReads(signedTypes: string[]) {
 
 beforeEach(() => {
   state.executeResponses = []
+  state.executed = []
   state.updates = []
   auditMock.mockClear()
 })
@@ -101,6 +108,18 @@ describe('finalizeEncounter required consents', () => {
       entityId: draftId,
       changes: { pendingSignatures: { old: null, new: ['botox', 'service_contract'] } },
     }), expect.anything())
+  })
+
+  it('only counts signatures on templates of the same tenant', async () => {
+    // Regression: an acceptance pointing at another clinic's template satisfied the requirement.
+    queueReads([])
+
+    await finalizeEncounter(input)
+
+    const signedQuery = new PgDialect().sqlToQuery(state.executed[3] as SQL)
+    const templateTenant = signedQuery.sql.match(/t\.tenant_id = \$(\d+)/)
+    expect(templateTenant).not.toBeNull()
+    expect(signedQuery.params[Number(templateTenant![1]) - 1]).toBe(input.tenantId)
   })
 
   it('writes no pending audit row when every required consent is signed', async () => {

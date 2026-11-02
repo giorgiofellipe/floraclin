@@ -22,6 +22,7 @@ export function useCreateProcedure() {
     mutationFn: (data: Record<string, unknown>) => mutateJson('/api/procedures', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
@@ -47,6 +48,7 @@ export function useCancelProcedure() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })

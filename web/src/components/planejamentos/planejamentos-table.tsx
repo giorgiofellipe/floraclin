@@ -54,8 +54,7 @@ function getDaysSinceLastContact(row: OpenPlanejamento): number {
   return Math.max(0, differenceInDays(today, ref))
 }
 
-function formatPlannedDate(value: string | null): string {
-  if (!value) return '—'
+function formatPlannedDate(value: string): string {
   // performedAt is a timestamptz instant — display BR-local date
   try {
     const d = new Date(value)

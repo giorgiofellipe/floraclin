@@ -7,6 +7,7 @@ import { listProcedures, createProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
 import {
   DiagramGroupLockedError,
+  DiagramGroupNotFoundError,
   ensurePlanningGroup,
   linkGroupToProcedure,
 } from '@/db/queries/face-diagram-groups'
@@ -122,8 +123,11 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
+    if (error instanceof DiagramGroupNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 })
+    }
     if (error instanceof DiagramGroupLockedError) {
-      return NextResponse.json({ error: 'Este diagrama já está em outro atendimento' }, { status: 409 })
+      return NextResponse.json({ error: error.message }, { status: 409 })
     }
     return handleApiError(error, request)
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
+import { queryKeys } from './query-keys'
 import type { PatientAppointment } from '@/db/queries/appointments'
 import type { PatientFinancialSummary } from '@/db/queries/financial'
 
@@ -18,7 +19,7 @@ async function fetchData<T>(url: string, fallbackError: string): Promise<T> {
 
 export function usePatientAppointments(patientId: string) {
   return useQuery({
-    queryKey: ['patients', 'appointments', patientId] as const,
+    queryKey: queryKeys.appointments.byPatient(patientId),
     queryFn: () =>
       fetchData<PatientAppointment[]>(
         `/api/patients/${patientId}/appointments`,
@@ -27,10 +28,9 @@ export function usePatientAppointments(patientId: string) {
   })
 }
 
-export function usePatientFinancialSummary(patientId: string, enabled = true) {
+export function usePatientFinancialSummary(patientId: string) {
   return useQuery({
-    queryKey: ['patients', 'financial-summary', patientId] as const,
-    enabled,
+    queryKey: queryKeys.financial.patientSummary(patientId),
     queryFn: () =>
       fetchData<PatientFinancialSummary>(
         `/api/patients/${patientId}/financial-summary`,

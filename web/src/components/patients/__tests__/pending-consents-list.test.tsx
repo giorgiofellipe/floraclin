@@ -23,8 +23,8 @@ describe('PendingConsentsList', () => {
     ]
     renderWithProviders(<PendingConsentsList patientId="pat-1" />)
 
-    expect(screen.getByText('Termo geral')).toBeTruthy()
-    expect(screen.getByText('Contrato')).toBeTruthy()
+    expect(screen.getByText('Consentimento Geral')).toBeTruthy()
+    expect(screen.getByText('Contrato de Serviço')).toBeTruthy()
     expect(screen.getByText(/02\/11\/2026/)).toBeTruthy()
     expect(
       screen.getByRole('link', { name: 'Coletar assinaturas' }).getAttribute('href'),

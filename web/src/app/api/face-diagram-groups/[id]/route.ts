@@ -5,6 +5,8 @@ import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import {
   DiagramGroupLockedError,
+  DiagramGroupNotFoundError,
+  InvalidQuotationLineError,
   getDiagramGroup,
   updateStandaloneGroup,
 } from '@/db/queries/face-diagram-groups'
@@ -12,9 +14,6 @@ import { updateDiagramGroupSchema } from '@/validations/face-diagram-group'
 import { handleApiError } from '@/lib/api-error'
 
 const NOT_FOUND = { error: 'Diagrama não encontrado' }
-const LOCKED = {
-  error: 'Este diagrama está vinculado a um atendimento e não pode ser editado',
-}
 
 export async function GET(
   request: Request,
@@ -49,28 +48,36 @@ export async function PUT(
     }
 
     try {
-      await withTransaction((tx) =>
-        updateStandaloneGroup(tx, {
+      await withTransaction(async (tx) => {
+        await updateStandaloneGroup(tx, {
           tenantId: ctx.tenantId,
           groupId: id,
           views: parsed.data.views,
           quotationLines: parsed.data.quotationLines,
         })
-      )
+        await createAuditLog(
+          {
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            action: 'update',
+            entityType: 'face_diagram_group',
+            entityId: id,
+          },
+          tx
+        )
+      })
     } catch (error) {
+      if (error instanceof DiagramGroupNotFoundError) {
+        return NextResponse.json({ error: error.message }, { status: 404 })
+      }
       if (error instanceof DiagramGroupLockedError) {
-        return NextResponse.json(LOCKED, { status: 409 })
+        return NextResponse.json({ error: error.message }, { status: 409 })
+      }
+      if (error instanceof InvalidQuotationLineError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
       }
       throw error
     }
-
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'update',
-      entityType: 'face_diagram_group',
-      entityId: id,
-    })
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -231,15 +231,6 @@ export async function finalizeEncounter(
       patientPackageId = pkgRow.id
     }
 
-    // 5. Finalize drafts in place. We do one UPDATE per record because each
-    //    line carries a distinct `sessionsTotal`. `plannedSnapshot` is
-    //    intentionally absent from the SET — Patch P1 mandates we preserve
-    //    whatever the wizard wrote during step 2/3.
-    //
-    //    For cart lines beyond the supplied drafts (F4-followup gap), we
-    //    materialize fresh `approved` procedure_records here. They inherit
-    //    practitioner + patient from input, with no `plannedSnapshot` (the
-    //    clinician can fill planning per-session at execute time).
     // Required consents for the whole cart, stored on the primary record so unsigned
     // ones can be collected later.
     const rowsOf = (result: unknown) =>
@@ -273,6 +264,15 @@ export async function finalizeEncounter(
       hasActiveContractTemplate: requirementRow?.has_contract === true,
     })
 
+    // 5. Finalize drafts in place. We do one UPDATE per record because each
+    //    line carries a distinct `sessionsTotal`. `plannedSnapshot` is
+    //    intentionally absent from the SET: Patch P1 mandates we preserve
+    //    whatever the wizard wrote during step 2/3.
+    //
+    //    For cart lines beyond the supplied drafts (F4-followup gap), we
+    //    materialize fresh `approved` procedure_records here. They inherit
+    //    practitioner + patient from input, with no `plannedSnapshot` (the
+    //    clinician can fill planning per-session at execute time).
     const now = new Date()
     const finalRecordIds: string[] = [...input.draftRecordIds]
     for (let i = 0; i < input.cart.lines.length; i++) {
@@ -358,7 +358,8 @@ export async function finalizeEncounter(
       await tx.execute(sql`
         SELECT DISTINCT t.type
         FROM floraclin.consent_acceptances a
-        JOIN floraclin.consent_templates t ON t.id = a.consent_template_id
+        JOIN floraclin.consent_templates t
+          ON t.id = a.consent_template_id AND t.tenant_id = ${input.tenantId}
         WHERE a.tenant_id = ${input.tenantId}
           AND a.procedure_record_id = ${primaryRecordId}
       `),

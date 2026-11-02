@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
-import { createAuditLog } from '@/lib/audit'
 import { DIAGRAM_NOT_AWAITING, DIAGRAM_NOT_FOUND, snoozeDiagramGroup } from '@/lib/followups'
 import { snoozeSchema } from '@/validations/followup'
 import { parseBrDate, brToday } from '@/lib/dates'
@@ -44,6 +43,7 @@ export async function PATCH(
       await snoozeDiagramGroup({
         tenantId: ctx.tenantId,
         groupId,
+        userId: ctx.userId,
         until: parsed.data.until,
       })
     } catch (err) {
@@ -56,17 +56,6 @@ export async function PATCH(
       }
       throw err
     }
-
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'update',
-      entityType: 'face_diagram_group',
-      entityId: groupId,
-      changes: {
-        followupSnoozedUntil: { old: null, new: parsed.data.until },
-      },
-    })
 
     return NextResponse.json({ success: true, data: { snoozedUntil: parsed.data.until } })
   } catch (error) {

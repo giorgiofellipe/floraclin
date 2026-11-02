@@ -2,7 +2,6 @@ import { NextResponse } from 'next/server'
 import { and, desc, eq, isNull } from 'drizzle-orm'
 import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
-import { createAuditLog } from '@/lib/audit'
 import {
   DIAGRAM_NOT_AWAITING,
   DIAGRAM_NOT_FOUND,
@@ -101,26 +100,6 @@ export async function POST(
       }
       throw err
     }
-
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'create',
-      entityType: 'procedure_followup',
-      entityId: result.followupId,
-      changes: {
-        followup: {
-          old: null,
-          new: {
-            faceDiagramGroupId: groupId,
-            channel: parsed.data.channel,
-            outcome: parsed.data.outcome,
-            notes: parsed.data.notes ?? null,
-          },
-        },
-        ...(result.declined ? { declinedAt: { old: null, new: 'now' } } : {}),
-      },
-    })
 
     return NextResponse.json({
       success: true,

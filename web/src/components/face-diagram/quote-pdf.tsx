@@ -2,6 +2,7 @@ import { ClinicHeader, toClinicHeaderTenant } from '@/components/print/clinic-he
 import { FaceDiagramPdfSection } from '@/components/face-diagram/diagram-pdf'
 import { formatBrDate } from '@/lib/dates'
 import { formatCurrency } from '@/lib/utils'
+import { quoteTotal } from '@/lib/diagram-quote'
 import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import type { DiagramGroupDetail } from '@/db/queries/face-diagram-groups'
 import type { QuotationLine } from '@/validations/face-diagram-group'
@@ -47,7 +48,7 @@ export function QuotePdf({
               <td>{l.procedureTypeName}</td>
               <td>{l.sessions}</td>
               <td>{formatCurrency(l.unitPrice)}</td>
-              <td>{formatCurrency(l.unitPrice * l.sessions)}</td>
+              <td>{formatCurrency(quoteTotal([l]))}</td>
             </tr>
           ))}
         </tbody>

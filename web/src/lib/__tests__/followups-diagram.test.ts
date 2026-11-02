@@ -10,6 +10,9 @@ vi.mock('@/lib/tenant', async () => {
   return { withTransaction: (fn: (tx: unknown) => unknown) => db.transaction(fn as never) }
 })
 
+const auditMock = vi.fn()
+vi.mock('@/lib/audit', () => ({ createAuditLog: (...args: unknown[]) => auditMock(...args) }))
+
 const cancelLinkedFinancialsMock = vi.fn()
 vi.mock('@/db/queries/financial', () => ({
   cancelLinkedFinancials: (...args: unknown[]) => cancelLinkedFinancialsMock(...args),
@@ -47,11 +50,16 @@ describe('recordDiagramFollowup', () => {
   it('declines the quotation on desistiu, linking the followup to the group', async () => {
     const { recordDiagramFollowup } = await import('../followups')
     lockDiagramGroupMock.mockResolvedValue({ id: 'group-1', status: 'quote' })
-    const { log } = useTx((q) => (q.op === 'insert' ? [{ id: 'followup-1' }] : undefined))
+    const { tx, log } = useTx((q) => (q.op === 'insert' ? [{ id: 'followup-1' }] : undefined))
 
     const result = await recordDiagramFollowup(args)
 
     expect(result).toEqual({ followupId: 'followup-1', declined: true })
+    // Regression: the audit ran after commit, so a failed audit left an unaudited contact.
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({ entityType: 'procedure_followup', entityId: 'followup-1', userId: 'user-1' }),
+      tx,
+    )
     const insert = log.find((q) => tableOf(q) === procedureFollowups)!
     expect(insert.capture.value).toMatchObject({
       tenantId: TENANT,
@@ -108,20 +116,29 @@ describe('snoozeDiagramGroup', () => {
     const { log } = useTx(() => undefined)
 
     await expect(
-      snoozeDiagramGroup({ tenantId: TENANT, groupId: 'group-1', until: '2026-12-01' }),
+      snoozeDiagramGroup({ tenantId: TENANT, groupId: 'group-1', userId: 'user-1', until: '2026-12-01' }),
     ).rejects.toThrow('Diagram quote is not awaiting an answer')
     expect(log).toHaveLength(0)
+    expect(auditMock).not.toHaveBeenCalled()
   })
 
-  it('stores the snooze day under the group lock', async () => {
+  it('stores the snooze day under the group lock and audits it in the same transaction', async () => {
     const { snoozeDiagramGroup } = await import('../followups')
     lockDiagramGroupMock.mockResolvedValue({ id: 'group-1', status: 'quote' })
-    const { log } = useTx(() => undefined)
+    const { tx, log } = useTx(() => undefined)
 
-    await snoozeDiagramGroup({ tenantId: TENANT, groupId: 'group-1', until: '2026-12-01' })
+    await snoozeDiagramGroup({ tenantId: TENANT, groupId: 'group-1', userId: 'user-1', until: '2026-12-01' })
 
     expect(lockDiagramGroupMock).toHaveBeenCalledWith(expect.anything(), TENANT, 'group-1')
     expect(log[0].capture.value).toMatchObject({ followupSnoozedUntil: '2026-12-01' })
+    expect(auditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entityType: 'face_diagram_group',
+        entityId: 'group-1',
+        changes: { followupSnoozedUntil: { old: null, new: '2026-12-01' } },
+      }),
+      tx,
+    )
   })
 })
 

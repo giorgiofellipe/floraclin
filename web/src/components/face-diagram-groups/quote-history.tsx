@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBrDate } from '@/lib/dates'
+import { formatCurrency } from '@/lib/utils'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import type { DiagramQuote } from '@/db/queries/face-diagram-quotes'
 
@@ -13,7 +14,6 @@ type QuoteWithUrl = Omit<DiagramQuote, 'createdAt' | 'whatsappRequestedAt'> & {
   url: string | null
 }
 
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export function useDiagramQuotes(groupId: string) {
   return useQuery({
@@ -52,7 +52,7 @@ export function QuoteHistory({ groupId }: { groupId: string }) {
             <li key={quote.id} className="flex items-center justify-between gap-3 py-2">
               <div className="min-w-0">
                 <p className="text-sm text-charcoal">
-                  {formatBrDate(quote.createdAt)} · {brl.format(quote.total)}
+                  {formatBrDate(quote.createdAt)} · {formatCurrency(quote.total)}
                 </p>
                 {note && <p className="text-xs text-mid">{note}</p>}
               </div>

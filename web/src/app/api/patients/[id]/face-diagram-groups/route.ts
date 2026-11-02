@@ -6,6 +6,7 @@ import { withTransaction } from '@/lib/tenant'
 import { verifyTenantOwnership } from '@/db/queries/helpers'
 import { patients } from '@/db/schema'
 import {
+  InvalidQuotationLineError,
   createStandaloneGroup,
   listPatientDiagramGroups,
 } from '@/db/queries/face-diagram-groups'
@@ -58,23 +59,34 @@ export async function POST(
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
 
-    const groupId = await withTransaction((tx) =>
-      createStandaloneGroup(tx, {
-        tenantId: ctx.tenantId,
-        patientId: id,
-        practitionerId: ctx.userId,
-        views: parsed.data.views,
-        quotationLines: parsed.data.quotationLines,
+    let groupId: string
+    try {
+      groupId = await withTransaction(async (tx) => {
+        const created = await createStandaloneGroup(tx, {
+          tenantId: ctx.tenantId,
+          patientId: id,
+          practitionerId: ctx.userId,
+          views: parsed.data.views,
+          quotationLines: parsed.data.quotationLines,
+        })
+        await createAuditLog(
+          {
+            tenantId: ctx.tenantId,
+            userId: ctx.userId,
+            action: 'create',
+            entityType: 'face_diagram_group',
+            entityId: created,
+          },
+          tx
+        )
+        return created
       })
-    )
-
-    await createAuditLog({
-      tenantId: ctx.tenantId,
-      userId: ctx.userId,
-      action: 'create',
-      entityType: 'face_diagram_group',
-      entityId: groupId,
-    })
+    } catch (error) {
+      if (error instanceof InvalidQuotationLineError) {
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+      throw error
+    }
 
     return NextResponse.json({ data: { id: groupId } }, { status: 201 })
   } catch (error) {

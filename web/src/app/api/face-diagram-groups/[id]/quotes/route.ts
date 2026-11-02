@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createElement } from 'react'
-import { db } from '@/db/client'
 import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
+import { withTransaction } from '@/lib/tenant'
 import { getDiagramGroup } from '@/db/queries/face-diagram-groups'
 import { createDiagramQuote, listDiagramQuotes } from '@/db/queries/face-diagram-quotes'
 import { getPatient } from '@/db/queries/patients'
@@ -11,7 +11,7 @@ import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
 import { QuotePdf } from '@/components/face-diagram/quote-pdf'
 import { DIAGRAM_PDF_CSS } from '@/components/face-diagram/diagram-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
-import { deleteFile, getSignedUrl, uploadPdfBuffer } from '@/lib/storage'
+import { deleteFile, getSignedUrl, getStoragePath, uploadPdfBuffer } from '@/lib/storage'
 import { quoteTotal } from '@/lib/diagram-quote'
 import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import { handleApiError } from '@/lib/api-error'
@@ -61,18 +61,20 @@ export async function POST(
     )
 
     const quoteId = crypto.randomUUID()
-    const { path, url } = await uploadPdfBuffer({
-      tenantId: ctx.tenantId,
-      patientId: group.patientId,
-      fileName: `quotes/${quoteId}.pdf`,
-      buffer: pdf,
-      visibility: 'signed',
-    })
-
+    const fileName = `quotes/${quoteId}.pdf`
+    const path = getStoragePath(ctx.tenantId, group.patientId, fileName)
+    let url: string
     try {
-      await db.transaction(async (tx) => {
-        const txDb = tx as unknown as typeof db
-        await createDiagramQuote(txDb, {
+      const upload = await uploadPdfBuffer({
+        tenantId: ctx.tenantId,
+        patientId: group.patientId,
+        fileName,
+        buffer: pdf,
+        visibility: 'signed',
+      })
+      url = upload.url
+      await withTransaction(async (tx) => {
+        await createDiagramQuote(tx, {
           id: quoteId,
           tenantId: ctx.tenantId,
           patientId: group.patientId,
@@ -91,7 +93,7 @@ export async function POST(
             entityId: quoteId,
             changes: { total: { old: null, new: total } },
           },
-          txDb,
+          tx,
         )
       })
     } catch (error) {
@@ -112,6 +114,9 @@ export async function GET(
   try {
     const ctx = await getAuthContext()
     const { id } = await params
+    if (!(await getDiagramGroup(ctx.tenantId, id))) {
+      return NextResponse.json({ error: 'Diagrama não encontrado' }, { status: 404 })
+    }
     const quotes = await listDiagramQuotes(ctx.tenantId, id)
     const data = await Promise.all(
       quotes.map(async (q) => ({

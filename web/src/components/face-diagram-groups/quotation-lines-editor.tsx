@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { quoteTotal } from '@/lib/diagram-quote'
 import type { QuotationLine } from '@/validations/face-diagram-group'
+import { formatCurrency } from '@/lib/utils'
 
 interface ProcedureTypeOption {
   id: string
@@ -16,7 +17,6 @@ interface ProcedureTypeOption {
   isActive: boolean
 }
 
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 interface QuotationLinesEditorProps {
   value: QuotationLine[]
@@ -125,7 +125,7 @@ export function QuotationLinesEditor({ value, onChange, readOnly = false }: Quot
       <div className="flex items-center justify-between border-t border-sage/15 pt-3 text-sm">
         <span className="text-mid">Total</span>
         <span className="font-medium text-forest" data-testid="quote-total">
-          {brl.format(quoteTotal(value))}
+          {formatCurrency(quoteTotal(value))}
         </span>
       </div>
     </div>

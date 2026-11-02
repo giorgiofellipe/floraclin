@@ -3,6 +3,7 @@ import { faceDiagramGroups, procedureFollowups, procedureRecords } from '@/db/sc
 import { lockDiagramGroup, releaseStandaloneGroups } from '@/db/queries/face-diagram-groups'
 import { cancelLinkedFinancials } from '@/db/queries/financial'
 import { withTransaction } from '@/lib/tenant'
+import { createAuditLog } from '@/lib/audit'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FollowupChannel, FollowupOutcome } from '@/validations/followup'
 
@@ -220,6 +221,29 @@ export async function recordDiagramFollowup(
       })
       .where(eq(faceDiagramGroups.id, args.groupId))
 
+    await createAuditLog(
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        action: 'create',
+        entityType: 'procedure_followup',
+        entityId: followup.id,
+        changes: {
+          followup: {
+            old: null,
+            new: {
+              faceDiagramGroupId: args.groupId,
+              channel: args.channel,
+              outcome: args.outcome,
+              notes: args.notes ?? null,
+            },
+          },
+          ...(declined ? { declinedAt: { old: null, new: now.toISOString() } } : {}),
+        },
+      },
+      tx,
+    )
+
     return { followupId: followup.id, declined }
   })
 }
@@ -227,6 +251,7 @@ export async function recordDiagramFollowup(
 export interface SnoozeDiagramGroupArgs {
   tenantId: string
   groupId: string
+  userId: string
   until: string | null
 }
 
@@ -240,5 +265,17 @@ export async function snoozeDiagramGroup(args: SnoozeDiagramGroupArgs): Promise<
       .update(faceDiagramGroups)
       .set({ followupSnoozedUntil: args.until, updatedAt: new Date() })
       .where(eq(faceDiagramGroups.id, args.groupId))
+
+    await createAuditLog(
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        action: 'update',
+        entityType: 'face_diagram_group',
+        entityId: args.groupId,
+        changes: { followupSnoozedUntil: { old: null, new: args.until } },
+      },
+      tx,
+    )
   })
 }

@@ -13,7 +13,6 @@ vi.mock('@/lib/auth', async () => {
   }
 })
 vi.mock('@/lib/plans', () => ({ subscriptionGate: vi.fn().mockResolvedValue(null) }))
-vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
 vi.mock('@/db/client', () => ({ db: {} }))
 vi.mock('@/lib/followups', () => ({
   DIAGRAM_NOT_FOUND: 'Diagram group not found',
@@ -23,7 +22,6 @@ vi.mock('@/lib/followups', () => ({
 }))
 
 import { getAuthContext } from '@/lib/auth'
-import { createAuditLog } from '@/lib/audit'
 import {
   DIAGRAM_NOT_AWAITING,
   DIAGRAM_NOT_FOUND,
@@ -62,21 +60,19 @@ describe('quote follow-up routes', () => {
   it.each([
     ['followups', () => POST(req('POST', followupBody), params), recordDiagramFollowup],
     ['snooze', () => PATCH(req('PATCH', snoozeBody), params), snoozeDiagramGroup],
-  ])('%s maps a quote no longer awaiting to 409 without auditing', async (_n, call, service) => {
+  ])('%s maps a quote no longer awaiting to 409', async (_n, call, service) => {
     (service as ReturnType<typeof vi.fn>).mockRejectedValue(new Error(DIAGRAM_NOT_AWAITING))
     const res = await call()
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ error: 'Este orçamento não está mais aguardando' })
-    expect(createAuditLog).not.toHaveBeenCalled()
   })
 
   it.each([
     ['followups', () => POST(req('POST', followupBody), params), recordDiagramFollowup],
     ['snooze', () => PATCH(req('PATCH', snoozeBody), params), snoozeDiagramGroup],
-  ])('%s maps a missing quote to 404 without auditing', async (_n, call, service) => {
+  ])('%s maps a missing quote to 404', async (_n, call, service) => {
     (service as ReturnType<typeof vi.fn>).mockRejectedValue(new Error(DIAGRAM_NOT_FOUND))
     const res = await call()
     expect(res.status).toBe(404)
-    expect(createAuditLog).not.toHaveBeenCalled()
   })
 })

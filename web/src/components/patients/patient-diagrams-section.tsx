@@ -7,26 +7,24 @@ import { groupToPoints } from '@/components/face-diagram-groups/diagram-group-ed
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { ReadOnlyGuard } from '@/components/layout/subscription-access'
-import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
+import { usePatientDiagramGroups, type DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import { formatBrDate } from '@/lib/dates'
 import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
-import { cn } from '@/lib/utils'
-import type { DiagramGroupDetail } from '@/db/queries/face-diagram-groups'
+import { cn, formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
 
 const CARD = 'rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 interface Entry {
   key: string
   heading: string | null
-  planning: DiagramGroupDetail | null
-  sessions: DiagramGroupDetail[]
+  planning: DiagramGroupJson | null
+  sessions: DiagramGroupJson[]
   sortDate: string
 }
 
-function buildEntries(groups: DiagramGroupDetail[]): Entry[] {
-  const sessionsByProcedure = new Map<string, DiagramGroupDetail[]>()
+function buildEntries(groups: DiagramGroupJson[]): Entry[] {
+  const sessionsByProcedure = new Map<string, DiagramGroupJson[]>()
   for (const g of groups) {
     if (g.procedureSessionId && g.procedureRecordId) {
       const list = sessionsByProcedure.get(g.procedureRecordId) ?? []
@@ -34,7 +32,7 @@ function buildEntries(groups: DiagramGroupDetail[]): Entry[] {
       sessionsByProcedure.set(g.procedureRecordId, list)
     }
   }
-  const byOrdinal = (a: DiagramGroupDetail, b: DiagramGroupDetail) =>
+  const byOrdinal = (a: DiagramGroupJson, b: DiagramGroupJson) =>
     (a.sessionOrdinal ?? 0) - (b.sessionOrdinal ?? 0)
 
   const entries: Entry[] = []
@@ -65,7 +63,7 @@ function buildEntries(groups: DiagramGroupDetail[]): Entry[] {
   return entries.sort((a, b) => b.sortDate.localeCompare(a.sortDate))
 }
 
-function StatusBadge({ status }: { status: DiagramGroupDetail['status'] }) {
+function StatusBadge({ status }: { status: DiagramGroupJson['status'] }) {
   return (
     <Badge variant="outline" className="border-sage/30 text-sage">
       {DIAGRAM_STATUS_LABELS[status]}
@@ -73,7 +71,7 @@ function StatusBadge({ status }: { status: DiagramGroupDetail['status'] }) {
   )
 }
 
-function Thumbnail({ group }: { group: DiagramGroupDetail }) {
+function Thumbnail({ group }: { group: DiagramGroupJson }) {
   return (
     <div aria-hidden className="pointer-events-none h-20 w-16 shrink-0 overflow-hidden rounded-[3px] bg-cream">
       <div className="w-[256px] origin-top-left scale-[0.25]">
@@ -89,7 +87,7 @@ function GroupRow({
   label,
 }: {
   patientId: string
-  group: DiagramGroupDetail
+  group: DiagramGroupJson
   label?: string
 }) {
   return (
@@ -111,7 +109,7 @@ function GroupRow({
             .join(' · ')}
         </p>
         {group.quotationTotal !== null && (
-          <p className="text-xs text-forest">Orçamento {brl.format(group.quotationTotal)}</p>
+          <p className="text-xs text-forest">Orçamento {formatCurrency(group.quotationTotal)}</p>
         )}
       </div>
     </Link>

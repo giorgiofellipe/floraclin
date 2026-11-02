@@ -66,4 +66,10 @@ describe('PatientSummary', () => {
     renderWithProviders(<PatientSummary patientId="p1" role="owner" onNavigate={vi.fn()} />)
     expect(screen.getByText(/R\$\s*120,00/).className).toContain('amber')
   })
+
+  it('tells the user the financial summary failed instead of loading forever', () => {
+    mocks.finance.mockReturnValue({ data: undefined, isLoading: false, isError: true })
+    renderWithProviders(<PatientSummary patientId="p1" role="owner" onNavigate={vi.fn()} />)
+    expect(screen.getByText('Não foi possível carregar o financeiro.')).toBeInTheDocument()
+  })
 })

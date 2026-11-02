@@ -18,11 +18,11 @@ import {
   useUpdateDiagramGroup,
 } from '@/hooks/mutations/use-face-diagram-group-mutations'
 import { queryKeys } from '@/hooks/queries/query-keys'
+import type { DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isOpenStatus } from '@/lib/procedure-status'
 import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
 import { cn } from '@/lib/utils'
-import type { DiagramGroupDetail } from '@/db/queries/face-diagram-groups'
 import type { Patient } from '@/db/queries/patients'
 import type { DiagramViewType, ProcedureStatus, Role } from '@/types'
 import type { QuotationLine } from '@/validations/face-diagram-group'
@@ -32,7 +32,7 @@ import { QuoteHistory } from './quote-history'
 const CARD = 'rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
 const VIEW_TYPES: DiagramViewType[] = ['front', 'left_profile', 'right_profile']
 
-export function groupToPoints(group: DiagramGroupDetail | null): DiagramPointData[] {
+export function groupToPoints(group: DiagramGroupJson | null): DiagramPointData[] {
   if (!group) return []
   return group.views.flatMap((view) =>
     view.points.map((p) => ({
@@ -73,7 +73,7 @@ function pointsToViews(points: DiagramPointData[]) {
 
 interface DiagramGroupEditorProps {
   patient: Patient
-  group: DiagramGroupDetail | null
+  group: DiagramGroupJson | null
   role: Role
 }
 
@@ -89,7 +89,7 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
   const createGroup = useCreateDiagramGroup()
   const updateGroup = useUpdateDiagramGroup()
   const { data: productsData } = useDiagramProducts()
-  const { data: procedures } = useProcedures(patient.id)
+  const { data: procedures, isLoading: loadingProcedures } = useProcedures(patient.id)
 
   const products = (productsData ?? []) as CatalogProduct[]
   const status = group?.status ?? 'quote'
@@ -102,6 +102,11 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
       ((procedures ?? []) as { status: ProcedureStatus }[]).some((p) => isOpenStatus(p.status)),
     [procedures],
   )
+  const atendimentoHref = `/pacientes/${patient.id}/atendimento`
+  const serviceAction = (groupId: string) =>
+    hasActiveService
+      ? { href: atendimentoHref, label: 'Continuar atendimento' }
+      : { href: `${atendimentoHref}?new=1&diagram=${groupId}`, label: 'Iniciar atendimento com este diagrama' }
   const phoneOk = !!patient.phone && tryNormalizeBrPhoneForWhatsApp(patient.phone).ok
   const hasLines = lines.length > 0
 
@@ -244,24 +249,33 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
             </Button>
           )}
           {group && (
-            <Link
-              href={
-                hasActiveService
-                  ? `/pacientes/${patient.id}/atendimento`
-                  : `/pacientes/${patient.id}/atendimento?new=1&diagram=${group.id}`
-              }
-              className={cn(buttonVariants({ variant: 'outline' }), 'text-forest')}
-            >
-              <Play className="size-4" />
-              {hasActiveService
-                ? 'Continuar atendimento'
-                : 'Iniciar atendimento com este diagrama'}
-            </Link>
+            <ServiceLink loading={loadingProcedures} {...serviceAction(group.id)} />
           )}
         </div>
       )}
 
+      {readOnly && status === 'in_service' && (
+        <ServiceLink href={atendimentoHref} label="Continuar atendimento" />
+      )}
+
       {group && <QuoteHistory groupId={group.id} />}
     </div>
+  )
+}
+
+function ServiceLink({ href, label, loading = false }: { href: string; label: string; loading?: boolean }) {
+  if (loading) {
+    return (
+      <Button type="button" variant="outline" className="text-forest" disabled>
+        <Play className="size-4" />
+        Verificando atendimento...
+      </Button>
+    )
+  }
+  return (
+    <Link href={href} className={cn(buttonVariants({ variant: 'outline' }), 'text-forest')}>
+      <Play className="size-4" />
+      {label}
+    </Link>
   )
 }

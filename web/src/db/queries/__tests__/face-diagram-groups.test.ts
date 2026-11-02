@@ -1,14 +1,26 @@
 import { describe, expect, it, vi } from 'vitest'
 import { PgDialect } from 'drizzle-orm/pg-core'
 import type { SQL } from 'drizzle-orm'
-import { isLock, routedTx, tableOf, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import {
+  isLock,
+  routedTx,
+  selectSql,
+  tableOf,
+  whereParams,
+  type LoggedQuery,
+} from '@/tests/mocks/drizzle-tx'
 
-vi.mock('@/db/client', () => ({ db: {} }))
+const dbMock = vi.hoisted(() => ({}) as Record<string, unknown>)
+vi.mock('@/db/client', () => ({ db: dbMock }))
 
-import { faceDiagramGroups, procedureRecords } from '@/db/schema'
+import { faceDiagramGroups, patients, procedureRecords, procedureTypes } from '@/db/schema'
 import {
   DiagramGroupLockedError,
+  DiagramGroupNotFoundError,
+  InvalidQuotationLineError,
+  createStandaloneGroup,
   ensurePlanningGroup,
+  getDiagramGroup,
   linkGroupToProcedure,
   releaseStandaloneGroups,
   updateStandaloneGroup,
@@ -23,6 +35,7 @@ interface World {
   group?: { procedureRecordId: string | null; patientId?: string }
   procedureStatus?: string
   patientRecords?: { id: string; status: string }[]
+  procedureTypes?: { id: string; name: string }[]
 }
 
 function worldTx(world: World) {
@@ -45,12 +58,17 @@ function worldTx(world: World) {
       const listsPatientRecords = 'id' in (q.fields as object)
       return listsPatientRecords ? world.patientRecords ?? [] : [{ status: world.procedureStatus }]
     }
+    if (q.op === 'select' && table === procedureTypes) return world.procedureTypes ?? []
+    if (q.op === 'insert' && table === faceDiagramGroups) return [{ id: GROUP }]
     return []
   })
   return { tx: tx as never, log }
 }
 
 const writes = (log: LoggedQuery[]) => log.filter((q) => q.op !== 'select')
+
+const BOTOX_ID = '11111111-1111-4111-8111-111111111111'
+const line = { procedureTypeId: BOTOX_ID, procedureTypeName: 'Nome do cliente', sessions: 1, unitPrice: 100 }
 
 describe('updateStandaloneGroup', () => {
   it('refuses to edit a quotation whose procedure is already approved', async () => {
@@ -60,6 +78,48 @@ describe('updateStandaloneGroup', () => {
     await expect(
       updateStandaloneGroup(tx, { tenantId: TENANT, groupId: GROUP, views: [], quotationLines: [] }),
     ).rejects.toBeInstanceOf(DiagramGroupLockedError)
+    expect(writes(log)).toHaveLength(0)
+  })
+
+  it('reports a missing group as not found, not as locked', async () => {
+    const { tx } = worldTx({})
+    await expect(
+      updateStandaloneGroup(tx, { tenantId: TENANT, groupId: GROUP, views: [], quotationLines: [] }),
+    ).rejects.toBeInstanceOf(DiagramGroupNotFoundError)
+  })
+
+  it('rejects a quotation line whose procedure type is not an active type of the tenant', async () => {
+    // Regression: the client could price a foreign or deleted procedure type.
+    const { tx, log } = worldTx({ group: { procedureRecordId: null }, procedureTypes: [] })
+    await expect(
+      updateStandaloneGroup(tx, { tenantId: TENANT, groupId: GROUP, views: [], quotationLines: [line] }),
+    ).rejects.toBeInstanceOf(InvalidQuotationLineError)
+    expect(writes(log)).toHaveLength(0)
+  })
+})
+
+describe('createStandaloneGroup', () => {
+  const input = { tenantId: TENANT, patientId: PATIENT, practitionerId: 'u1', views: [] }
+
+  it('stores the procedure name from the tenant catalog, not the client', async () => {
+    const { tx, log } = worldTx({ procedureTypes: [{ id: BOTOX_ID, name: 'Toxina botulínica' }] })
+    await createStandaloneGroup(tx, { ...input, quotationLines: [line] })
+
+    const typeLookup = log.find((q) => tableOf(q) === procedureTypes)!
+    const sql = selectSql(typeLookup.fields, typeLookup.capture)
+    expect(whereParams(typeLookup.capture)).toEqual(expect.arrayContaining([TENANT, BOTOX_ID, true]))
+    expect(sql).toContain('"procedure_types"."deleted_at" is null')
+    const insert = log.find((q) => q.op === 'insert' && tableOf(q) === faceDiagramGroups)!
+    expect(insert.capture.value).toMatchObject({
+      quotationLines: [{ ...line, procedureTypeName: 'Toxina botulínica' }],
+    })
+  })
+
+  it('rejects an unknown procedure type without creating the group', async () => {
+    const { tx, log } = worldTx({ procedureTypes: [] })
+    await expect(createStandaloneGroup(tx, { ...input, quotationLines: [line] })).rejects.toBeInstanceOf(
+      InvalidQuotationLineError,
+    )
     expect(writes(log)).toHaveLength(0)
   })
 })
@@ -73,6 +133,23 @@ describe('linkGroupToProcedure', () => {
 
     expect(isLock(log[0])).toBe(true)
     expect(writes(log)).toHaveLength(1)
+  })
+
+  it('locks the patient row before reading the other open atendimentos', async () => {
+    // Regression: two concurrent links for one patient both passed the open-procedure check.
+    const { tx, log } = worldTx({ group: { procedureRecordId: null }, patientRecords: [{ id: 'new-rec', status: 'draft' }] })
+    await linkGroupToProcedure(tx, input)
+
+    const patientLock = log.findIndex((q) => tableOf(q) === patients && isLock(q))
+    const openCheck = log.findIndex((q) => tableOf(q) === procedureRecords && 'id' in (q.fields as object))
+    expect(patientLock).toBeGreaterThan(-1)
+    expect(patientLock).toBeLessThan(openCheck)
+    expect(whereParams(log[patientLock].capture)).toEqual([PATIENT, TENANT])
+  })
+
+  it('reports a missing group as not found', async () => {
+    const { tx } = worldTx({})
+    await expect(linkGroupToProcedure(tx, input)).rejects.toBeInstanceOf(DiagramGroupNotFoundError)
   })
 
   it('refuses a group already in service', async () => {
@@ -140,5 +217,44 @@ describe('cancelProcedure', () => {
     const release = log.find((q) => tableOf(q) === faceDiagramGroups && q.op === 'update')!
     expect(release.capture.value).toMatchObject({ procedureRecordId: null })
     expect(whereParams(release.capture)).toContain('standalone')
+  })
+})
+
+describe('getDiagramGroup', () => {
+  function useDb(row: Record<string, unknown> | null) {
+    const { tx, log } = routedTx((q) => (tableOf(q) === faceDiagramGroups && row ? [row] : []))
+    Object.assign(dbMock, tx)
+    return log
+  }
+
+  const groupRow = {
+    id: GROUP,
+    patientId: PATIENT,
+    origin: 'wizard',
+    procedureRecordId: 'rec-1',
+    declinedAt: null,
+    quotationLines: [],
+    procedureStatus: 'approved',
+    financialPlan: { totalAmount: '1500.00' },
+  }
+
+  it('hides groups of a deleted patient', async () => {
+    // Regression: a deleted patient's diagrams stayed reachable by direct id.
+    const log = useDb(null)
+    await getDiagramGroup(TENANT, GROUP)
+
+    const read = log[0]
+    expect(selectSql(read.fields, read.capture)).toContain('"patients"."deleted_at" is null')
+  })
+
+  it('shows no quotation total on a session group', async () => {
+    // Regression: a session showed the whole package total as if it were its own price.
+    useDb({ ...groupRow, procedureSessionId: 'session-1' })
+    expect((await getDiagramGroup(TENANT, GROUP))?.quotationTotal).toBeNull()
+  })
+
+  it('falls back to the procedure plan total on a planning group', async () => {
+    useDb({ ...groupRow, procedureSessionId: null })
+    expect((await getDiagramGroup(TENANT, GROUP))?.quotationTotal).toBe(1500)
   })
 })

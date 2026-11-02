@@ -3,15 +3,8 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { usePendingConsents } from '@/hooks/queries/use-consent'
+import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import { formatBrDate } from '@/lib/dates'
-
-const CONSENT_TYPE_LABELS: Record<string, string> = {
-  general: 'Termo geral',
-  botox: 'Toxina botulínica',
-  filler: 'Preenchimento',
-  biostimulator: 'Bioestimulador',
-  service_contract: 'Contrato',
-}
 
 export function PendingConsentsList({ patientId }: { patientId: string }) {
   const { data: items } = usePendingConsents(patientId)

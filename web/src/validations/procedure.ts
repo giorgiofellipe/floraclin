@@ -58,14 +58,6 @@ export const diagramPointSchema = z.object({
   notes: z.string().max(500).optional(),
 })
 
-export const diagramSaveSchema = z.object({
-  procedureRecordId: z.string().uuid('ID do procedimento inválido'),
-  viewType: z.enum(['front', 'left_profile', 'right_profile']),
-  points: z.array(diagramPointSchema),
-})
-
-export type DiagramSaveInput = z.infer<typeof diagramSaveSchema>
-
 // ─── Product Application Schemas ───────────────────────────────────
 
 export const productApplicationItemSchema = z.object({

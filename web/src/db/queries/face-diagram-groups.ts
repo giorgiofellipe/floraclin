@@ -3,6 +3,7 @@ import {
   faceDiagramGroups,
   faceDiagrams,
   diagramPoints,
+  patients,
   procedureRecords,
   procedureSessions,
   procedureTypes,
@@ -20,6 +21,16 @@ import type { DiagramViewType, ProcedureStatus } from '@/types'
 import type { DiagramPointInput, DiagramWithPoints } from './face-diagrams'
 
 export class DiagramGroupLockedError extends Error {}
+export class DiagramGroupNotFoundError extends Error {
+  constructor() {
+    super('Diagrama não encontrado')
+  }
+}
+export class InvalidQuotationLineError extends Error {
+  constructor() {
+    super('Procedimento inválido no orçamento')
+  }
+}
 
 export interface DiagramViewInput {
   viewType: DiagramViewType
@@ -199,6 +210,32 @@ export async function ensureSessionGroup(
   return created.id
 }
 
+/** Rewrites each line's name from the tenant's active procedure types; rejects unknown ids. */
+async function resolveQuotationLines(
+  tx: typeof db,
+  tenantId: string,
+  lines: QuotationLine[],
+): Promise<QuotationLine[]> {
+  if (lines.length === 0) return []
+  const types = await tx
+    .select({ id: procedureTypes.id, name: procedureTypes.name })
+    .from(procedureTypes)
+    .where(
+      and(
+        eq(procedureTypes.tenantId, tenantId),
+        inArray(procedureTypes.id, lines.map((l) => l.procedureTypeId)),
+        eq(procedureTypes.isActive, true),
+        isNull(procedureTypes.deletedAt),
+      ),
+    )
+  const nameOf = new Map(types.map((t) => [t.id, t.name]))
+  return lines.map((line) => {
+    const name = nameOf.get(line.procedureTypeId)
+    if (!name) throw new InvalidQuotationLineError()
+    return { ...line, procedureTypeName: name }
+  })
+}
+
 export async function createStandaloneGroup(
   tx: typeof db,
   input: {
@@ -209,6 +246,7 @@ export async function createStandaloneGroup(
     quotationLines: QuotationLine[]
   },
 ): Promise<string> {
+  const quotationLines = await resolveQuotationLines(tx, input.tenantId, input.quotationLines)
   const [group] = await tx
     .insert(faceDiagramGroups)
     .values({
@@ -216,7 +254,7 @@ export async function createStandaloneGroup(
       patientId: input.patientId,
       practitionerId: input.practitionerId,
       origin: 'standalone',
-      quotationLines: input.quotationLines,
+      quotationLines,
     })
     .returning({ id: faceDiagramGroups.id })
 
@@ -300,14 +338,15 @@ export async function updateStandaloneGroup(
   },
 ): Promise<void> {
   const group = await lockDiagramGroup(tx, input.tenantId, input.groupId)
-  if (!group) throw new DiagramGroupLockedError('Diagrama não encontrado')
+  if (!group) throw new DiagramGroupNotFoundError()
   if (group.status !== 'quote') {
     throw new DiagramGroupLockedError('Este diagrama não pode mais ser editado')
   }
+  const quotationLines = await resolveQuotationLines(tx, input.tenantId, input.quotationLines)
 
   await tx
     .update(faceDiagramGroups)
-    .set({ quotationLines: input.quotationLines, updatedAt: new Date() })
+    .set({ quotationLines, updatedAt: new Date() })
     .where(eq(faceDiagramGroups.id, input.groupId))
 
   await tx
@@ -329,13 +368,20 @@ export async function linkGroupToProcedure(
   input: { tenantId: string; patientId: string; groupId: string; procedureRecordId: string },
 ): Promise<void> {
   const group = await lockDiagramGroup(tx, input.tenantId, input.groupId)
-  if (!group) throw new DiagramGroupLockedError('Diagrama não encontrado')
+  if (!group) throw new DiagramGroupNotFoundError()
   if (group.patientId !== input.patientId) {
     throw new DiagramGroupLockedError('Este diagrama pertence a outro paciente')
   }
   if (group.status !== 'quote') {
     throw new DiagramGroupLockedError('Este diagrama já está em outro atendimento')
   }
+
+  // Serializes concurrent links for the same patient so only one can pass the open-procedure check.
+  await tx
+    .select({ id: patients.id })
+    .from(patients)
+    .where(and(eq(patients.id, input.patientId), eq(patients.tenantId, input.tenantId)))
+    .for('update')
 
   const others = await tx
     .select({ id: procedureRecords.id, status: procedureRecords.status })
@@ -383,6 +429,19 @@ export async function releaseStandaloneGroups(
 
 // ─── Reads ──────────────────────────────────────────────────────────
 
+function groupQuotationTotal(
+  procedureSessionId: string | null,
+  lines: QuotationLine[],
+  financialPlan: unknown,
+): number | null {
+  if (procedureSessionId) return null
+  if (lines.length > 0) return quoteTotal(lines)
+  const planTotal = (financialPlan as { totalAmount?: number | string | null } | null)?.totalAmount
+  if (planTotal == null) return null
+  const parsed = Number(planTotal)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and>): Promise<DiagramGroupDetail[]> {
   const rows = await db
     .select({
@@ -405,11 +464,12 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
       procedureTypeName: procedureTypes.name,
     })
     .from(faceDiagramGroups)
+    .innerJoin(patients, eq(patients.id, faceDiagramGroups.patientId))
     .leftJoin(users, eq(users.id, faceDiagramGroups.practitionerId))
     .leftJoin(procedureRecords, eq(procedureRecords.id, faceDiagramGroups.procedureRecordId))
     .leftJoin(procedureTypes, eq(procedureTypes.id, procedureRecords.procedureTypeId))
     .leftJoin(procedureSessions, eq(procedureSessions.id, faceDiagramGroups.procedureSessionId))
-    .where(where)
+    .where(and(where, isNull(patients.deletedAt)))
     .orderBy(desc(faceDiagramGroups.createdAt))
 
   if (rows.length === 0) return []
@@ -428,8 +488,6 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
 
   return rows.map((r) => {
     const lines = (r.quotationLines as QuotationLine[] | null) ?? []
-    const planTotal = (r.financialPlan as { totalAmount?: number | string | null } | null)?.totalAmount
-    const parsedPlanTotal = planTotal == null ? null : Number(planTotal)
     return {
       id: r.id,
       patientId: r.patientId,
@@ -447,12 +505,7 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
       procedureTypeName: r.procedureTypeName,
       procedurePerformedAt: r.sessionPerformedAt ?? r.procedurePerformedAt,
       quotationLines: lines,
-      quotationTotal:
-        lines.length > 0
-          ? quoteTotal(lines)
-          : parsedPlanTotal != null && Number.isFinite(parsedPlanTotal)
-            ? parsedPlanTotal
-            : null,
+      quotationTotal: groupQuotationTotal(r.procedureSessionId, lines, r.financialPlan),
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
       views: views.filter((v) => groupOf.get(v.id) === r.id),

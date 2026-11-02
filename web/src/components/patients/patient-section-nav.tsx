@@ -57,7 +57,7 @@ export function PatientSectionNav({ active, role, onChange }: PatientSectionNavP
     <>
       <nav
         aria-label="Seções do paciente"
-        className="hidden md:block w-52 shrink-0 self-start rounded-[3px] bg-white p-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
+        className="hidden md:block w-full self-start rounded-[3px] bg-white p-2 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
       >
         {sections
           .filter((s) => s.group === null)
@@ -75,7 +75,7 @@ export function PatientSectionNav({ active, role, onChange }: PatientSectionNavP
       </nav>
 
       <nav
-        aria-label="Navegação do paciente"
+        aria-label="Seções do paciente"
         className="md:hidden fixed bottom-0 inset-x-0 z-40 flex border-t bg-white pb-[env(safe-area-inset-bottom)]"
       >
         {MOBILE_NAV_ENTRIES.map((entry) => (
@@ -84,6 +84,8 @@ export function PatientSectionNav({ active, role, onChange }: PatientSectionNavP
             type="button"
             onClick={() => (entry.key === 'resumo' ? onChange('resumo') : setOpenEntry(entry))}
             aria-current={activeEntry?.key === entry.key ? 'page' : undefined}
+            aria-haspopup={entry.key === 'resumo' ? undefined : 'dialog'}
+            aria-expanded={entry.key === 'resumo' ? undefined : openEntry?.key === entry.key}
             className={cn(
               'flex-1 cursor-pointer py-3 text-xs font-medium',
               activeEntry?.key === entry.key ? 'text-forest' : 'text-mid',

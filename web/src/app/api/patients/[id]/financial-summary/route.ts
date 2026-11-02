@@ -10,9 +10,6 @@ export async function GET(
 ) {
   try {
     const ctx = await getAuthContext()
-    if (!['owner', 'financial', 'receptionist', 'practitioner'].includes(ctx.role)) {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-    }
     const { id } = await params
 
     const patient = await getPatient(ctx.tenantId, id)

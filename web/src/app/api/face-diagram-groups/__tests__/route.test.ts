@@ -14,14 +14,18 @@ vi.mock('@/lib/auth', async () => {
 })
 vi.mock('@/lib/plans', () => ({ subscriptionGate: vi.fn().mockResolvedValue(null) }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
+const tx = vi.hoisted(() => ({ name: 'tx' }))
 vi.mock('@/lib/tenant', () => ({
-  withTransaction: vi.fn((fn: (tx: unknown) => unknown) => fn({})),
+  withTransaction: vi.fn((fn: (t: unknown) => unknown) => fn(tx)),
 }))
 vi.mock('@/db/queries/helpers', () => ({ verifyTenantOwnership: vi.fn() }))
-vi.mock('@/db/queries/face-diagram-groups', async () => {
-  class DiagramGroupLockedError extends Error {}
+vi.mock('@/db/client', () => ({ db: {} }))
+vi.mock('@/db/queries/face-diagram-groups', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/db/queries/face-diagram-groups')>()
   return {
-    DiagramGroupLockedError,
+    DiagramGroupLockedError: actual.DiagramGroupLockedError,
+    DiagramGroupNotFoundError: actual.DiagramGroupNotFoundError,
+    InvalidQuotationLineError: actual.InvalidQuotationLineError,
     createStandaloneGroup: vi.fn(),
     updateStandaloneGroup: vi.fn(),
     getDiagramGroup: vi.fn(),
@@ -30,8 +34,11 @@ vi.mock('@/db/queries/face-diagram-groups', async () => {
 })
 
 import { getAuthContext } from '@/lib/auth'
+import { createAuditLog } from '@/lib/audit'
 import {
   DiagramGroupLockedError,
+  DiagramGroupNotFoundError,
+  InvalidQuotationLineError,
   createStandaloneGroup,
   getDiagramGroup,
   updateStandaloneGroup,
@@ -80,15 +87,34 @@ describe('diagram group routes', () => {
       expect.anything(),
       expect.objectContaining({ tenantId: 'tenant-1', patientId: 'p1', practitionerId: 'user-1' })
     )
+    // Regression: an audit written after commit could be lost while the group persisted.
+    expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'g1' }), tx)
   })
 
-  it('maps a locked group on update to 409 with the lock message', async () => {
-    vi.mocked(updateStandaloneGroup).mockRejectedValue(new DiagramGroupLockedError('x'))
+  it('rejects create with a procedure outside the tenant catalog with 400', async () => {
+    vi.mocked(createStandaloneGroup).mockRejectedValue(new InvalidQuotationLineError())
+    const res = await POST(json(validBody), params('p1'))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'Procedimento inválido no orçamento' })
+  })
+
+  it.each([
+    [new DiagramGroupNotFoundError(), 404, 'Diagrama não encontrado'],
+    [new DiagramGroupLockedError('Este diagrama não pode mais ser editado'), 409, 'Este diagrama não pode mais ser editado'],
+    [new InvalidQuotationLineError(), 400, 'Procedimento inválido no orçamento'],
+  ])('maps %s on update to its status and message', async (error, status, message) => {
+    vi.mocked(updateStandaloneGroup).mockRejectedValue(error)
     const res = await PUT(json(validBody), params('g1'))
-    expect(res.status).toBe(409)
-    expect(await res.json()).toEqual({
-      error: 'Este diagrama está vinculado a um atendimento e não pode ser editado',
-    })
+    expect(res.status).toBe(status)
+    expect(await res.json()).toEqual({ error: message })
+    expect(createAuditLog).not.toHaveBeenCalled()
+  })
+
+  it('audits the update inside the transaction', async () => {
+    vi.mocked(updateStandaloneGroup).mockResolvedValue()
+    const res = await PUT(json(validBody), params('g1'))
+    expect(res.status).toBe(200)
+    expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'g1' }), tx)
   })
 
   it('returns 404 for a group outside the tenant', async () => {

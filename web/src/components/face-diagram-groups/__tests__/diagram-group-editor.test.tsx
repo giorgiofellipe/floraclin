@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithProviders } from '@/tests/test-utils'
-import type { DiagramGroupDetail } from '@/db/queries/face-diagram-groups'
+import type { DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import type { Patient } from '@/db/queries/patients'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ replace: vi.fn(), push: vi.fn() }) }))
@@ -14,9 +14,9 @@ vi.mock('@/components/face-diagram/face-diagram-editor', () => ({
 vi.mock('../quotation-lines-editor', () => ({ QuotationLinesEditor: () => <div /> }))
 vi.mock('../quote-history', () => ({ QuoteHistory: () => <div data-testid="history" /> }))
 vi.mock('@/hooks/queries/use-products', () => ({ useDiagramProducts: () => ({ data: [] }) }))
-let procedures: { status: string }[] = []
+let procedures: { status: string }[] | undefined = []
 vi.mock('@/hooks/queries/use-procedures', () => ({
-  useProcedures: () => ({ data: procedures }),
+  useProcedures: () => ({ data: procedures, isLoading: procedures === undefined }),
 }))
 vi.mock('@/hooks/mutations/use-face-diagram-group-mutations', () => ({
   useCreateDiagramGroup: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -32,7 +32,7 @@ const patient = {
   gender: 'female',
 } as Patient
 
-function makeGroup(overrides: Partial<DiagramGroupDetail> = {}): DiagramGroupDetail {
+function makeGroup(overrides: Partial<DiagramGroupJson> = {}): DiagramGroupJson {
   return {
     id: 'grp-1',
     patientId: 'pat-1',
@@ -43,7 +43,7 @@ function makeGroup(overrides: Partial<DiagramGroupDetail> = {}): DiagramGroupDet
     quotationTotal: 100,
     views: [],
     ...overrides,
-  } as unknown as DiagramGroupDetail
+  } as unknown as DiagramGroupJson
 }
 
 beforeEach(() => {
@@ -58,6 +58,9 @@ describe('DiagramGroupEditor', () => {
     expect(screen.getByTestId('diagram').dataset.readonly).toBe('true')
     expect(screen.queryByRole('button', { name: 'Salvar' })).toBeNull()
     expect(screen.queryByRole('link', { name: /Iniciar atendimento/ })).toBeNull()
+    expect(
+      screen.getByRole('link', { name: 'Continuar atendimento' }).getAttribute('href'),
+    ).toBe('/pacientes/pat-1/atendimento')
   })
 
   it('is read-only for a receptionist even on a quote, but keeps the history', () => {
@@ -86,6 +89,17 @@ describe('DiagramGroupEditor', () => {
     expect(
       screen.getByRole('link', { name: /Iniciar atendimento com este diagrama/ }).getAttribute('href'),
     ).toBe('/pacientes/pat-1/atendimento?new=1&diagram=grp-1')
+  })
+
+  it('does not offer a new atendimento while the open ones are still loading', () => {
+    procedures = undefined
+    renderWithProviders(
+      <DiagramGroupEditor patient={patient} group={makeGroup()} role="owner" />,
+    )
+    expect(screen.queryByRole('link', { name: /atendimento/ })).toBeNull()
+    expect(
+      (screen.getByRole('button', { name: /atendimento/ }) as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('disables Gerar PDF when the quotation has no lines', () => {

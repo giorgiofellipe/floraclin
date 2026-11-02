@@ -195,8 +195,13 @@ export function PatientHeader({
     </ReadOnlyGuard>
   )
 
-  function iconAction(label: string, icon: React.ReactNode, onClick: () => void) {
-    if (readOnly && label === 'Novo Agendamento') {
+  function iconAction(
+    label: string,
+    icon: React.ReactNode,
+    onClick: () => void,
+    { disableWhenReadOnly = false } = {},
+  ) {
+    if (readOnly && disableWhenReadOnly) {
       return (
         <ReadOnlyGuard label={label}>
           <Button variant="outline" size="icon-sm" aria-label={label} className={ICON_BUTTON}>
@@ -214,7 +219,7 @@ export function PatientHeader({
               size="icon-sm"
               aria-label={label}
               className={ICON_BUTTON}
-              onClick={label === 'Novo Agendamento' ? onClick : guardWrite(onClick)}
+              onClick={guardWrite(onClick)}
             >
               {icon}
             </Button>
@@ -228,7 +233,7 @@ export function PatientHeader({
   }
 
   const phoneItemClass =
-    'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-[#F4F6F8] transition-colors'
+    'flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-[13px] text-charcoal hover:bg-content-bg transition-colors'
 
   return (
     <div className="space-y-5">
@@ -340,7 +345,9 @@ export function PatientHeader({
             <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <TooltipProvider delay={300}>
                 {desktopWhatsapp}
-                {iconAction('Novo Agendamento', <CalendarPlus className="size-4" />, onNewAppointment)}
+                {iconAction('Novo Agendamento', <CalendarPlus className="size-4" />, onNewAppointment, {
+                  disableWhenReadOnly: true,
+                })}
                 {iconAction('Nova Cobrança', <Receipt className="size-4" />, onNewCharge)}
                 {iconAction('Novo Documento', <FileText className="size-4" />, onNewDocument)}
               </TooltipProvider>
@@ -419,7 +426,7 @@ export function PatientHeader({
                   <MoreHorizontal className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
-                  {canWriteDiagrams && (
+                  {canWriteDiagrams && !readOnly && (
                     <DropdownMenuItem render={<Link href={newDiagramHref} />}>
                       <Plus className="size-4" />
                       Novo diagrama

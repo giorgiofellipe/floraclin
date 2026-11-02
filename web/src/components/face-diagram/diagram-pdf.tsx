@@ -25,14 +25,8 @@ export const DIAGRAM_PDF_CSS = `
   table.diagram-pdf-table th { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; color: #666; }
 `
 
-// Category → marker color, mirroring `getPointColor` in
-// `@/components/face-diagram/diagram-point.tsx`. Duplicated rather than
-// imported: that module is `'use client'` and pulls in `@/components/ui/tooltip`,
-// which has no business running inside `renderReactToPdf`'s server-only,
-// `renderToStaticMarkup` pass — this document's rendering is deliberately
-// independent of the app's interactive UI components (see the plain
-// `<table>`/`<div>` markup and dedicated `DIAGRAM_PDF_CSS` throughout
-// this file, rather than reusing Tailwind-based app components).
+// Mirrors `getPointColor` in diagram-point.tsx. Not imported: that module is
+// 'use client' and must not run inside the server-only PDF render.
 const POINT_COLOR_RULES: Array<{ match: RegExp; color: string }> = [
   { match: /botox|toxina|dysport|xeomin|botul[íi]nic/i, color: '#3b82f6' }, // neurotoxins
   { match: /filler|preenchedor|hialur[ôo]nic|juvederm|restylane|\bah\b/i, color: '#ec4899' }, // fillers
@@ -43,18 +37,8 @@ export function getPointColor(productName: string): string {
   return POINT_COLOR_RULES.find((rule) => rule.match.test(productName))?.color ?? '#a855f7'
 }
 
-/**
- * Absolute URL for a face-template image (`web/public/face-templates/*.webp`,
- * the same files `FaceTemplate` renders on screen). `renderReactToPdf` gives
- * Chromium a raw HTML string via `page.setContent` with no base URL, so a
- * root-relative `VIEW_FILES` path (e.g. `/face-templates/female-front.webp`)
- * never resolves there — it needs the deployed app's own origin prefixed,
- * the same pattern `VerificationFooter` in `@/lib/pdf` already uses, via the
- * shared `getAppUrl` helper (`@/lib/app-url`). Reading the file off disk
- * instead was considered and rejected: Vercel/Lambda's file-tracer does not
- * guarantee arbitrary `public/` assets ship inside the serverless function
- * bundle, so `fs` would work locally and silently 404 in production.
- */
+// The PDF renderer loads HTML with no base URL, so the image needs the app origin.
+// Reading from disk is not an option: Vercel does not ship arbitrary public/ files.
 export function faceTemplateUrl(viewType: DiagramViewType, gender: string | null | undefined): string {
   const genderKey = resolveGenderKey(gender)
   const files = VIEW_FILES[genderKey]
@@ -62,17 +46,6 @@ export function faceTemplateUrl(viewType: DiagramViewType, gender: string | null
   return `${getAppUrl()}${path}`
 }
 
-/**
- * Prints the same thing the app shows in the face-diagram editor — the
- * template silhouette with each point positioned over it — instead of a
- * text list, so the printed document matches what the practitioner actually
- * drew (see `web/src/components/face-diagram/face-diagram-editor.tsx` and
- * `diagram-point.tsx` for the on-screen equivalent this mirrors). Each
- * marker is numbered rather than labeled inline (no room for a product name
- * inside a 16px circle, and static print has no hover tooltip to fall back
- * on); the legend table underneath keeps product, dose and unit — the data
- * a practitioner needs to read off this document — legible in print.
- */
 export function FaceDiagramPdfSection({
   diagrams,
   gender,

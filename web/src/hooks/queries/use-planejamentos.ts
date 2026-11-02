@@ -1,6 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from './query-keys'
 import type {
   FollowupChannel,
   FollowupOutcome,
@@ -140,7 +141,7 @@ export function useRecordFollowup() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['planejamentos'] })
       qc.invalidateQueries({ queryKey: ['procedures'] })
-      qc.invalidateQueries({ queryKey: ['face-diagram-groups'] })
+      qc.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
     },
   })
 }

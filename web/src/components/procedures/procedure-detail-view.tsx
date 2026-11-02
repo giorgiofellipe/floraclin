@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
@@ -22,7 +23,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import { cn } from '@/lib/utils'
-import { PROCEDURE_STATUS_LABELS } from '@/lib/constants'
+import { CONSENT_TYPE_LABELS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
@@ -39,6 +40,7 @@ import {
 import { FollowupModal } from '@/components/planejamentos/followup-modal'
 import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
 import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
+import { usePendingConsents } from '@/hooks/queries/use-consent'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -89,6 +91,7 @@ function diagramsToPoints(diagrams: DiagramWithPoints[]): DiagramPointData[] {
     for (const p of d.points) {
       points.push({
         id: p.id,
+        viewType: d.viewType,
         x: parseFloat(p.x),
         y: parseFloat(p.y),
         productName: p.productName,
@@ -214,6 +217,8 @@ export function ProcedureDetailView({
   const statusLabel = PROCEDURE_STATUS_LABELS[procedure.status] ?? procedure.status
   const financialPlan = procedure.financialPlan as FinancialPlan | null
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams), [diagrams])
+  const { data: pendingConsents } = usePendingConsents(patientId)
+  const pendingTypes = pendingConsents?.find((c) => c.procedureRecordId === procedure.id)?.pendingTypes ?? []
 
   const isCancelled = procedure.status === 'cancelled'
   // Treatment delivered: any session executed (in_progress) OR fully done (completed).
@@ -371,6 +376,24 @@ export function ProcedureDetailView({
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {pendingTypes.length > 0 && (
+          <div
+            data-print-hide
+            className="mx-8 mb-6 flex flex-col gap-2 rounded-lg border border-sage/20 bg-sage/5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-[13px] text-forest">
+              Assinaturas pendentes: {pendingTypes.map((t) => CONSENT_TYPE_LABELS[t] ?? t).join(', ')}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/pacientes/${patientId}/procedimentos/${procedure.id}?action=sign`} />}
+            >
+              Coletar assinaturas
+            </Button>
           </div>
         )}
 

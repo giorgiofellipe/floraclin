@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
 import { buildCartFromQuote, quoteTotal } from '@/lib/diagram-quote'
 import { formatBrDate } from '@/lib/dates'
-import { cn } from '@/lib/utils'
+import { cn, formatCurrency } from '@/lib/utils'
 import type { WizardOverrides } from './types'
 import type { EncounterCart, CartLine } from '@/validations/encounter-cart'
 import { TemplateChooser } from './template-chooser'
@@ -61,7 +61,6 @@ interface TemplateApi {
 
 // ─── Component ──────────────────────────────────────────────────────
 
-const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
 
 export function ProcedureTypeStep({
   patientId,
@@ -358,17 +357,17 @@ export function ProcedureTypeStep({
                 aria-label="Orçamento"
                 value={chosenQuote.id}
                 onChange={(e) => setPickedQuoteId(e.target.value)}
-                className="w-full rounded-[3px] border border-[#E8ECEF] bg-white p-2 text-sm text-charcoal"
+                className="w-full rounded-[3px] border border-topbar-border bg-white p-2 text-sm text-charcoal"
               >
                 {quotes.map((g) => (
                   <option key={g.id} value={g.id}>
-                    {formatBrDate(g.createdAt)} · {brl.format(quoteTotal(g.quotationLines))}
+                    {formatBrDate(g.createdAt)} · {formatCurrency(quoteTotal(g.quotationLines))}
                   </option>
                 ))}
               </select>
             )}
             <p className="text-xs text-mid">
-              Total {brl.format(quoteTotal(chosenQuote.quotationLines))}
+              Total {formatCurrency(quoteTotal(chosenQuote.quotationLines))}
             </p>
             <div className="flex gap-2">
               <Button type="button" onClick={() => applyQuote(chosenQuote.id)}>

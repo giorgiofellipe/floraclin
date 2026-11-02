@@ -236,12 +236,8 @@ export function ProcedureForm({
   draftRecordIds,
   onCartChange,
 }: ProcedureFormProps) {
-  const seedDiagrams =
-    existingDiagrams && existingDiagrams.length > 0
-      ? existingDiagrams
-      : mode === 'create'
-        ? sourceDiagram?.views
-        : undefined
+  const createSeed = mode === 'create' ? sourceDiagram?.views : undefined
+  const seedDiagrams = existingDiagrams?.length ? existingDiagrams : createSeed
   const sourceGroupId = mode === 'create' && !procedure?.id ? (sourceDiagram?.groupId ?? null) : null
 
   // F4 multi-line: when a cart with >1 line is provided we currently render
@@ -447,6 +443,7 @@ export function ProcedureForm({
 
   useEffect(() => {
     if (!isPlanningMode || isReadOnly) return
+    if (cartTotal !== null) return
     if (procedureTypes.length === 0) return
 
     const fromState = [procedureTypeId, ...(additionalTypeIds ?? [])].filter(Boolean)
@@ -484,7 +481,7 @@ export function ProcedureForm({
       },
       { shouldDirty: true },
     )
-  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly, initialTypeIds, form])
+  }, [procedureTypeId, additionalTypeIds, procedureTypes, isPlanningMode, isReadOnly, initialTypeIds, form, cartTotal])
 
   // ─── Dirty state propagation ──────────────────────────────────
   const isDirty = form.formState.isDirty
@@ -805,6 +802,7 @@ export function ProcedureForm({
       saveEvalResponse,
       wizardOverrides,
       router,
+      sourceGroupId,
     ],
   )
 
