@@ -60,7 +60,7 @@ export function ClinicStep({
           className="h-11 scroll-mb-32"
         />
         {nameSuggested && (
-          <p id="clinic-name-hint" className="text-xs text-mid">
+          <p id="clinic-name-hint" className="text-xs text-charcoal/70">
             Sugerido a partir da sua conta Google. Ajuste se quiser.
           </p>
         )}

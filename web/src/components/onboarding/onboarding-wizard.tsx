@@ -421,7 +421,8 @@ export function OnboardingWizard({
               void logout()
             }}
             // 44px tall hit area around small text: easy to tap, not loud.
-            className="inline-flex min-h-11 items-center gap-1 px-3 text-xs text-mid hover:text-charcoal transition-colors sm:mt-3"
+            // charcoal/70, not mid: mid is under 4.5:1 on content-bg.
+            className="inline-flex min-h-11 items-center gap-1 px-3 text-xs text-charcoal/70 hover:text-charcoal transition-colors sm:mt-3"
           >
             <LogOutIcon className="h-3 w-3" />
             Sair
@@ -477,9 +478,14 @@ export function OnboardingWizard({
                     )}
                   </div>
                   <span
-                    className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
-                      isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid'
-                    }`}
+                    className={cn(
+                      'text-xs font-medium tracking-wide transition-colors duration-300',
+                      // Steps ahead stay grey, set apart from the green current
+                      // and completed ones; charcoal/70 keeps them above 4.5:1.
+                      isCurrent && 'text-forest',
+                      isCompleted && 'text-sage',
+                      !isCurrent && !isCompleted && 'text-charcoal/70',
+                    )}
                   >
                     {step.label}
                   </span>
@@ -770,7 +776,15 @@ export function OnboardingWizard({
           // the banner as well.
           style={keyboardInset > 0 ? { bottom: 0, transform: `translateY(-${keyboardInset}px)` } : undefined}
         >
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
+          {/* On the last step, below sm, Começar a usar takes a full row on top
+              and Voltar and the skip action share the row under it: the three
+              in one line do not fit a phone. */}
+          <div
+            className={cn(
+              'mx-auto flex max-w-3xl items-center justify-between gap-3',
+              currentStep === 3 && 'flex-wrap sm:flex-nowrap',
+            )}
+          >
             {/* Without Voltar (step 1) Próximo spans the bar on phones: a full thumb target. */}
             <div className={currentStep === 0 ? 'hidden sm:block' : undefined}>
               {currentStep > 0 && (
@@ -787,7 +801,13 @@ export function OnboardingWizard({
               )}
             </div>
 
-            <div className={cn('flex items-center gap-2 sm:gap-3', currentStep === 0 && 'w-full sm:w-auto')}>
+            <div
+              className={cn(
+                'flex items-center gap-2 sm:gap-3',
+                currentStep === 0 && 'w-full sm:w-auto',
+                currentStep === 3 && 'contents sm:flex',
+              )}
+            >
               {currentStep === 3 && (
                 <Button
                   type="button"
@@ -820,9 +840,10 @@ export function OnboardingWizard({
                   onClick={handleComplete}
                   disabled={isPending}
                   data-testid="onboarding-complete"
-                  className={`h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-6 sm:h-9 sm:px-8 ${
-                    !isPending ? 'animate-subtle-pulse' : ''
-                  }`}
+                  className={cn(
+                    'order-first h-11 w-full bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-6 sm:order-none sm:h-9 sm:w-auto sm:px-8',
+                    !isPending && 'animate-subtle-pulse',
+                  )}
                 >
                   {isPending ? 'Finalizando...' : 'Começar a usar'}
                 </Button>

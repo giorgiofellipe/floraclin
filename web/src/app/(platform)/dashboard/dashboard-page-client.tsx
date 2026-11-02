@@ -110,7 +110,7 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
                 data-testid="dashboard-new-patient"
                 className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
                   firstPatientHighlight
-                    ? `${PRIMARY_ACTION} ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse`
+                    ? `${PRIMARY_ACTION} outline-2 outline-offset-2 outline-forest motion-safe:animate-subtle-pulse`
                     : OUTLINE_ACTION
                 }`}
               >

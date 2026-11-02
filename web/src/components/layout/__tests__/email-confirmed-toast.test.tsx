@@ -3,26 +3,27 @@
  * "E-mail confirmado." once and drops the parameter, so a reload or Back does
  * not say it again.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { StrictMode } from 'react'
 import { render } from '@testing-library/react'
 
-const { router, toast } = vi.hoisted(() => ({
-  router: { replace: vi.fn() },
-  toast: { success: vi.fn() },
-}))
-vi.mock('next/navigation', () => ({ useRouter: () => router }))
+const { toast } = vi.hoisted(() => ({ toast: { success: vi.fn() } }))
 vi.mock('sonner', () => ({ toast }))
 
 import { EmailConfirmedToast } from '../email-confirmed-toast'
 
 beforeEach(() => {
   vi.clearAllMocks()
+  vi.useFakeTimers()
   window.history.replaceState(null, '', '/onboarding?email_confirmed=1')
 })
 
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('EmailConfirmedToast', () => {
-  it('toasts once, even when effects run twice, and drops the parameter without scrolling', () => {
+  it('toasts once, even when effects run twice, then drops the parameter from the URL', () => {
     render(
       <StrictMode>
         <EmailConfirmedToast show />
@@ -31,19 +32,26 @@ describe('EmailConfirmedToast', () => {
 
     expect(toast.success).toHaveBeenCalledTimes(1)
     expect(toast.success).toHaveBeenCalledWith('E-mail confirmado.')
-    expect(router.replace).toHaveBeenCalledTimes(1)
-    expect(router.replace).toHaveBeenCalledWith('/onboarding', { scroll: false })
+    // Not in the commit that toasts: the router patches replaceState only after it.
+    expect(window.location.search).toBe('?email_confirmed=1')
+
+    vi.runAllTimers()
+    expect(`${window.location.pathname}${window.location.search}`).toBe('/onboarding')
   })
 
   it('keeps the rest of the URL', () => {
     window.history.replaceState(null, '', '/dashboard?primeiro_paciente=1&email_confirmed=1#topo')
     render(<EmailConfirmedToast show />)
-    expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1#topo', { scroll: false })
+    vi.runAllTimers()
+    expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
+      '/dashboard?primeiro_paciente=1#topo',
+    )
   })
 
   it('does nothing without the parameter', () => {
     render(<EmailConfirmedToast show={false} />)
+    vi.runAllTimers()
     expect(toast.success).not.toHaveBeenCalled()
-    expect(router.replace).not.toHaveBeenCalled()
+    expect(window.location.search).toBe('?email_confirmed=1')
   })
 })

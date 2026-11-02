@@ -58,8 +58,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SessionProvider>
           <NextIntlClientProvider messages={messages}>
             <QueryProvider>
-              {children}
+              {/* Before {children}: sonner's Toaster only hears toasts sent
+                  after its own effect subscribes, and effects run in tree
+                  order. A page that toasts on mount (EmailConfirmedToast on a
+                  full page load) would otherwise toast into the void. It is
+                  fixed-position, so this moves nothing on screen. */}
               <Toaster richColors position="top-right" />
+              {children}
             </QueryProvider>
           </NextIntlClientProvider>
         </SessionProvider>

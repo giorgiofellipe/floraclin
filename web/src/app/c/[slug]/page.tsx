@@ -1,4 +1,4 @@
-import { notFound, permanentRedirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { BookingPage } from '@/components/booking/booking-page'
 import { MetaPixel } from '@/components/booking/meta-pixel'
 import { signLogoPath } from '@/lib/logo'
@@ -86,11 +86,13 @@ async function getClinicData(slug: string): Promise<ClinicApiResponse | null> {
   }
 }
 
-// A link the clinic moved off in the last 90 days: 308 to its current one, so
-// the old link keeps working wherever it was shared.
+// A link the clinic moved off in the last 90 days: 307 to its current one, so
+// the old link keeps working wherever it was shared. Temporary on purpose:
+// browsers cache a 308, and after the 90 days the old slug may belong to
+// another clinic.
 async function redirectIfMoved(slug: string) {
   const current = await findBookingSlugRedirect(slug)
-  if (current) permanentRedirect(`/c/${encodeURIComponent(current)}`)
+  if (current) redirect(`/c/${encodeURIComponent(current)}`)
 }
 
 export async function generateMetadata({
