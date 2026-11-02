@@ -11,6 +11,7 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
 import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
@@ -100,9 +101,20 @@ export async function POST(request: Request) {
     // Onboarding is idempotent, so sequential execution is safe.
 
     {
-      // 1. Update tenant with clinic info, working hours, and slug
+      // 1. Update tenant with clinic info, working hours, and slug.
+      // A slug in the request (a wizard from before the link moved to
+      // Settings) must be free. Otherwise the clinic keeps the slug it got at
+      // sign-up, which links may already carry, while it is still free; a
+      // stand-in from Google sign-up is replaced by one from the real name.
+      if (data.clinic.slug && !(await isBookingSlugFree(db, data.clinic.slug, auth.tenantId))) {
+        return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
+      }
+      const keepDraftSlug = !data.clinic.slug
+        && !stillNamedPlaceholder
+        && !!current.slug
+        && await isBookingSlugFree(db, current.slug, auth.tenantId)
       const slug = data.clinic.slug
-        || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
+        || (keepDraftSlug ? current.slug : await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId))
 
       let saved: boolean
       try {

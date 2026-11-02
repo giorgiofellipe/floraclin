@@ -33,6 +33,7 @@ vi.mock('@/db/queries/admin-tenants', () => ({
   findAvailableSlug: vi.fn(async () => 'clinica-bela'),
   generateSlug: vi.fn(),
 }))
+vi.mock('@/db/queries/booking-slugs', () => ({ isBookingSlugFree: vi.fn(async () => true) }))
 vi.mock('@/lib/lifecycle-sender', () => ({ scheduleLifecycleWelcome: vi.fn() }))
 vi.mock('@/db/queries/products', () => ({ listProducts: vi.fn(async () => []), createProduct: vi.fn() }))
 vi.mock('@/db/queries/consent', () => ({
@@ -54,6 +55,8 @@ import {
   updateTenantSettings,
 } from '@/db/queries/tenants'
 import { findAvailableSlug } from '@/db/queries/admin-tenants'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
+import { db } from '@/db/client'
 import { createProduct } from '@/db/queries/products'
 import { createConsentTemplate, listConsentTemplates } from '@/db/queries/consent'
 import { createClinicalDocumentTemplate, listClinicalDocumentTemplates } from '@/db/queries/clinical-documents'
@@ -77,6 +80,7 @@ function postOnboarding(clinic: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {} } as never)
+  vi.mocked(isBookingSlugFree).mockResolvedValue(true)
   updateSet.mockImplementation(() => ({ where: updateWhere }))
   vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
   vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
@@ -494,6 +498,61 @@ describe('POST /api/onboarding', () => {
     it('refuses an unknown method', async () => {
       const res = await post({ clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' }, ...defaults, method: 'magic' })
       expect(res.status).toBe(400)
+    })
+  })
+
+  describe('the booking slug the clinic got at sign-up', () => {
+    const clinic = { name: 'Clínica Bella Estética', phone: '(11) 98888-7777' }
+    const savedSlug = () => vi.mocked(saveOnboardingClinic).mock.calls[0][1].slug
+
+    beforeEach(() => {
+      updateWhere.mockResolvedValue(undefined)
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', slug: 'bella', settings: {} } as never)
+    })
+
+    // Catches onboarding replacing a link the clinic may already have shared with one from the final name.
+    it('keeps it when it is still free', async () => {
+      const res = await postOnboarding(clinic)
+
+      expect(res.status).toBe(200)
+      expect(isBookingSlugFree).toHaveBeenCalledWith(db, 'bella', 'tenant-1')
+      expect(savedSlug()).toBe('bella')
+      expect(findAvailableSlug).not.toHaveBeenCalled()
+    })
+
+    // Catches keeping a slug another clinic holds or has reserved from a recent link change.
+    it('derives a new one from the name when it is taken or reserved', async () => {
+      vi.mocked(isBookingSlugFree).mockResolvedValue(false)
+
+      const res = await postOnboarding(clinic)
+
+      expect(res.status).toBe(200)
+      expect(isBookingSlugFree).toHaveBeenCalledWith(db, 'bella', 'tenant-1')
+      expect(savedSlug()).toBe('clinica-bela')
+    })
+
+    // Catches keeping a slug built from the Google stand-in name the owner never chose.
+    it('derives a new one when the clinic still carries the Google sign-up stand-in name', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'clinica-de-ana',
+        settings: { clinic_name_placeholder: true },
+      } as never)
+
+      await postOnboarding(clinic)
+
+      expect(savedSlug()).toBe('clinica-bela')
+    })
+
+    // Catches an older wizard's explicit slug skipping the 90-day reservation of another clinic's old link.
+    it('refuses an explicit slug that is not free, and writes nothing', async () => {
+      vi.mocked(isBookingSlugFree).mockResolvedValue(false)
+
+      const res = await postOnboarding({ ...clinic, slug: 'reservada' })
+
+      expect(res.status).toBe(409)
+      expect(isBookingSlugFree).toHaveBeenCalledWith(db, 'reservada', 'tenant-1')
+      expect(saveOnboardingClinic).not.toHaveBeenCalled()
     })
   })
 })
