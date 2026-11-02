@@ -87,7 +87,7 @@ function ProntuarioSummaryView({ patientId, data }: { patientId: string; data: P
           target="_blank"
           rel="noopener noreferrer"
         >
-          <Button className="bg-forest text-white hover:bg-sage">
+          <Button>
             <FileTextIcon data-icon="inline-start" />
             Baixar PDF do prontuário
           </Button>

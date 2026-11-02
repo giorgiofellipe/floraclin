@@ -22,6 +22,9 @@ export const COOKIE_BANNER_OFFSET_VAR = '--cookie-banner-offset'
  */
 export const COOKIE_BANNER_SAFE_AREA_VAR = '--cookie-banner-safe-area'
 
+/** Recusar and Aceitar todos in the compact row: the same 44px target each, one line. */
+const COMPACT_CHOICE_CLASSES = 'min-h-11 px-3 max-sm:whitespace-nowrap sm:min-h-0 sm:px-4'
+
 /**
  * Below sm, on the setup the banner is a single row along the bottom edge, so
  * that it and the pinned action bar above it leave the form room. Elsewhere,
@@ -101,14 +104,14 @@ export function CookieConsentBanner() {
             'fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:right-[calc(1rem+env(safe-area-inset-right))] sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-[calc(1rem+env(safe-area-inset-left))] sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5',
             // Compact: edge to edge, one row, the home indicator inside it.
             compact &&
-              'right-0 bottom-0 left-0 flex items-center gap-2 rounded-none border-x-0 border-b-0 px-[calc(0.75rem+env(safe-area-inset-right))] pt-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.75rem+env(safe-area-inset-left))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:block sm:border-x sm:border-b sm:shadow-2xl md:flex',
+              'right-0 bottom-0 left-0 flex items-center gap-2 rounded-none border-x-0 border-b-0 pt-2 pr-[calc(0.75rem+env(safe-area-inset-right))] pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.75rem+env(safe-area-inset-left))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:block sm:border-x sm:border-b sm:shadow-2xl md:flex',
           )}
           data-compact={compact || undefined}
         >
           <div
             className={cn(
               'flex-1 text-xs leading-snug text-mid sm:text-sm sm:leading-relaxed',
-              compact && 'min-w-0 text-[11px]',
+              compact && 'text-[11px] max-sm:min-w-0',
             )}
           >
             <p className={cn('font-medium text-charcoal', compact && 'sr-only sm:not-sr-only')}>Cookies</p>
@@ -138,13 +141,13 @@ export function CookieConsentBanner() {
           {/* Recusar and Aceitar todos share one size and weight class at every
               width (LGPD: refusing is as easy as accepting). Compact, the two
               columns are equal and each is a 44px target. */}
-          <div className={cn('mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex md:mt-0', compact && 'mt-0 shrink-0')}>
+          <div className={cn('mt-3 grid grid-cols-2 gap-2 sm:mt-4 sm:flex md:mt-0', compact && 'mt-0 max-sm:shrink-0')}>
             <button
               type="button"
               onClick={() => persist(false)}
               className={cn(
                 'rounded-full border border-sage/25 px-4 py-2 text-sm text-charcoal transition hover:bg-sage/10',
-                compact && 'min-h-11 px-3 whitespace-nowrap sm:min-h-0 sm:px-4',
+                compact && COMPACT_CHOICE_CLASSES,
               )}
             >
               Recusar
@@ -161,7 +164,7 @@ export function CookieConsentBanner() {
               onClick={() => persist(true)}
               className={cn(
                 'rounded-full bg-forest px-4 py-2 text-sm text-cream transition hover:bg-sage',
-                compact && 'min-h-11 px-3 whitespace-nowrap sm:min-h-0 sm:px-4',
+                compact && COMPACT_CHOICE_CLASSES,
               )}
             >
               Aceitar todos

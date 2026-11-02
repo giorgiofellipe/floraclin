@@ -1,7 +1,7 @@
 /**
  * The drop-off changes to the wizard: a two-field first step, "Configurar
- * depois" (the defaults shortcut), the action bar pinned to the bottom on phones, and the funnel
- * events for field interactions and abandoned steps.
+ * depois" (the defaults shortcut), the action bar pinned to the bottom on
+ * phones, and the funnel events for field interactions and abandoned steps.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
@@ -195,11 +195,6 @@ describe('"Configurar depois"', () => {
     expect(toast.success).toHaveBeenCalledWith('Configuração concluída! Bem-vindo(a) ao FloraClin.')
   })
 
-  it('welcomes without assuming a gender', () => {
-    renderWizard()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem-vindo(a) ao FloraClin')
-  })
-
   it('ignores the owner\'s edits to later steps: it is the defaults', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.mocked(globalThis.fetch)
@@ -318,6 +313,11 @@ describe('action bar on phones', () => {
 })
 
 describe('header legibility', () => {
+  it('welcomes without assuming a gender', () => {
+    renderWizard()
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem-vindo(a) ao FloraClin')
+  })
+
   // charcoal/70 is 5.4:1 on white and 5.2:1 on content-bg; mid is 4.3:1 and 4.0:1.
   it('gives Sair a 44px hit area and a colour that passes AA on the page background', () => {
     renderWizard({ tenantName: 'Clínica Bella' })

@@ -5,7 +5,7 @@
  * variables the action bar reads, and that refusing stays as easy as accepting.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { COOKIE_CONSENT_STORAGE_KEY } from '@/lib/cookie-consent'
 
@@ -48,6 +48,16 @@ describe('CookieConsentBanner on the setup', () => {
     // sm and up: the same floating card as on every other route.
     expect(section).toHaveClass('sm:block', 'sm:rounded-2xl', 'sm:p-4', 'md:flex')
     expect(section.className).toMatch(/sm:bottom-\[calc\(1rem\+env\(safe-area-inset-bottom\)\)\]/)
+    // The one-row tweaks stop at sm: from there the card wraps and shrinks as on every other route.
+    const refuse = screen.getByRole('button', { name: 'Recusar' })
+    for (const el of [refuse, screen.getByRole('button', { name: 'Aceitar todos' })]) {
+      expect(el).toHaveClass('max-sm:whitespace-nowrap')
+      expect(el).not.toHaveClass('whitespace-nowrap')
+    }
+    expect(refuse.parentElement).toHaveClass('max-sm:shrink-0')
+    expect(refuse.parentElement).not.toHaveClass('shrink-0')
+    expect(section.firstElementChild).toHaveClass('max-sm:min-w-0')
+    expect(section.firstElementChild).not.toHaveClass('min-w-0')
   })
 
   it('keeps Recusar and Aceitar todos the same size, each a 44px target, with the links reachable', () => {
@@ -59,8 +69,12 @@ describe('CookieConsentBanner on the setup', () => {
     }
     // Equal columns: neither is narrower than the other.
     expect(refuse.parentElement).toHaveClass('grid', 'grid-cols-2')
-    expect(screen.getByRole('button', { name: 'Ver detalhes' })).toBeVisible()
-    expect(screen.getAllByRole('link', { name: /Privacidade/ }).length).toBeGreaterThan(0)
+    // Both in the phone copy itself, not only in the sm+ paragraph.
+    const phoneCopy = screen.getByRole('button', { name: 'Ver detalhes' }).closest('p')!
+    expect(within(phoneCopy).getByRole('link', { name: 'Privacidade' })).toHaveAttribute(
+      'href',
+      'https://floraclin.com.br/privacidade',
+    )
   })
 
   it('tells the action bar where to sit and that the home-indicator inset is covered', () => {
@@ -74,7 +88,7 @@ describe('CookieConsentBanner on the setup', () => {
     expect(root.style.getPropertyValue('--cookie-banner-safe-area')).toBe('')
   })
 
-  it('refusing records the choice and hides the banner, as accepting does', async () => {
+  it('refusing records the choice and hides the banner', async () => {
     const user = userEvent.setup()
     render(<CookieConsentBanner />)
     await user.click(screen.getByRole('button', { name: 'Recusar' }))

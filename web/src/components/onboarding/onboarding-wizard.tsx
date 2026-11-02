@@ -539,7 +539,7 @@ export function OnboardingWizard({
                   aria-describedby="use-defaults-hint"
                   data-testid="onboarding-use-defaults"
                   // Disabled reads as plain grey text, not a faded primary.
-                  className="h-11 px-3 text-sm text-forest underline decoration-forest/40 underline-offset-4 hover:decoration-forest disabled:text-mid disabled:no-underline disabled:opacity-100"
+                  className="h-11 px-3 text-sm text-forest underline decoration-forest/40 hover:decoration-forest disabled:text-mid disabled:no-underline disabled:opacity-100"
                 >
                   {isPending ? 'Finalizando...' : 'Configurar depois'}
                 </Button>

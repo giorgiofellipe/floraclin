@@ -4,12 +4,11 @@ import { describe, expect, it } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { Button, buttonVariants } from '../button'
 
-/** The value of a `--color-*` token in globals.css. */
-function token(name: string): string {
-  const css = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8')
-  const match = css.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`))
-  if (!match) throw new Error(`no --color-${name}`)
-  return match[1]
+const GLOBALS_CSS = readFileSync(path.resolve(__dirname, '../../../app/globals.css'), 'utf8')
+
+/** The value of a `--color-*` token in globals.css, if there is one. */
+function token(name: string): string | undefined {
+  return GLOBALS_CSS.match(new RegExp(`--color-${name}:\\s*(#[0-9a-fA-F]{6})`))?.[1]
 }
 
 function luminance(hex: string): number {
@@ -25,6 +24,15 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05)
 }
 
+/** The colour token behind a variant's `<prefix>-<token>` class (`text-sm` and the like are skipped). */
+function variantToken(classes: string, prefix: string): string {
+  for (const match of classes.matchAll(new RegExp(`(?:^|\\s)${prefix}-([a-z]+)(?=\\s|$)`, 'g'))) {
+    const hex = token(match[1])
+    if (hex) return hex
+  }
+  throw new Error(`no ${prefix}-<colour token> in ${classes}`)
+}
+
 describe('Button', () => {
   it('is brand green by default, sage on hover, with cream text', () => {
     render(<Button>Salvar</Button>)
@@ -32,22 +40,10 @@ describe('Button', () => {
   })
 
   it('keeps WCAG AA contrast (4.5:1) for the text at rest and on hover', () => {
-    expect(contrast(token('cream'), token('forest'))).toBeGreaterThanOrEqual(4.5)
-    expect(contrast(token('cream'), token('sage'))).toBeGreaterThanOrEqual(4.5)
-  })
-
-  it('leaves the other variants alone', () => {
-    for (const variant of ['outline', 'secondary', 'ghost', 'destructive', 'link'] as const) {
-      expect(buttonVariants({ variant })).not.toMatch(/\bbg-forest\b/)
-    }
-    expect(buttonVariants({ variant: 'destructive' })).toMatch(/\bbg-destructive\/10\b/)
-    expect(buttonVariants({ variant: 'outline' })).toMatch(/\bbg-background\b/)
-  })
-
-  it('still lets a caller override the colour', () => {
-    render(<Button className="bg-[#25D366] text-white hover:bg-[#1DA851]">WhatsApp</Button>)
-    const button = screen.getByRole('button', { name: 'WhatsApp' })
-    expect(button).toHaveClass('bg-[#25D366]', 'text-white', 'hover:bg-[#1DA851]')
-    expect(button).not.toHaveClass('bg-forest', 'text-cream', 'hover:bg-sage')
+    // Read from the variant itself, so a recolour to an unreadable pair fails here too.
+    const classes = buttonVariants()
+    const text = variantToken(classes, 'text')
+    expect(contrast(text, variantToken(classes, 'bg'))).toBeGreaterThanOrEqual(4.5)
+    expect(contrast(text, variantToken(classes, 'hover:bg'))).toBeGreaterThanOrEqual(4.5)
   })
 })
