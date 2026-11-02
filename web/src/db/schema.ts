@@ -1,6 +1,7 @@
-import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, uniqueIndex, index, serial, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, bigint, smallint, uniqueIndex, index, primaryKey, serial, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
+import type { NfseDocumentStatus, NfseEmissionMode, NfseEnvironment, NfseServiceCodes, NfseServicePresetId, NfseSnapshot } from '@/lib/nfse/types'
 
 export const floraclinSchema = pgSchema('floraclin')
 
@@ -1585,3 +1586,77 @@ export const calendarBlocksRelations = relations(calendarBlocks, ({ one }) => ({
   practitioner: one(users, { fields: [calendarBlocks.practitionerId], references: [users.id] }),
   connection: one(calendarConnections, { fields: [calendarBlocks.connectionId], references: [calendarConnections.id] }),
 }))
+
+// ─── NFS-E ───────────────────────────────────────────────────────────
+
+export const nfseSettings = floraclinSchema.table('nfse_settings', {
+  tenantId: uuid('tenant_id').primaryKey().references(() => tenants.id),
+  certificatePfx: text('certificate_pfx').notNull(), // encrypted
+  certificatePassword: text('certificate_password').notNull(), // encrypted
+  cnpj: varchar('cnpj', { length: 14 }).notNull(),
+  certificateSubject: text('certificate_subject').notNull(),
+  certificateIssuer: text('certificate_issuer').notNull(),
+  certificateValidFrom: timestamp('certificate_valid_from', { withTimezone: true }).notNull(),
+  certificateValidTo: timestamp('certificate_valid_to', { withTimezone: true }).notNull(),
+  municipalRegistration: varchar('municipal_registration', { length: 30 }),
+  municipalityCode: varchar('municipality_code', { length: 7 }),
+  simplesNacionalOption: smallint('simples_nacional_option').$type<1 | 2 | 3>(), // CHECK in migration
+  simplesNacionalRegime: smallint('simples_nacional_regime').$type<1 | 2 | 3>(), // CHECK in migration
+  simplesNacionalTaxRate: decimal('simples_nacional_tax_rate', { precision: 5, scale: 2 }), // CHECK in migration
+  servicePreset: varchar('service_preset', { length: 30 }).$type<NfseServicePresetId>(),
+  advancedCodes: jsonb('advanced_codes').$type<NfseServiceCodes>(),
+  issRate: decimal('iss_rate', { precision: 5, scale: 2 }), // CHECK in migration
+  issWithheld: boolean('iss_withheld').notNull().default(false),
+  emissionMode: varchar('emission_mode', { length: 10 }).$type<NfseEmissionMode>().notNull().default('ask'), // CHECK in migration
+  alwaysEnabledAt: timestamp('always_enabled_at', { withTimezone: true }),
+  emailPatient: boolean('email_patient').notNull().default(false),
+  configuredAt: timestamp('configured_at', { withTimezone: true }),
+  updatedBy: uuid('updated_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export const nfseDpsSequences = floraclinSchema.table('nfse_dps_sequences', {
+  cnpj: varchar('cnpj', { length: 14 }).notNull(),
+  municipalityCode: varchar('municipality_code', { length: 7 }).notNull(),
+  series: varchar('series', { length: 5 }).notNull(),
+  lastNumber: bigint('last_number', { mode: 'number' }).notNull(),
+}, (table) => [
+  primaryKey({ name: 'nfse_dps_sequences_pkey', columns: [table.cnpj, table.municipalityCode, table.series] }),
+])
+
+export const nfseDocuments = floraclinSchema.table('nfse_documents', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  paymentRecordId: uuid('payment_record_id').notNull().references(() => paymentRecords.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  environment: varchar('environment', { length: 12 }).$type<NfseEnvironment>().notNull(), // CHECK in migration
+  status: varchar('status', { length: 20 }).$type<NfseDocumentStatus>().notNull().default('pending'), // CHECK in migration
+  value: decimal('value', { precision: 10, scale: 2 }).notNull(),
+  competenceDate: date('competence_date').notNull(),
+  emailRequested: boolean('email_requested').notNull().default(false),
+  payloadSnapshot: jsonb('payload_snapshot').$type<NfseSnapshot>(),
+  dpsNumber: bigint('dps_number', { mode: 'number' }),
+  dpsId: varchar('dps_id', { length: 45 }),
+  accessKey: varchar('access_key', { length: 50 }),
+  nfseNumber: varchar('nfse_number', { length: 20 }),
+  nfseXml: text('nfse_xml'),
+  errorCode: varchar('error_code', { length: 40 }),
+  errorMessage: text('error_message'),
+  attemptCount: integer('attempt_count').notNull().default(0),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  issuedAt: timestamp('issued_at', { withTimezone: true }),
+  emailSentAt: timestamp('email_sent_at', { withTimezone: true }),
+  cancelRequestedAt: timestamp('cancel_requested_at', { withTimezone: true }),
+  cancelReason: smallint('cancel_reason').$type<1 | 2 | 9>(),
+  cancelJustification: text('cancel_justification'),
+  cancelAttemptCount: integer('cancel_attempt_count').notNull().default(0),
+  cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+  createdBy: uuid('created_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('uq_nfse_documents_active_payment').on(table.paymentRecordId).where(sql`status <> 'cancelled'`),
+  index('idx_nfse_documents_tenant_status').on(table.tenantId, table.status),
+  index('idx_nfse_documents_status_cancel').on(table.status, table.cancelRequestedAt),
+])
