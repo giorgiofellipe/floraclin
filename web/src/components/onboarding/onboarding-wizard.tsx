@@ -331,6 +331,8 @@ export function OnboardingWizard({
    */
   function handleUseDefaults() {
     if (!validateClinicStep()) return
+    // Step 1 is submitted either way; `via` tells the shortcut from "Próximo".
+    track('onboarding_step_submitted', { ...stepProperties(0), via: 'defaults' })
     const overrides = defaultProcedureOverrides()
     complete(
       'defaults',

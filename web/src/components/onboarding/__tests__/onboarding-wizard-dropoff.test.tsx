@@ -461,3 +461,25 @@ describe('onboarding_step_backgrounded', () => {
     expect(eventsNamed('onboarding_step_backgrounded')).toHaveLength(0)
   })
 })
+
+describe('onboarding_step_submitted on "Usar padrões e começar"', () => {
+  // Catches the shortcut skipping the step-1 submit, so the funnel showed defaults users as stuck on step 1.
+  it('is sent for step 1 with the same properties as "Próximo", marked via defaults', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-use-defaults'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalled())
+
+    expect(eventsNamed('onboarding_step_submitted')).toEqual([
+      ['onboarding_step_submitted', { step_index: 0, step_name: 'clinic', via: 'defaults' }],
+    ])
+  })
+
+  it('is not sent when step 1 does not validate', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: '', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-use-defaults'))
+
+    expect(eventsNamed('onboarding_step_submitted')).toHaveLength(0)
+  })
+})
