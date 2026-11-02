@@ -19,6 +19,7 @@ import {
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
 import { ProcedureTypeStep } from './procedure-type-step'
+import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
 import { SaveStatusIndicator } from './save-status-indicator'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
@@ -87,6 +88,8 @@ interface ServiceWizardProps {
    */
   deepLinkProcedureId?: string | null
   autoStartNext?: boolean
+  /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
+  initialDiagramGroupId?: string | null
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -119,8 +122,16 @@ export function ServiceWizard({
   stepTimestamps,
   deepLinkProcedureId,
   autoStartNext,
+  initialDiagramGroupId,
 }: ServiceWizardProps) {
   const router = useRouter()
+  const [sourceDiagramGroupId, setSourceDiagramGroupId] = useState<string | null>(
+    initialDiagramGroupId ?? null,
+  )
+  const { data: diagramGroups } = usePatientDiagramGroups(patient.id)
+  const sourceDiagramGroup = sourceDiagramGroupId
+    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId)
+    : undefined
 
   // Derive initial selected type IDs from existing procedure
   const initialSelectedTypeIds = (() => {
@@ -891,6 +902,11 @@ export function ServiceWizard({
               )}
               <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
                 <ProcedureTypeStep
+                  patientId={patient.id}
+                  quoteSelection={{
+                    selectedGroupId: sourceDiagramGroupId,
+                    onSelect: setSourceDiagramGroupId,
+                  }}
                   cart={state.cart}
                   onCartChange={setCart}
                   selectedTypeIds={state.selectedTypeIds}
@@ -913,6 +929,11 @@ export function ServiceWizard({
                 patientGender={patient.gender}
                 procedure={localProcedure ?? undefined}
                 diagrams={localDiagrams ?? undefined}
+                sourceDiagram={
+                  sourceDiagramGroup
+                    ? { groupId: sourceDiagramGroup.id, views: sourceDiagramGroup.views }
+                    : null
+                }
                 existingApplications={localApplications ?? undefined}
                 initialTypeIds={state.selectedTypeIds}
                 cart={state.cart.lines.length > 0 ? state.cart : undefined}

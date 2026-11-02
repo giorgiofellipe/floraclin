@@ -25,6 +25,7 @@ import {
 } from '@/validations/procedure'
 import { buildEvaluationResponseSchema } from '@/lib/validations/build-evaluation-schema'
 import { FormServerErrorBanner } from '@/components/forms/form-server-error-banner'
+import { toast } from 'sonner'
 import type { DiagramViewType, PaymentMethod, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
@@ -73,6 +74,8 @@ interface ProcedureFormProps {
   patientGender?: string | null
   procedure?: ProcedureWithDetails | null
   diagrams?: DiagramWithPoints[]
+  /** Quotation the atendimento starts from (create mode): seeds the diagram and links the group on save. */
+  sourceDiagram?: { groupId: string; views: DiagramWithPoints[] } | null
   existingApplications?: ProductApplicationRecord[]
   initialTypeIds?: string[]
   mode?: 'create' | 'edit' | 'view'
@@ -221,6 +224,7 @@ export function ProcedureForm({
   patientGender,
   procedure,
   diagrams: existingDiagrams,
+  sourceDiagram,
   existingApplications: _existingApplications,
   initialTypeIds,
   mode = 'create',
@@ -232,6 +236,14 @@ export function ProcedureForm({
   draftRecordIds,
   onCartChange,
 }: ProcedureFormProps) {
+  const seedDiagrams =
+    existingDiagrams && existingDiagrams.length > 0
+      ? existingDiagrams
+      : mode === 'create'
+        ? sourceDiagram?.views
+        : undefined
+  const sourceGroupId = mode === 'create' && !procedure?.id ? (sourceDiagram?.groupId ?? null) : null
+
   // F4 multi-line: when a cart with >1 line is provided we currently render
   // only the first line's planning UI (with a clear info banner). Full
   // per-line tabs are tracked in F4-followup.
@@ -283,7 +295,7 @@ export function ProcedureForm({
       followUpDate: procedure?.followUpDate ?? '',
       nextSessionObjectives: procedure?.nextSessionObjectives ?? '',
       financialPlan: deriveInitialFinancialPlan(procedure),
-      diagramPoints: diagramsToPoints(existingDiagrams),
+      diagramPoints: diagramsToPoints(seedDiagrams),
       evaluationResponses: evalResponsesToMap(existingEvaluationResponses),
     },
   })
@@ -309,11 +321,11 @@ export function ProcedureForm({
 
   // ─── Sync existing diagram points after mount ──────────────────
   useEffect(() => {
-    if (!existingDiagrams || existingDiagrams.length === 0) return
+    if (!seedDiagrams || seedDiagrams.length === 0) return
     const current = form.getValues('diagramPoints') ?? []
     if (current.length > 0) return
-    form.setValue('diagramPoints', diagramsToPoints(existingDiagrams), { shouldDirty: false })
-  }, [existingDiagrams, form])
+    form.setValue('diagramPoints', diagramsToPoints(seedDiagrams), { shouldDirty: false })
+  }, [seedDiagrams, form])
 
   // ─── Sync existing eval responses after mount ──────────────────
   useEffect(() => {
@@ -369,6 +381,7 @@ export function ProcedureForm({
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           data.map((p: any) => ({
             id: p.id,
+            viewType: p.viewType || 'front',
             x: parseFloat(String(p.x)),
             y: parseFloat(String(p.y)),
             productName: p.productName,
@@ -637,24 +650,27 @@ export function ProcedureForm({
         // `values.diagramPoints` has `id`/`viewType` stripped by zod, which
         // would break point identity on subsequent renders after form.reset.
         const rawPoints = form.getValues('diagramPoints')
+        const pointsByView = new Map<DiagramViewType, typeof rawPoints>()
+        for (const p of rawPoints) {
+          const view = (p.viewType || 'front') as DiagramViewType
+          pointsByView.set(view, [...(pointsByView.get(view) ?? []), p])
+        }
         const diagramsPayload =
           rawPoints.length > 0
-            ? [
-                {
-                  viewType: 'front' as DiagramViewType,
-                  points: rawPoints.map((p) => ({
-                    x: p.x,
-                    y: p.y,
-                    productName: p.productName,
-                    activeIngredient: p.activeIngredient,
-                    quantity: p.quantity,
-                    quantityUnit: p.quantityUnit,
-                    technique: p.technique,
-                    depth: p.depth,
-                    notes: p.notes,
-                  })),
-                },
-              ]
+            ? [...pointsByView].map(([viewType, viewPoints]) => ({
+                viewType,
+                points: viewPoints.map((p) => ({
+                  x: p.x,
+                  y: p.y,
+                  productName: p.productName,
+                  activeIngredient: p.activeIngredient,
+                  quantity: p.quantity,
+                  quantityUnit: p.quantityUnit,
+                  technique: p.technique,
+                  depth: p.depth,
+                  notes: p.notes,
+                })),
+              }))
             : undefined
 
         // Planning mode strips execution-phase fields from the payload
@@ -668,6 +684,7 @@ export function ProcedureForm({
           diagrams: diagramsPayload,
           financialPlan: values.financialPlan,
         }
+        if (sourceGroupId) payload.diagramGroupId = sourceGroupId
 
         console.log('[planning] sending save payload', {
           mode: isEdit && procedure?.id ? 'update' : 'create',
@@ -741,11 +758,11 @@ export function ProcedureForm({
               router.push(`/pacientes/${patientId}/procedimentos/${createdId}/editar`)
               router.refresh()
             } else {
-              router.push(`/pacientes/${patientId}?tab=procedimentos`)
+              router.push(`/pacientes/${patientId}?tab=atendimentos`)
               router.refresh()
             }
           } else {
-            router.push(`/pacientes/${patientId}?tab=procedimentos`)
+            router.push(`/pacientes/${patientId}?tab=atendimentos`)
             router.refresh()
           }
         }
@@ -763,6 +780,7 @@ export function ProcedureForm({
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Erro ao salvar procedimento'
         console.error('[planning] save threw', err)
+        if (sourceGroupId) toast.error(message)
         form.setError('root.serverError' as never, { type: 'manual', message })
         wizardOverrides?.onSaveComplete?.({
           success: false,
@@ -1012,7 +1030,7 @@ export function ProcedureForm({
             <Button
               variant="outline"
               onClick={() =>
-                router.push(`/pacientes/${patientId}?tab=procedimentos`)
+                router.push(`/pacientes/${patientId}?tab=atendimentos`)
               }
               disabled={submittingAction}
               className="border-forest/30 text-forest hover:bg-petal hover:border-forest/50 transition-colors duration-150"

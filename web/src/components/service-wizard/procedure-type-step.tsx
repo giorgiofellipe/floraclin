@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { Loader2, Stethoscope } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
+import { buildCartFromQuote, quoteTotal } from '@/lib/diagram-quote'
+import { formatBrDate } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import type { WizardOverrides } from './types'
 import type { EncounterCart, CartLine } from '@/validations/encounter-cart'
@@ -20,6 +24,12 @@ interface ProcedureType {
 }
 
 interface ProcedureTypeStepProps {
+  patientId: string
+  /** Saved quotation chosen as the atendimento source (set from the URL or by the card below). */
+  quoteSelection?: {
+    selectedGroupId: string | null
+    onSelect: (groupId: string | null) => void
+  }
   cart: EncounterCart
   onCartChange: (next: EncounterCart) => void
   /** Legacy multi-select API — preserved so the wizard can keep its derived
@@ -51,7 +61,11 @@ interface TemplateApi {
 
 // ─── Component ──────────────────────────────────────────────────────
 
+const brl = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' })
+
 export function ProcedureTypeStep({
+  patientId,
+  quoteSelection,
   cart,
   onCartChange,
   selectedTypeIds: initialSelectedTypeIds,
@@ -64,6 +78,40 @@ export function ProcedureTypeStep({
   // Derive the selection model from the cart so the existing grid UI keeps
   // working without ripping out the visual selection logic.
   const selectedTypeIds = cart.lines.map((l) => l.procedureTypeId)
+
+  // ─── Saved quotations ─────────────────────────────────────────────
+  const { data: groups } = usePatientDiagramGroups(patientId)
+  const quotes = (groups ?? []).filter((g) => g.status === 'quote' && g.quotationLines.length > 0)
+  const [pickedQuoteId, setPickedQuoteId] = useState<string | null>(null)
+  const [quoteDismissed, setQuoteDismissed] = useState(false)
+  const quoteAppliedRef = useRef(false)
+  const selectedGroupId = quoteSelection?.selectedGroupId ?? null
+  const onQuoteSelect = quoteSelection?.onSelect
+
+  function applyQuote(groupId: string) {
+    const group = quotes.find((g) => g.id === groupId)
+    if (!group) return
+    quoteAppliedRef.current = true
+    onCartChange(buildCartFromQuote(group.quotationLines))
+    onQuoteSelect?.(groupId)
+  }
+
+  useEffect(() => {
+    if (quoteAppliedRef.current || !selectedGroupId || cart.lines.length > 0) return
+    const group = quotes.find((g) => g.id === selectedGroupId)
+    if (!group) return
+    quoteAppliedRef.current = true
+    onCartChange(buildCartFromQuote(group.quotationLines))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [groups, selectedGroupId])
+
+  const showQuoteCard =
+    !readOnly &&
+    !quoteDismissed &&
+    !selectedGroupId &&
+    cart.lines.length === 0 &&
+    quotes.length > 0
+  const chosenQuote = quotes.find((g) => g.id === pickedQuoteId) ?? quotes[0]
 
   // ─── Load procedure types ─────────────────────────────────────────
   useEffect(() => {
@@ -299,6 +347,41 @@ export function ProcedureTypeStep({
 
   return (
     <div className="space-y-6">
+      {showQuoteCard && chosenQuote && (
+        <Card className="bg-white border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px]">
+          <CardContent className="space-y-3 pt-4">
+            <p className="text-sm font-medium text-charcoal">
+              Este paciente tem um orçamento de {formatBrDate(chosenQuote.createdAt)}
+            </p>
+            {quotes.length > 1 && (
+              <select
+                aria-label="Orçamento"
+                value={chosenQuote.id}
+                onChange={(e) => setPickedQuoteId(e.target.value)}
+                className="w-full rounded-[3px] border border-[#E8ECEF] bg-white p-2 text-sm text-charcoal"
+              >
+                {quotes.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {formatBrDate(g.createdAt)} · {brl.format(quoteTotal(g.quotationLines))}
+                  </option>
+                ))}
+              </select>
+            )}
+            <p className="text-xs text-mid">
+              Total {brl.format(quoteTotal(chosenQuote.quotationLines))}
+            </p>
+            <div className="flex gap-2">
+              <Button type="button" onClick={() => applyQuote(chosenQuote.id)}>
+                Usar orçamento
+              </Button>
+              <Button type="button" variant="outline" onClick={() => setQuoteDismissed(true)}>
+                Começar do zero
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       <TemplateChooser
         selectedTemplateId={cart.templateId}
         onSelect={handleTemplateSelect}
