@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { listOpenPlanejamentos } from '@/db/queries/followups'
+import { listOpenDiagramQuotes, listOpenPlanejamentos, type OpenPlanejamentoRow } from '@/db/queries/followups'
 import { handleApiError } from '@/lib/api-error'
 
 export async function GET(request: Request) {
@@ -18,13 +18,23 @@ export async function GET(request: Request) {
     const practitionerId =
       ctx.role === 'practitioner' ? ctx.userId : practitionerParam || undefined
 
-    const data = await listOpenPlanejamentos({
+    const args = {
       tenantId: ctx.tenantId,
       practitionerId,
       procedureTypeId,
       includeSnoozed,
       limit,
-    })
+    }
+    const [procedures, quotes] = await Promise.all([
+      listOpenPlanejamentos(args),
+      listOpenDiagramQuotes(args),
+    ])
+
+    const staleness = (row: OpenPlanejamentoRow) =>
+      new Date(row.lastContactedAt ?? row.createdAt).getTime()
+    const data = [...procedures, ...quotes]
+      .sort((a, b) => staleness(a) - staleness(b))
+      .slice(0, limit ?? 200)
 
     return NextResponse.json({ data })
   } catch (error) {

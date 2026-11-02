@@ -14,7 +14,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { useRecordFollowup } from '@/hooks/queries/use-planejamentos'
+import { useRecordFollowup, type PlanejamentoKind } from '@/hooks/queries/use-planejamentos'
 import {
   FOLLOWUP_CHANNELS,
   FOLLOWUP_OUTCOMES,
@@ -41,6 +41,7 @@ export interface FollowupModalProps {
   open: boolean
   onClose: () => void
   procedureRecordId: string
+  kind?: PlanejamentoKind
   patientName?: string
   procedureTypeName?: string
   onRecorded?: (cancelledProcedure: boolean) => void
@@ -50,6 +51,7 @@ export function FollowupModal({
   open,
   onClose,
   procedureRecordId,
+  kind = 'procedure',
   patientName,
   procedureTypeName,
   onRecorded,
@@ -82,20 +84,27 @@ export function FollowupModal({
       const confirmed =
         typeof window !== 'undefined' &&
         window.confirm(
-          'Marcar "desistiu" irá CANCELAR este planejamento e cancelar lançamentos financeiros vinculados (se houver). Deseja continuar?',
+          kind === 'diagram_quote'
+            ? 'Marcar "desistiu" irá encerrar este orçamento. Deseja continuar?'
+            : 'Marcar "desistiu" irá CANCELAR este planejamento e cancelar lançamentos financeiros vinculados (se houver). Deseja continuar?',
         )
       if (!confirmed) return
     }
 
     try {
       const res = await recordFollowup.mutateAsync({
+        kind,
         procedureRecordId,
         channel,
         outcome,
         notes: notes.trim() || undefined,
       })
       if (res.data.cancelledProcedure) {
-        toast.success('Planejamento cancelado conforme registro.')
+        toast.success(
+          kind === 'diagram_quote'
+            ? 'Orçamento encerrado conforme registro.'
+            : 'Planejamento cancelado conforme registro.',
+        )
       } else {
         toast.success('Contato registrado.')
       }
@@ -173,9 +182,9 @@ export function FollowupModal({
             </div>
             {outcome === 'desistiu' && (
               <p className="text-xs text-amber-mid">
-                Marcar &quot;desistiu&quot; irá cancelar este planejamento e seus
-                lançamentos financeiros vinculados (se aprovado). Você precisará
-                confirmar antes de salvar.
+                {kind === 'diagram_quote'
+                  ? 'Marcar "desistiu" irá encerrar este orçamento. Você precisará confirmar antes de salvar.'
+                  : 'Marcar "desistiu" irá cancelar este planejamento e seus lançamentos financeiros vinculados (se aprovado). Você precisará confirmar antes de salvar.'}
               </p>
             )}
           </fieldset>

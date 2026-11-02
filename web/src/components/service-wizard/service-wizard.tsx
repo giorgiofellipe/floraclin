@@ -173,6 +173,7 @@ export function ServiceWizard({
   // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
   const [localProcedure, setLocalProcedure] = useState<ProcedureWithDetails | null>(procedure ?? null)
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
+  const [pendingSignatureLabels, setPendingSignatureLabels] = useState<string[]>([])
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
 
   // Per-step dirty tracking + stable handlers
@@ -758,7 +759,10 @@ export function ServiceWizard({
   // ─── Render ────────────────────────────────────────────────────
 
   const skipLabel = getSkipLabel(state.currentStep)
-  const nextLabel = getNextLabel(state.currentStep)
+  const nextLabel =
+    state.currentStep === 4 && pendingSignatureLabels.length > 0
+      ? 'Aprovar e assinar depois'
+      : getNextLabel(state.currentStep)
   const showBack = state.currentStep > 1
   const showSkip = canSkip(state.currentStep)
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
@@ -964,6 +968,7 @@ export function ServiceWizard({
                   }
                   encounterId={state.encounterId}
                   wizardOverrides={getOverridesForStep(4)}
+                  onPendingSignaturesChange={setPendingSignatureLabels}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">

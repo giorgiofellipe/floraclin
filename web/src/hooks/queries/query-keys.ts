@@ -45,6 +45,11 @@ export const queryKeys = {
   },
   anamnesis: (patientId: string) => ['anamnesis', patientId] as const,
   anamnesisTemplate: ['anamnesisTemplate'] as const,
+  diagramGroups: {
+    all: ['diagram-groups'] as const,
+    byPatient: (patientId: string) => ['diagram-groups', 'patient', patientId] as const,
+    detail: (id: string) => ['diagram-groups', 'detail', id] as const,
+  },
   procedures: {
     all: ['procedures'] as const,
     list: (patientId: string) => ['procedures', 'list', patientId] as const,

@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { PendingConsentsList } from '@/components/patients/pending-consents-list'
 import { ConsentHistory } from '@/components/consent/consent-history'
 import { ConsentViewer } from '@/components/consent/consent-viewer'
 import { SendConsentSigningLink } from '@/components/procedures/approval/send-consent-signing-link'
@@ -134,6 +135,8 @@ export function PatientConsentTab({
           Novo Termo
         </Button>
       </div>
+
+      <PendingConsentsList patientId={patientId} />
 
       <ConsentHistory patientId={patientId} patientName={patientName} patientCpf={patientCpf} patientHasPhone={!!patientPhone} />
 

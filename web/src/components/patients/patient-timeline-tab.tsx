@@ -54,6 +54,8 @@ const TYPE_CONFIG: Record<
   package_cancelled: { icon: PackageIcon, color: 'bg-[#F4F6F8] text-mid' },
   document_issued: { icon: FileText, color: 'bg-[#F0F7F1] text-sage' },
   document_sent_whatsapp: { icon: MessageCircle, color: 'bg-[#F0F7F1] text-sage' },
+  quote_generated: { icon: FileText, color: 'bg-[#F0F7F1] text-sage' },
+  quote_sent_whatsapp: { icon: MessageCircle, color: 'bg-[#F0F7F1] text-sage' },
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {

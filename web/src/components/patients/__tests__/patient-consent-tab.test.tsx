@@ -19,6 +19,7 @@ const templates = {
 
 vi.mock('@/hooks/queries/use-consent', () => ({
   useConsentTemplates: () => ({ data: templates, isLoading: false }),
+  usePendingConsents: () => ({ data: [] }),
 }))
 vi.mock('@/hooks/queries/use-tenant', () => ({
   useTenant: () => ({ data: { name: 'Clínica Teste' } }),

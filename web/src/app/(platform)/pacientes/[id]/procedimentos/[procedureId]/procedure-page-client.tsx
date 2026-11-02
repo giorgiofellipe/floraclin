@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { Printer, Package as PackageIcon } from 'lucide-react'
+import { ArrowLeft, Printer, Package as PackageIcon } from 'lucide-react'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
@@ -11,6 +11,7 @@ import { usePatientPackages } from '@/hooks/queries/use-packages'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
+import { ProcedureSignaturesPanel } from '@/components/procedures/procedure-signatures-panel'
 import { ProcedureDetailView } from '@/components/procedures/procedure-detail-view'
 import { Button } from '@/components/ui/button'
 
@@ -123,6 +124,52 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
           }}
           additionalTypeIds={additionalTypeIds}
         />
+      </div>
+    )
+  }
+
+  // Collect signatures left pending at approval, also after execution
+  if (
+    action === 'sign' &&
+    (procedure.status === 'approved' ||
+      procedure.status === 'in_progress' ||
+      procedure.status === 'completed')
+  ) {
+    if (!tenant) return notFound()
+
+    return (
+      <div className="min-h-screen p-6">
+        <div className="mx-auto max-w-3xl space-y-6">
+          <div>
+            <Link
+              href={`/pacientes/${patientId}?tab=termos`}
+              className="inline-flex items-center gap-1 text-sm text-mid hover:text-charcoal"
+            >
+              <ArrowLeft className="size-4" />
+              Voltar para Termos
+            </Link>
+            <h1 className="mt-3 font-display text-2xl text-forest">Assinaturas pendentes</h1>
+            <p className="mt-1 text-sm text-mid">{procedure.procedureTypeName}</p>
+          </div>
+          <ProcedureSignaturesPanel
+            procedure={procedure}
+            patient={{
+              id: patient.id,
+              fullName: patient.fullName,
+              cpf: patient.cpf,
+              gender: patient.gender,
+              phone: patient.phone,
+            }}
+            tenant={{
+              id: tenant.id,
+              name: tenant.name,
+              whatsappApiEnabled: isWhatsAppEnabled(tenant.settings as Record<string, unknown> | null),
+            }}
+            additionalTypeIds={(procedure.additionalTypeIds ?? []) as string[]}
+            primaryRecordId={procedure.id}
+            diagrams={diagrams}
+          />
+        </div>
       </div>
     )
   }

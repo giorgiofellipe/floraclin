@@ -53,6 +53,11 @@ vi.mock('@/db/queries/financial', () => ({
   cancelLinkedFinancials: (...args: unknown[]) => cancelLinkedFinancialsMock(...args),
 }))
 
+vi.mock('@/db/queries/face-diagram-groups', () => ({
+  lockDiagramGroup: vi.fn(),
+  releaseStandaloneGroups: vi.fn(),
+}))
+
 vi.mock('@/lib/tenant', async () => {
   const { db } = await import('@/db/client')
   return { withTransaction: (fn: (tx: unknown) => unknown) => db.transaction(fn as never) }

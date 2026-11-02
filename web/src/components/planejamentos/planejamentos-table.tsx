@@ -54,7 +54,8 @@ function getDaysSinceLastContact(row: OpenPlanejamento): number {
   return Math.max(0, differenceInDays(today, ref))
 }
 
-function formatPlannedDate(value: string): string {
+function formatPlannedDate(value: string | null): string {
+  if (!value) return '—'
   // performedAt is a timestamptz instant — display BR-local date
   try {
     const d = new Date(value)
@@ -136,16 +137,16 @@ export function PlanejamentosTable({
                 row.snoozedUntil != null && row.snoozedUntil > brToday()
 
               return (
-                <TableRow key={row.id}>
+                <TableRow key={`${row.kind}-${row.id}`}>
                   <TableCell>
                     <Link
-                      href={`/pacientes/${row.patientId}/atendimento`}
+                      href={row.href}
                       className="block max-w-[220px] truncate font-medium text-charcoal hover:text-forest"
                     >
                       {row.patientName}
                     </Link>
                     <div className="text-xs text-mid">
-                      {formatPlannedDate(row.performedAt)}
+                      {formatPlannedDate(row.performedAt ?? row.createdAt)}
                       {showSnoozeBadge && isSnoozed && row.snoozedUntil && (
                         <span className="ml-2 inline-flex items-center gap-1 text-amber-mid">
                           <PauseCircle className="h-3 w-3" />
@@ -223,6 +224,7 @@ export function PlanejamentosTable({
           open={followupTarget !== null}
           onClose={() => setFollowupTarget(null)}
           procedureRecordId={followupTarget.id}
+          kind={followupTarget.kind}
           patientName={followupTarget.patientName}
           procedureTypeName={followupTarget.procedureTypeName}
         />
@@ -232,6 +234,7 @@ export function PlanejamentosTable({
           open={snoozeTarget !== null}
           onClose={() => setSnoozeTarget(null)}
           procedureRecordId={snoozeTarget.id}
+          kind={snoozeTarget.kind}
           currentSnoozedUntil={snoozeTarget.snoozedUntil}
           patientName={snoozeTarget.patientName}
           procedureTypeName={snoozeTarget.procedureTypeName}

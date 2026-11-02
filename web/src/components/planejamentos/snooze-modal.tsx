@@ -15,13 +15,14 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DatePicker } from '@/components/ui/date-picker'
-import { useSnoozeProcedure } from '@/hooks/queries/use-planejamentos'
+import { useSnoozeProcedure, type PlanejamentoKind } from '@/hooks/queries/use-planejamentos'
 import { brToday, parseBrDate, toLocalYmd } from '@/lib/dates'
 
 export interface SnoozeModalProps {
   open: boolean
   onClose: () => void
   procedureRecordId: string
+  kind?: PlanejamentoKind
   currentSnoozedUntil?: string | null
   patientName?: string
   procedureTypeName?: string
@@ -37,6 +38,7 @@ export function SnoozeModal({
   open,
   onClose,
   procedureRecordId,
+  kind = 'procedure',
   currentSnoozedUntil,
   patientName,
   procedureTypeName,
@@ -78,7 +80,7 @@ export function SnoozeModal({
       return
     }
     try {
-      await snoozeMutation.mutateAsync({ procedureRecordId, until })
+      await snoozeMutation.mutateAsync({ kind, procedureRecordId, until })
       toast.success('Planejamento adiado.')
       onSnoozed?.(until)
       onClose()
@@ -90,7 +92,7 @@ export function SnoozeModal({
 
   const handleRemove = async () => {
     try {
-      await snoozeMutation.mutateAsync({ procedureRecordId, until: null })
+      await snoozeMutation.mutateAsync({ kind, procedureRecordId, until: null })
       toast.success('Adiamento removido.')
       onSnoozed?.(null)
       onClose()
