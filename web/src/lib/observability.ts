@@ -89,6 +89,17 @@ export function scrubUrl(url: string): string {
   return url.startsWith('/') ? masked : parsed.origin + masked
 }
 
+const SECRET_KEYS = new Set(['password', 'pfxbase64', 'certificatepfx', 'certificatepassword'])
+
+function redactSecretKeys(value: unknown, seen = new WeakSet<object>()): void {
+  if (typeof value !== 'object' || value === null || seen.has(value)) return
+  seen.add(value)
+  for (const [key, child] of Object.entries(value)) {
+    if (SECRET_KEYS.has(key.toLowerCase())) (value as Record<string, unknown>)[key] = '[Filtered]'
+    else redactSecretKeys(child, seen)
+  }
+}
+
 /**
  * `beforeSend` for both SDKs.
  *
@@ -100,7 +111,13 @@ export function scrubUrl(url: string): string {
  * `/api/anamnesis/token/<token>` would ship the anamnesis link.
  */
 export function scrubEvent(event: ErrorEvent): ErrorEvent {
-  if (event.request?.url) event.request.url = scrubUrl(event.request.url)
+  if (event.request?.url) {
+    if (event.request.url.includes('/api/nfse/certificate')) delete event.request.data
+    event.request.url = scrubUrl(event.request.url)
+  }
+  redactSecretKeys(event.request?.data)
+  redactSecretKeys(event.extra)
+  redactSecretKeys(event.contexts)
   if (event.request?.query_string) delete event.request.query_string
 
   if (event.breadcrumbs) {
@@ -108,6 +125,7 @@ export function scrubEvent(event: ErrorEvent): ErrorEvent {
       if (typeof crumb.data?.url === 'string') crumb.data.url = scrubUrl(crumb.data.url)
       if (typeof crumb.data?.to === 'string') crumb.data.to = scrubUrl(crumb.data.to)
       if (typeof crumb.data?.from === 'string') crumb.data.from = scrubUrl(crumb.data.from)
+      redactSecretKeys(crumb.data)
     }
   }
 

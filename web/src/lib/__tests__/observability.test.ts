@@ -119,6 +119,28 @@ describe('scrubEvent', () => {
     expect(event.breadcrumbs?.[0].data?.to).toBe('/pacientes/:id')
   })
 
+  it('drops the body of a certificate upload event', () => {
+    const event = scrubEvent({
+      request: { url: 'https://app.floraclin.com.br/api/nfse/certificate', data: '{"pfxBase64":"MIIK","password":"hunter2"}' },
+    } as never)
+
+    expect(event.request?.data).toBeUndefined()
+  })
+
+  it('redacts nested password and pfxBase64', () => {
+    const event = scrubEvent({
+      request: { url: 'https://app.floraclin.com.br/api/other', data: { password: 'hunter2', nested: { pfxBase64: 'MIIK' } } },
+      extra: { list: [{ certificatePassword: 'hunter2' }] },
+      contexts: { nfse: { certificatePfx: 'MIIK', cnpj: '11222333000181' } },
+      breadcrumbs: [{ data: { password: 'hunter2', url: '/api/other' } }],
+    } as never)
+
+    const text = JSON.stringify(event)
+    expect(text).not.toContain('hunter2')
+    expect(text).not.toContain('MIIK')
+    expect(text).toContain('11222333000181')
+  })
+
   it('passes an event with nothing to scrub straight through', () => {
     const event = { message: 'boom' } as never
     expect(scrubEvent(event)).toBe(event)
