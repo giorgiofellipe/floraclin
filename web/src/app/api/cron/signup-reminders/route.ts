@@ -11,7 +11,7 @@ import {
   type SignupReminderRecipient,
 } from '@/db/queries/signup-reminders'
 import { handleApiError } from '@/lib/api-error'
-import { getOrIssueConfirmationUrl } from '@/lib/confirm-email'
+import { getOrIssueConfirmationUrl, MIN_LINK_VALIDITY_MS } from '@/lib/confirm-email'
 import { withCronMonitor } from '@/lib/cron-monitor'
 import { sendConfirmationReminderEmail, sendFinishSetupReminderEmail } from '@/lib/email'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -54,10 +54,8 @@ async function sendOnce(
   }
 }
 
-// The 24 hour reminder comes about when the signup link expires; a link with
-// less than this left is replaced rather than resent.
-const MIN_LINK_VALIDITY_MS = 6 * 60 * 60 * 1000
-
+// The 24 hour reminder comes about when the signup link expires, so a link
+// with under MIN_LINK_VALIDITY_MS left is replaced rather than resent.
 function confirmReminder(key: string, reminder: 'first' | 'last') {
   return (recipient: SignupReminderRecipient) =>
     sendOnce(recipient, key, async () =>

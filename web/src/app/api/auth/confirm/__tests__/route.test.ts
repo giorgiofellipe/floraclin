@@ -63,10 +63,11 @@ vi.mock('@/db/schema', () => ({
   accounts: {},
 }))
 
-const { confirmEmailWithTokenMock, markEmailVerifiedViaGoogleMock, issueConfirmationTokenMock } = vi.hoisted(() => ({
+const RESENT_URL = 'https://app.floraclin.com.br/api/auth/confirm?email=a%40b.com&token=raw-token'
+const { confirmEmailWithTokenMock, markEmailVerifiedViaGoogleMock, getOrIssueConfirmationUrlMock } = vi.hoisted(() => ({
   confirmEmailWithTokenMock: vi.fn(),
   markEmailVerifiedViaGoogleMock: vi.fn(),
-  issueConfirmationTokenMock: vi.fn().mockResolvedValue('raw-token'),
+  getOrIssueConfirmationUrlMock: vi.fn(),
 }))
 
 vi.mock('@/lib/confirm-email', () => ({
@@ -74,7 +75,8 @@ vi.mock('@/lib/confirm-email', () => ({
   confirmEmailWithToken: confirmEmailWithTokenMock,
   confirmEmailUrl: (email: string, token: string) =>
     `https://app.floraclin.com.br/api/auth/confirm?email=${encodeURIComponent(email)}&token=${token}`,
-  issueConfirmationToken: issueConfirmationTokenMock,
+  getOrIssueConfirmationUrl: getOrIssueConfirmationUrlMock,
+  MIN_LINK_VALIDITY_MS: 6 * 60 * 60 * 1000,
 }))
 
 vi.mock('@/db/queries/users', () => ({
@@ -128,7 +130,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   selectQueue.length = 0
   updateQueue.length = 0
-  issueConfirmationTokenMock.mockResolvedValue('raw-token')
+  getOrIssueConfirmationUrlMock.mockResolvedValue(RESENT_URL)
 })
 
 // ─── GET /api/auth/confirm ──────────────────────────────────────────
@@ -166,7 +168,7 @@ describe('POST /api/auth/confirm/resend', () => {
     // which is exactly what an anonymous caller must not be able to probe
     // for. Throttled looks the same as unknown and as already-verified.
     pushSelect([{ id: 'user-1', emailVerified: null }])
-    issueConfirmationTokenMock.mockResolvedValueOnce(null) // upsert lost the cooldown race
+    getOrIssueConfirmationUrlMock.mockResolvedValueOnce(null) // lost the cooldown race
 
     const response = await postResend({ email: 'a@b.com' })
     const data = await response.json()
@@ -176,7 +178,7 @@ describe('POST /api/auth/confirm/resend', () => {
     expect(sendConfirmationEmailMock).not.toHaveBeenCalled()
   })
 
-  it('passes the cooldown into the token upsert rather than checking it separately', async () => {
+  it('passes the cooldown into the link lookup rather than checking it separately', async () => {
     // The throttle has to be inside the same statement. Read-then-write left
     // a window where a second caller saw no row and sent a second email.
     pushSelect([{ id: 'user-1', emailVerified: null }])
@@ -184,7 +186,7 @@ describe('POST /api/auth/confirm/resend', () => {
 
     await postResend({ email: 'a@b.com' })
 
-    expect(issueConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', expect.any(Number))
+    expect(getOrIssueConfirmationUrlMock).toHaveBeenCalledWith('a@b.com', 6 * 60 * 60 * 1000, 60 * 1000)
   })
 
   it('sends nothing and responds the same for an unknown address', async () => {
@@ -195,7 +197,7 @@ describe('POST /api/auth/confirm/resend', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(issueConfirmationTokenMock).not.toHaveBeenCalled()
+    expect(getOrIssueConfirmationUrlMock).not.toHaveBeenCalled()
     expect(sendConfirmationEmailMock).not.toHaveBeenCalled()
   })
 
@@ -207,11 +209,11 @@ describe('POST /api/auth/confirm/resend', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(issueConfirmationTokenMock).not.toHaveBeenCalled()
+    expect(getOrIssueConfirmationUrlMock).not.toHaveBeenCalled()
     expect(sendConfirmationEmailMock).not.toHaveBeenCalled()
   })
 
-  it('issues a fresh token and sends the email when not throttled', async () => {
+  it('sends the outstanding link (it does not rotate it) when not throttled', async () => {
     pushSelect([{ id: 'user-1', emailVerified: null }]) // user lookup
     pushSelect([{ tenantName: 'Clinica Teste' }]) // membership lookup for the email copy
 
@@ -220,12 +222,7 @@ describe('POST /api/auth/confirm/resend', () => {
 
     expect(response.status).toBe(200)
     expect(data).toEqual({ success: true })
-    expect(issueConfirmationTokenMock).toHaveBeenCalledWith('a@b.com', expect.any(Number))
-    expect(sendConfirmationEmailMock).toHaveBeenCalledWith(
-      'a@b.com',
-      expect.stringContaining('/api/auth/confirm?email=a%40b.com&token=raw-token'),
-      'Clinica Teste'
-    )
+    expect(sendConfirmationEmailMock).toHaveBeenCalledWith('a@b.com', RESENT_URL, 'Clinica Teste')
   })
 
   it('responds the same and reports it when the email fails to send', async () => {

@@ -212,9 +212,9 @@ export function OnboardingWizard({
     },
   }
   const autosave = useOnboardingAutosave(progress)
-  useRedirectWhenOnboardingCompleted()
   const trackFieldInteraction = useFieldInteractionTracking(0)
   const abandonTracking = useStepAbandonTracking(currentStep)
+  useRedirectWhenOnboardingCompleted(abandonTracking.suppress)
   const keyboardInset = useKeyboardInset()
 
   function handleClinicChange(values: ClinicStepValues) {
@@ -393,7 +393,7 @@ export function OnboardingWizard({
     // min-h-dvh, not 100vh: on iOS 100vh is taller than what shows under the
     // URL bar. The bottom padding keeps the last field clear of the action bar
     // that is pinned to the bottom on phones.
-    <div className="min-h-dvh bg-[#F4F6F8]">
+    <div className="min-h-dvh bg-content-bg">
       <div className="mx-auto max-w-3xl px-4 pt-6 pb-36 sm:py-16">
         {/* Header */}
         <div className="mb-6 text-center sm:mb-12 animate-fade-in-up">
@@ -406,6 +406,9 @@ export function OnboardingWizard({
           <button
             type="button"
             onClick={() => {
+              // Signing out is not abandoning a step, and the identity is
+              // about to be cleared anyway.
+              abandonTracking.suppress()
               resetAnalytics()
               void logout()
             }}
@@ -499,7 +502,7 @@ export function OnboardingWizard({
                 invalidField={invalidField}
               />
 
-              <div className="mt-8 rounded-[3px] border border-sage/20 bg-[#F0F7F1] p-4">
+              <div className="mt-8 rounded-[3px] border border-sage/20 bg-confirmed-bg p-4">
                 <p className="text-sm font-medium text-charcoal">Quer começar agora?</p>
                 <p id="use-defaults-hint" className="mt-1 text-xs text-mid">
                   {clinicStepValid
@@ -592,7 +595,7 @@ export function OnboardingWizard({
                               onChange={(e) => setProcedureDuration(index, Number(e.target.value))}
                               disabled={!selected}
                               tabIndex={selected ? 0 : -1}
-                              className="w-full rounded-md border border-sage/30 bg-white px-2 py-1 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                              className="w-full rounded-md border border-sage/30 bg-white px-2 py-1 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-content-bg"
                             >
                               {DURATION_OPTIONS.map((mins) => (
                                 <option key={mins} value={mins}>
@@ -617,7 +620,7 @@ export function OnboardingWizard({
                                 tabIndex={selected ? 0 : -1}
                                 placeholder="0,00"
                                 inputMode="numeric"
-                                className="h-auto w-full rounded-md border border-sage/30 bg-white py-1 pl-8 pr-2 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                                className="h-auto w-full rounded-md border border-sage/30 bg-white py-1 pl-8 pr-2 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-content-bg"
                               />
                             </div>
                           </div>
@@ -752,7 +755,10 @@ export function OnboardingWizard({
         <div
           data-testid="onboarding-actions"
           className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] backdrop-blur-sm transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none"
-          style={keyboardInset > 0 ? { transform: `translateY(-${keyboardInset}px)` } : undefined}
+          // With the keyboard open the cookie banner is behind it, so the bar
+          // rises from the bottom edge by the keyboard alone, not from above
+          // the banner as well.
+          style={keyboardInset > 0 ? { bottom: 0, transform: `translateY(-${keyboardInset}px)` } : undefined}
         >
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
             <div>
@@ -762,7 +768,7 @@ export function OnboardingWizard({
                   variant="outline"
                   onClick={handlePrev}
                   disabled={isPending}
-                  className="h-11 border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors sm:h-9"
+                  className="h-11 border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:h-9"
                   data-testid="onboarding-prev"
                 >
                   Voltar

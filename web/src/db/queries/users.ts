@@ -207,6 +207,16 @@ export async function isUserEmailVerified(userId: string): Promise<boolean> {
   return !!row?.emailVerified
 }
 
+/** Whether the account with this address has confirmed it, as the database has it. */
+export async function isEmailAddressVerified(email: string): Promise<boolean> {
+  const [row] = await db
+    .select({ emailVerified: users.emailVerified })
+    .from(users)
+    .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
+    .limit(1)
+  return !!row?.emailVerified
+}
+
 /** Drops the password of a still-unconfirmed account. Magic-link counterpart of markEmailVerifiedViaGoogle. */
 export async function discardUnconfirmedPassword(email: string): Promise<void> {
   // An unconfirmed account can be signed into with its password, so whoever

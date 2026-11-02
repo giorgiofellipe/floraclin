@@ -190,6 +190,13 @@ export async function PUT(request: Request) {
     // The public booking link. Chosen in onboarding before; now set here,
     // any time. The unique index is the collision check, race included.
     if (body._action === 'booking_slug') {
+      const current = await getTenant(ctx.tenantId)
+      if (!current) return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+      // Unchanged is accepted before the rules: a link from before they
+      // existed (one or two characters) must not stop the form from saving.
+      if (typeof body.slug === 'string' && body.slug.trim().toLowerCase() === current.slug) {
+        return NextResponse.json({ success: true, slug: current.slug })
+      }
       const parsed = bookingSlugSchema.safeParse(body)
       if (!parsed.success) {
         return NextResponse.json(
@@ -197,9 +204,6 @@ export async function PUT(request: Request) {
           { status: 400 },
         )
       }
-      const current = await getTenant(ctx.tenantId)
-      if (!current) return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
-      if (current.slug === parsed.data.slug) return NextResponse.json({ success: true, slug: current.slug })
 
       try {
         await db.update(tenants).set({ slug: parsed.data.slug, updatedAt: new Date() }).where(eq(tenants.id, ctx.tenantId))

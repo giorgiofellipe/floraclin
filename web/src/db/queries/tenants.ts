@@ -172,12 +172,11 @@ export async function markOnboardingCompleted(
 }
 
 /**
- * The final onboarding save of the clinic's slug and details, only while
- * onboarding is still open: false when another save completed it first, and
- * nothing was written. A taken slug throws the `tenants_slug_unique` violation.
- */
-/**
- * The final onboarding save. Onboarding asks only for the name and phone; the
+ * The final onboarding save, only while onboarding is still open: false when
+ * another save completed it first, and nothing was written. A taken slug
+ * throws the `tenants_slug_unique` violation.
+ *
+ * Onboarding asks only for the name and phone; the
  * e-mail, address and hours live in Settings, so a field the request leaves
  * out keeps what the clinic already has (a wizard from before the change
  * still sends them). Hours the clinic never set get the defaults the wizard

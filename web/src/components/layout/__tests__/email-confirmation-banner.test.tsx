@@ -14,10 +14,12 @@ beforeEach(() => {
 describe('EmailConfirmationBanner', () => {
   it('says what waits on the confirmation, without blocking anything', () => {
     render(<EmailConfirmationBanner email="ana@clinica.test" />)
-    const banner = screen.getByRole('status')
+    const banner = screen.getByRole('region', { name: 'Confirmação de e-mail pendente' })
     expect(banner).toHaveTextContent('ana@clinica.test')
     expect(banner).toHaveTextContent(/WhatsApp/)
     expect(banner).toHaveTextContent(/convidar sua equipe/)
+    // Not a live region: it would be read out on every page load.
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
   it('resends through the existing endpoint, then holds the button for the cooldown', async () => {

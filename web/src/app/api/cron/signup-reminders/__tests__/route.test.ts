@@ -44,7 +44,10 @@ vi.mock('@/lib/email', () => ({
   sendConfirmationReminderEmail: sendConfirmMock,
   sendFinishSetupReminderEmail: sendFinishMock,
 }))
-vi.mock('@/lib/confirm-email', () => ({ getOrIssueConfirmationUrl: getUrlMock }))
+vi.mock('@/lib/confirm-email', async (importOriginal) => ({
+  MIN_LINK_VALIDITY_MS: (await importOriginal<typeof import('@/lib/confirm-email')>()).MIN_LINK_VALIDITY_MS,
+  getOrIssueConfirmationUrl: getUrlMock,
+}))
 vi.mock('@/lib/cron-monitor', () => ({ withCronMonitor: (_s: string, _c: string, run: () => unknown) => run() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/api-error', () => ({
@@ -55,6 +58,7 @@ vi.mock('@/lib/api-error', () => ({
 
 import { GET } from '../route'
 import { SIGNUP_CONFIRM_FINAL_REMINDER_KEY, SIGNUP_CONFIRM_REMINDER_KEY } from '@/db/queries/signup-reminders'
+import { MIN_LINK_VALIDITY_MS } from '@/lib/confirm-email'
 
 const SECRET = 'cron-secret'
 const run = () => GET(new Request('http://localhost/api/cron/signup-reminders', { headers: { authorization: `Bearer ${SECRET}` } }))
@@ -101,8 +105,8 @@ describe('signup-reminders cron: confirm reminders', () => {
 
     await run()
 
-    expect(getUrlMock).toHaveBeenCalledWith('dois@x.test', expect.any(Number))
-    expect(getUrlMock.mock.calls[0][1]).toBeGreaterThanOrEqual(60 * 60 * 1000)
+    expect(getUrlMock).toHaveBeenCalledWith('dois@x.test', MIN_LINK_VALIDITY_MS)
+    expect(MIN_LINK_VALIDITY_MS).toBeGreaterThanOrEqual(6 * 60 * 60 * 1000)
   })
 
   it('selects the first reminder from 1 to 24 hours and the last from 24 hours to 7 days, never overlapping', async () => {

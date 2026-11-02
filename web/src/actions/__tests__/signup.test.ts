@@ -495,7 +495,7 @@ describe('signUp action', () => {
     // sends that need a proven address are gated server-side instead.
     await signUp(null, validFormData({ email: 'session@test.com' }))
 
-    expect(signIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ email: 'session@test.com', redirect: false }))
+    expect(signIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ email: 'session@test.com', signup: '1', redirect: false }))
   })
 
   it('redirects to onboarding with the Meta event id and without the address in the URL', async () => {

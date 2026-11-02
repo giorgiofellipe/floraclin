@@ -28,6 +28,7 @@ import { tenants, users } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
 // withTransaction removed — helper functions use global db which deadlocks in transactions
 import { ONBOARDING_ALREADY_COMPLETED, onboardingCompleteSchema } from '@/validations/onboarding'
+import { addressSchema } from '@/validations/tenant'
 import { handleApiError } from '@/lib/api-error'
 import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
@@ -261,7 +262,7 @@ export async function POST(request: Request) {
           userId: auth.userId,
           // The address is set in Settings now, so it is usually not in this
           // request; whatever the clinic already has still names the city.
-          clinic: { ...data.clinic, address: data.clinic.address ?? (current.address as { city?: string; state?: string } | null) },
+          clinic: { ...data.clinic, address: data.clinic.address ?? addressSchema.safeParse(current.address).data },
           signedUpAt: current.createdAt,
         })
       }

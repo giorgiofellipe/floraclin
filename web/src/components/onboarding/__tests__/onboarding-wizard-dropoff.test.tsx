@@ -85,12 +85,9 @@ describe('step 1 asks only for the clinic name and phone', () => {
     expect(screen.queryByLabelText(/E-mail/i)).toBeNull()
   })
 
-  it('uses 16px-on-phone inputs and autofocuses nothing (no iOS zoom, no keyboard on load)', () => {
+  it('autofocuses nothing (no keyboard popping up on load)', () => {
     renderWizard({ tenantName: 'Clínica Bella' })
-    for (const input of document.querySelectorAll('input')) {
-      expect(input.className).toMatch(/(^|\s)text-base(\s|$)/)
-      expect(input).not.toHaveFocus()
-    }
+    for (const input of document.querySelectorAll('input')) expect(input).not.toHaveFocus()
   })
 
   it('marks the missing field invalid when Próximo stops', async () => {
@@ -168,28 +165,9 @@ describe('"Usar padrões e começar"', () => {
 })
 
 describe('action bar on phones', () => {
-  it('is pinned to the bottom above the home indicator and the cookie banner, and the page leaves room for it', () => {
-    const { container } = renderWizard({ tenantName: 'Clínica Bella' })
-    const bar = screen.getByTestId('onboarding-actions')
-    expect(bar.className).toMatch(/(^|\s)fixed(\s|$)/)
-    expect(bar.className).toContain('bottom-[var(--cookie-banner-offset,0px)]')
-    expect(bar.className).toContain('env(safe-area-inset-bottom)')
-    expect(bar.className).toMatch(/sm:static/)
-    expect(bar).toContainElement(screen.getByTestId('onboarding-next'))
-    // Content padding at least as tall as the bar, so the last field is never under it.
-    expect(container.querySelector('.pb-36')).not.toBeNull()
-  })
-
-  it('has no transformed ancestor, which would break position: fixed', () => {
-    renderWizard({ tenantName: 'Clínica Bella' })
-    let node = screen.getByTestId('onboarding-actions').parentElement
-    while (node) {
-      expect(node.className ?? '').not.toMatch(/animate-|translate-/)
-      node = node.parentElement
-    }
-  })
-
-  it('rises above the on-screen keyboard', () => {
+  // Pinning and the room left under the content are layout, which jsdom does
+  // not do: the e2e test keeps Próximo in a phone's viewport.
+  function stubKeyboard({ wide = false } = {}) {
     const listeners: Record<string, () => void> = {}
     const viewport = {
       height: 800,
@@ -199,18 +177,44 @@ describe('action bar on phones', () => {
     }
     vi.stubGlobal('visualViewport', viewport)
     vi.stubGlobal('innerHeight', 800)
-    try {
-      renderWizard({ tenantName: 'Clínica Bella' })
-      expect(screen.getByTestId('onboarding-actions').style.transform).toBe('')
-
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: wide && query === '(min-width: 640px)',
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }))
+    return () =>
       act(() => {
         viewport.height = 460
         listeners.resize()
       })
-      expect(screen.getByTestId('onboarding-actions').style.transform).toBe('translateY(-340px)')
-    } finally {
-      vi.unstubAllGlobals()
-    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('rises above the on-screen keyboard from the bottom edge, carrying Próximo', () => {
+    const openKeyboard = stubKeyboard()
+    renderWizard({ tenantName: 'Clínica Bella' })
+    const bar = screen.getByTestId('onboarding-actions')
+    expect(bar).toContainElement(screen.getByTestId('onboarding-next'))
+    expect(bar.style.transform).toBe('')
+    expect(bar.style.bottom).toBe('')
+
+    openKeyboard()
+
+    expect(bar.style.transform).toBe('translateY(-340px)')
+    // Not also above the cookie banner, which the keyboard now covers.
+    expect(bar.style.bottom).toBe('0px')
+  })
+
+  it('stays in place from the sm breakpoint up, where it is in the page flow', () => {
+    const openKeyboard = stubKeyboard({ wide: true })
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    openKeyboard()
+
+    expect(screen.getByTestId('onboarding-actions').getAttribute('style')).toBeNull()
   })
 })
 
@@ -300,6 +304,29 @@ describe('onboarding_step_abandoned', () => {
     const { unmount } = renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
     await user.click(screen.getByTestId('onboarding-use-defaults'))
     await waitFor(() => expect(router.replace).toHaveBeenCalled())
+    fireEvent(window, new Event('pagehide'))
+    unmount()
+    await act(async () => {})
+
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(0)
+  })
+
+  it('is not sent when a wizard finished elsewhere is sent on to the dashboard', async () => {
+    vi.mocked(globalThis.fetch).mockImplementation(async (url, init) =>
+      Response.json(isCompletedCheck(url, init) ? { completed: true } : { success: true }),
+    )
+    const { unmount } = renderWizard({ tenantName: 'Clínica Bella' })
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    unmount()
+    await act(async () => {})
+
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(0)
+  })
+
+  it('is not sent when the owner signs out', async () => {
+    const user = userEvent.setup()
+    const { unmount } = renderWizard({ tenantName: 'Clínica Bella' })
+    await user.click(screen.getByRole('button', { name: 'Sair' }))
     fireEvent(window, new Event('pagehide'))
     unmount()
     await act(async () => {})

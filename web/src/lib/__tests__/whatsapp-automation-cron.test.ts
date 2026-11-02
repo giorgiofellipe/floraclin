@@ -33,11 +33,17 @@ vi.mock('@/lib/plans', () => ({
   isSubscriptionActive: vi.fn(),
 }))
 
+vi.mock('@/lib/email-confirmation-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email-confirmation-gate')>()),
+  isTenantAwaitingEmailConfirmation: vi.fn(),
+}))
+
 import { db } from '@/db/client'
 import { listAutomations, upsertConversation, createMessage, pushSseEvent } from '@/db/queries/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody, getTemplateForTenant } from '@/lib/whatsapp'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { isSubscriptionActive } from '@/lib/plans'
+import { EmailConfirmationRequiredError, isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { runTemplateAutomation, type DueMessage } from '../whatsapp-automation-cron'
 
 const dbMock = db as unknown as { from: ReturnType<typeof vi.fn> }
@@ -68,6 +74,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   dbMock.from.mockResolvedValue([{ id: 't1', name: 'Clínica Lume', settings: null }])
   vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(false)
   vi.mocked(listAutomations).mockResolvedValue([
     { trigger: 'follow_up', enabled: true, config: { daysAfterProcedure: 5 } },
   ] as never)
@@ -89,6 +96,9 @@ describe('runTemplateAutomation', () => {
     }],
     ['the subscription is inactive', 'subscription_inactive', () => {
       vi.mocked(isSubscriptionActive).mockResolvedValue(false)
+    }],
+    ['the owner has not confirmed the sign-up e-mail', 'email_unconfirmed', () => {
+      vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(true)
     }],
     ['the automation is off', 'no_automation', () => {
       vi.mocked(listAutomations).mockResolvedValue([
@@ -207,6 +217,19 @@ describe('runTemplateAutomation', () => {
     expect(second.release).toHaveBeenCalledTimes(1)
     expect(third.claim).not.toHaveBeenCalled()
     expect(result.outcomes[0]).toMatchObject({ reason: 'credit_exhausted', sent: 1 })
+    expect(captureExceptionMock).not.toHaveBeenCalled()
+  })
+
+  it('stops the tenant quietly when a send is refused for an unconfirmed owner, releasing the claim', async () => {
+    vi.mocked(sendTemplateMessage).mockRejectedValueOnce(new EmailConfirmationRequiredError())
+    const first = dueMessage({ ref: 'a' })
+    const second = dueMessage({ ref: 'b' })
+
+    const result = await runTemplateAutomation('follow_up', vi.fn().mockResolvedValue([first, second]))
+
+    expect(first.release).toHaveBeenCalledTimes(1)
+    expect(second.claim).not.toHaveBeenCalled()
+    expect(result.outcomes[0]).toMatchObject({ reason: 'email_unconfirmed', sent: 0, failed: 0 })
     expect(captureExceptionMock).not.toHaveBeenCalled()
   })
 

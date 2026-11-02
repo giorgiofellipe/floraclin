@@ -158,7 +158,7 @@ export async function signUp(
   // browser pixel can pair with the server CompleteRegistration.
   let signedIn = true
   try {
-    await signIn('credentials', { email, password, redirect: false })
+    await signIn('credentials', { email, password, signup: '1', redirect: false })
   } catch (err) {
     // The account exists either way. Without a session the confirm-email page
     // is the way in: it knows the address from the cookie and can resend.

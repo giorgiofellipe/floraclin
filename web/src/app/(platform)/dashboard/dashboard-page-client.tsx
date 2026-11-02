@@ -101,8 +101,8 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
                 data-testid="dashboard-new-patient"
                 className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
                   firstPatientHighlight
-                    ? 'border-forest bg-[#F0F7F1] text-forest ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse'
-                    : 'border-sage/30 text-charcoal hover:bg-[#F0F7F1]'
+                    ? 'border-forest bg-confirmed-bg text-forest ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse'
+                    : 'border-sage/30 text-charcoal hover:bg-confirmed-bg'
                 }`}
               >
                 <UserPlus className="mr-1.5 h-4 w-4" />
@@ -125,7 +125,7 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
       {firstPatientHighlight && (
         <div
           role="status"
-          className="flex items-start justify-between gap-3 rounded-lg border border-forest/40 bg-[#F0F7F1] px-4 py-3"
+          className="flex items-start justify-between gap-3 rounded-lg border border-forest/40 bg-confirmed-bg px-4 py-3"
           data-testid="first-patient-hint"
         >
           <p id="first-patient-hint" className="text-sm text-charcoal">

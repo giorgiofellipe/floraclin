@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { seedForOnboarding } from './helpers/test-db'
+import { resetConfirmationState, seedForOnboarding, seedUnconfirmedSignup } from './helpers/test-db'
 
 /**
  * Onboarding E2E Tests
@@ -77,6 +77,9 @@ test.describe('Onboarding', () => {
 
     const next = page.getByTestId('onboarding-next')
     await expect(next).toBeInViewport({ timeout: 10000 })
+    // 16px or more, or iOS zooms the page when a field is focused.
+    await expect(page.getByLabel('Nome da clínica *')).toHaveCSS('font-size', '16px')
+    await expect(page.getByLabel('Telefone *')).toHaveCSS('font-size', '16px')
   })
 
   test('should navigate to step 2 — Procedimentos', async ({ page }) => {
@@ -184,5 +187,61 @@ test.describe('Onboarding', () => {
     // If onboarding was completed in previous test, should be on dashboard
     // If running standalone (fresh DB), this might still be on onboarding
     // Both are valid outcomes depending on test isolation
+  })
+})
+
+// ─── Confirmation link ────────────────────────────────────────────────
+
+test.describe('Confirmation link', () => {
+  test.describe.configure({ mode: 'serial' })
+
+  test.beforeEach(async () => {
+    await seedForOnboarding()
+  })
+
+  test.afterEach(async () => {
+    await resetConfirmationState()
+  })
+
+  test('opened in the browser that signed up, confirms and goes straight on to the setup', async ({ page }) => {
+    const { email, password, confirmPath } = await seedUnconfirmedSignup()
+
+    // A real Auth.js session (signup signs in the same way): the confirm link
+    // only skips the tap for the session of the address it carries.
+    await page.goto('/login')
+    await page.getByTestId('login-email').fill(email)
+    await page.getByTestId('login-password').fill(password)
+    await page.getByTestId('login-submit').click()
+    await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
+    await page.goto('/onboarding')
+    await expect(page.getByTestId('email-confirmation-banner')).toBeVisible({ timeout: 10000 })
+
+    await page.goto(confirmPath)
+
+    await page.waitForURL(/\/onboarding$/, { timeout: 30000 })
+    await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
+  })
+
+  test('opened in a browser with no session, asks for one tap and then goes on to the setup', async ({ browser, baseURL }) => {
+    const { confirmPath } = await seedUnconfirmedSignup()
+    // A fresh context: no session cookie and none of the config's headers,
+    // like the mail app's in-app browser.
+    const context = await browser.newContext({ baseURL })
+    const page = await context.newPage()
+
+    try {
+      await page.goto(confirmPath)
+
+      await page.waitForURL(/\/confirm-email$/, { timeout: 30000 })
+      await expect(page.getByText('Falta só um toque')).toBeVisible({ timeout: 10000 })
+      await page.getByTestId('confirm-email-submit').click()
+
+      await page.waitForURL(/\/onboarding$/, { timeout: 30000 })
+      await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
+    } finally {
+      await context.close()
+    }
   })
 })

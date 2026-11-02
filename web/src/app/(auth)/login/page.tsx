@@ -22,6 +22,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Search
       authError={authErrorMessage(first(params.error))}
       authFailure={loginFailureFromAuthError(first(params.error))}
       lastLogin={await readLastLogin()}
+      defaultEmail={first(params.email) ?? null}
     />
   )
 }

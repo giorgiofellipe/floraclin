@@ -71,4 +71,9 @@ describe('LoginForm analytics', () => {
     await user.click(screen.getByTestId('google-sign-in'))
     expect(track).not.toHaveBeenCalled()
   })
+
+  it('fills in the address it was sent with, so a confirmed owner only types the password', () => {
+    render(<LoginForm inAppBrowser={null} callbackUrl={null} authError={null} defaultEmail="ana@clinica.test" />)
+    expect(screen.getByTestId('login-email')).toHaveValue('ana@clinica.test')
+  })
 })

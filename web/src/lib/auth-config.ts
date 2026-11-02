@@ -73,6 +73,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       credentials: {
         email: { type: 'email' },
         password: { type: 'password' },
+        /** '1' only from actions/signup.ts, see isNewUser below. */
+        signup: { type: 'hidden' },
       },
       async authorize(credentials) {
         const email = credentials?.email as string
@@ -104,7 +106,12 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // every session it opened (markEmailVerifiedViaGoogle,
         // discardUnconfirmedPassword), and a reset does the same.
 
-        return { id: user.id, email: user.email, name: user.fullName }
+        // Signup signs the new owner in through here (actions/signup.ts), and
+        // Auth.js reports every credentials sign-in as trigger 'signIn'. The
+        // marker lets login_succeeded say is_new_user like a Google signup does;
+        // a just-created account is always unconfirmed.
+        const isNewUser = credentials?.signup === '1' && !user.emailVerified
+        return { id: user.id, email: user.email, name: user.fullName, isNewUser }
       },
     }),
     Credentials({
@@ -227,9 +234,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.tenantStatus = null
             token.role = null
             token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
-            // A branch that forgets this leaves the field undefined, and the
-            // proxy gate treats undefined as "do not gate" -- so every
-            // branch that assigns tenantStatus assigns this alongside it.
+            // A branch that forgets this leaves the field undefined, which the
+            // confirmation gate and banner read as "unknown" and let through
+            // (see the session callback) -- so every branch that assigns
+            // tenantStatus assigns this alongside it.
             token.emailVerified = !!userRow?.emailVerified
             token.subscriptionStatus = 'expired'
             token.planSlug = 'free'
@@ -286,10 +294,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // every provider, so this counts each successful sign-in once.
       const loginMethod = user && account ? loginMethodFromProvider(account.provider) : null
       if (loginMethod && token.sub && !token.isPlatformAdmin) {
+        // Set by the credentials authorize for the sign-in signup performs.
+        const passwordSignup = !!user && 'isNewUser' in user && user.isNewUser === true
         trackServerEvent(
           'login_succeeded',
           { distinctId: token.sub, tenantId: (token.tenantId as string | null | undefined) ?? null },
-          { method: loginMethod, is_new_user: trigger === 'signUp' },
+          {
+            method: loginMethod,
+            is_new_user: trigger === 'signUp' || passwordSignup,
+          },
         )
       }
 
@@ -304,9 +317,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ;(session as any).role = token.role ?? null
       ;(session as any).isPlatformAdmin = token.isPlatformAdmin ?? false
       // Deliberately NOT `?? false`. A token minted before this field existed
-      // has no claim, and coercing that to false would make the confirmation
-      // gate trap every already-logged-in user. Undefined means "unknown",
-      // and the gate only acts on an explicit false.
+      // has no claim, and coercing that to false would refuse every
+      // already-logged-in user the sends behind the confirmation
+      // (lib/email-confirmation-gate.ts) and show them the banner. Undefined
+      // means "unknown", and both only act on an explicit false.
       ;(session as any).emailVerified = token.emailVerified
       ;(session as any).subscriptionStatus = token.subscriptionStatus ?? 'expired'
       ;(session as any).planSlug = token.planSlug ?? 'free'

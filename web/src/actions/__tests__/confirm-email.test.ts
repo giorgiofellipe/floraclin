@@ -21,6 +21,9 @@ vi.mock('next-auth', () => ({ AuthError, CredentialsSignin }))
 const { signIn } = vi.hoisted(() => ({ signIn: vi.fn() }))
 vi.mock('@/lib/auth-config', () => ({ signIn }))
 
+const { isEmailAddressVerified } = vi.hoisted(() => ({ isEmailAddressVerified: vi.fn() }))
+vi.mock('@/db/queries/users', () => ({ isEmailAddressVerified }))
+
 import { confirmEmail } from '../confirm-email'
 
 const pageState = () => parseConfirmEmailPageState(jar.get(CONFIRM_EMAIL_STATE_COOKIE))
@@ -29,6 +32,7 @@ beforeEach(() => {
   jar.clear()
   jar.set(CONFIRM_EMAIL_STATE_COOKIE, JSON.stringify({ email: 'ana@clinica.com.br', token: 'raw' }))
   signIn.mockReset()
+  isEmailAddressVerified.mockReset().mockResolvedValue(false)
 })
 
 describe('confirmEmail action', () => {
@@ -47,6 +51,16 @@ describe('confirmEmail action', () => {
 
     expect(await confirmEmail()).toEqual({ error: 'Link inválido ou expirado.' })
     expect(pageState()).toEqual({ email: 'ana@clinica.com.br', token: null })
+  })
+
+  it('a used link for an address already confirmed says so, without signing in', async () => {
+    signIn.mockRejectedValueOnce(new CredentialsSignin())
+    isEmailAddressVerified.mockResolvedValueOnce(true)
+
+    expect(await confirmEmail()).toBeNull()
+    expect(isEmailAddressVerified).toHaveBeenCalledWith('ana@clinica.com.br')
+    expect(signIn).toHaveBeenCalledTimes(1)
+    expect(pageState()).toEqual({ email: 'ana@clinica.com.br', token: null, confirmed: true })
   })
 
   it('a failure inside sign-in keeps the token for another try', async () => {

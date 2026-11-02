@@ -122,4 +122,37 @@ describeIntegration('confirm-email sign-in and links (integration, requires test
     const token = new URL(renewed).searchParams.get('token')!
     expect(await authorizeConfirm(email, token)).not.toBeNull()
   })
+
+  it('a resend reuses the live link, once per cooldown', async () => {
+    const { email } = await insertUser()
+    const first = await getOrIssueConfirmationUrl(email)
+    const backdate = () =>
+      db
+        .update(verificationTokens)
+        .set({ lastSentAt: sql`now() - interval '2 minutes'` })
+        .where(eq(verificationTokens.identifier, confirmIdentifier(email)))
+
+    await backdate()
+    expect(await getOrIssueConfirmationUrl(email, 0, 60_000)).toBe(first)
+    expect(await getOrIssueConfirmationUrl(email, 0, 60_000)).toBeNull()
+
+    const token = new URL(first).searchParams.get('token')!
+    expect(await authorizeConfirm(email, token)).not.toBeNull()
+  })
+
+  it('a resend after a password change replaces the revoked link instead of reviving it', async () => {
+    const { email } = await insertUser()
+    const first = await getOrIssueConfirmationUrl(email)
+    await db
+      .update(verificationTokens)
+      .set({ lastSentAt: sql`now() - interval '2 minutes'` })
+      .where(eq(verificationTokens.identifier, confirmIdentifier(email)))
+    await db.update(users).set({ passwordChangedAt: sql`now() - interval '1 minute'` }).where(eq(users.email, email))
+
+    const resent = (await getOrIssueConfirmationUrl(email, 0, 60_000))!
+
+    expect(resent).not.toBe(first)
+    expect(await authorizeConfirm(email, new URL(first).searchParams.get('token')!)).toBeNull()
+    expect(await authorizeConfirm(email, new URL(resent).searchParams.get('token')!)).not.toBeNull()
+  })
 })

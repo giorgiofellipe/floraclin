@@ -25,6 +25,7 @@ vi.mock('@/db/queries/users', () => ({ isUserEmailVerified: vi.fn(async () => ve
 vi.mock('@/components/analytics/analytics-provider', () => ({ AnalyticsProvider: () => null }))
 vi.mock('../signup-conversion-tracker', () => ({ SignupConversionTracker: () => null }))
 vi.mock('../confirm-actions', () => ({
+  AlreadyConfirmed: ({ email }: { email: string }) => <div data-testid="already-confirmed">{email}</div>,
   ConfirmActions: (props: { email: string; hasToken: boolean; signedIn: boolean }) => (
     <div data-testid="actions">{JSON.stringify(props)}</div>
   ),
@@ -64,5 +65,13 @@ describe('/confirm-email', () => {
       hasToken: false,
       signedIn: true,
     })
+  })
+
+  it('sends an owner whose used link met an already confirmed address to sign in', async () => {
+    cookie.current = JSON.stringify({ email: 'ana@clinica.test', token: null, confirmed: true })
+    await renderPage()
+    expect(screen.getByText('Seu e-mail já está confirmado')).toBeInTheDocument()
+    expect(screen.getByTestId('already-confirmed')).toHaveTextContent('ana@clinica.test')
+    expect(screen.queryByTestId('actions')).not.toBeInTheDocument()
   })
 })

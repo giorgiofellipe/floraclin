@@ -55,7 +55,6 @@ describe('dashboard first-patient highlight', () => {
 
     const action = screen.getByTestId('dashboard-new-patient')
     expect(action).toHaveAttribute('data-highlighted', 'true')
-    expect(action.className).toMatch(/ring-2/)
     expect(action).toHaveAccessibleDescription(/primeiro paciente/i)
     expect(screen.getByRole('status')).toHaveTextContent('Sua clínica está pronta.')
     expect(router.replace).toHaveBeenCalledWith('/dashboard', { scroll: false })

@@ -34,6 +34,7 @@ export function LoginForm({
   authError,
   authFailure = null,
   lastLogin = null,
+  defaultEmail = null,
 }: {
   inAppBrowser: InAppBrowser | null
   callbackUrl: string | null
@@ -41,6 +42,8 @@ export function LoginForm({
   /** The `?error=` Auth.js sent back, as an analytics reason. */
   authFailure?: { method: LoginMethod; reason: LoginFailureReason } | null
   lastLogin?: LastLoginOption | null
+  /** Pre-fills the address, e.g. from the confirm page of an address already confirmed. */
+  defaultEmail?: string | null
 }) {
   const [state, formAction, isPending] = useActionState<LoginState, FormData>(login, null)
 
@@ -137,6 +140,7 @@ export function LoginForm({
               type="email"
               required
               data-testid="login-email"
+              defaultValue={defaultEmail ?? undefined}
               className="auth-input h-11 border-blush/60 bg-white/80 rounded-lg transition-all duration-200 focus:border-sage focus:ring-2 focus:ring-mint/20 placeholder:text-mid/40"
               placeholder="seu@email.com"
             />

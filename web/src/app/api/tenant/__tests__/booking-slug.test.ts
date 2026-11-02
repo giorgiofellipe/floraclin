@@ -76,4 +76,12 @@ describe('PUT /api/tenant booking_slug', () => {
     expect(res.status).toBe(200)
     expect(db.update).not.toHaveBeenCalled()
   })
+
+  it('accepts an older link shorter than today\'s minimum when it is unchanged', async () => {
+    getTenantMock.mockResolvedValue({ id: 'tenant-1', slug: 'ab', settings: {} })
+    const res = await put({ slug: 'ab' })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true, slug: 'ab' })
+    expect(db.update).not.toHaveBeenCalled()
+  })
 })

@@ -6,6 +6,7 @@ import { getTemplateForTenant } from '@/lib/whatsapp'
 import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
 import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
+import { EmailConfirmationRequiredError, isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
@@ -50,6 +51,7 @@ type OutcomeReason =
   | 'sent'
   | 'send_failed'
   | 'credit_exhausted'
+  | 'email_unconfirmed'
   | 'tenant_error'
 
 interface TemplateAutomationOutcome {
@@ -112,6 +114,9 @@ async function runForTenant<T extends TemplateAutomationTrigger>(
 
   try {
     if (!(await isSubscriptionActive(tenant.id))) return outcome('subscription_inactive')
+    // Every send would be refused (requireSendAllowed), so nothing is claimed:
+    // the messages stay due and go out on the first run after the owner confirms.
+    if (await isTenantAwaitingEmailConfirmation(tenant.id)) return outcome('email_unconfirmed')
 
     const automation = (await listAutomations(tenant.id)).find(
       (a) => a.trigger === trigger && a.enabled,
@@ -174,6 +179,8 @@ async function runForTenant<T extends TemplateAutomationTrigger>(
           })
           return outcome('credit_exhausted', sent, failed)
         }
+        // Expected while the owner has not confirmed the address, not a failure.
+        if (err instanceof EmailConfirmationRequiredError) return outcome('email_unconfirmed', sent, failed)
         console.error(`[cron] Failed to send ${trigger} ${message.ref}:`, err)
         Sentry.captureException(err, {
           extra: { tenantId: tenant.id, tenantName: tenant.name, trigger, ref: message.ref },
