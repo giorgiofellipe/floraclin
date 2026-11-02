@@ -5,6 +5,11 @@ import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { listProcedures, createProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
+import {
+  DiagramGroupLockedError,
+  ensurePlanningGroup,
+  linkGroupToProcedure,
+} from '@/db/queries/face-diagram-groups'
 import { saveProductApplications } from '@/db/queries/product-applications'
 import { createProcedureSchema } from '@/validations/procedure'
 import { computePlanningStatus } from '@/lib/procedure-status'
@@ -45,6 +50,7 @@ export async function POST(request: Request) {
       followUpDate: body.followUpDate,
       nextSessionObjectives: body.nextSessionObjectives,
       financialPlan: body.financialPlan,
+      diagramGroupId: body.diagramGroupId,
     })
 
     if (!parsed.success) {
@@ -56,7 +62,7 @@ export async function POST(request: Request) {
 
     const status = computePlanningStatus(body)
 
-    const { patientId, ...createData } = parsed.data
+    const { patientId, diagramGroupId, ...createData } = parsed.data
 
     const result = await withTransaction(async (tx) => {
       const procedure = await createProcedure(
@@ -67,15 +73,26 @@ export async function POST(request: Request) {
         tx
       )
 
+      if (diagramGroupId) {
+        await linkGroupToProcedure(tx, {
+          tenantId: ctx.tenantId,
+          patientId,
+          groupId: diagramGroupId,
+          procedureRecordId: procedure.id,
+        })
+      }
+
       if (body.diagrams && body.diagrams.length > 0) {
+        const groupId =
+          diagramGroupId ??
+          (await ensurePlanningGroup(tx, {
+            tenantId: ctx.tenantId,
+            patientId,
+            practitionerId: ctx.userId,
+            procedureRecordId: procedure.id,
+          }))
         for (const diagram of body.diagrams) {
-          await saveFaceDiagram(
-            ctx.tenantId,
-            procedure.id,
-            diagram.viewType,
-            diagram.points,
-            tx
-          )
+          await saveFaceDiagram(ctx.tenantId, groupId, diagram.viewType, diagram.points, tx)
         }
       }
 
@@ -105,6 +122,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
+    if (error instanceof DiagramGroupLockedError) {
+      return NextResponse.json({ error: 'Este diagrama já está em outro atendimento' }, { status: 409 })
+    }
     return handleApiError(error, request)
   }
 }

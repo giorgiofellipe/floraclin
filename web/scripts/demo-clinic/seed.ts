@@ -89,6 +89,7 @@ import {
   expenseInstallments,
   expenses,
   faceDiagrams,
+  faceDiagramGroups,
   financialEntries,
   installments,
   patients,
@@ -892,7 +893,8 @@ async function writeClinicalRecords(tx: Tx, ctx: WriteContext, pastRecords: Past
 
   await inChunks(anamnesisRows, (chunk) => tx.insert(anamneses).values(chunk))
 
-  const diagramRows: Array<{ id: string; tenantId: string; procedureRecordId: string; viewType: string; createdAt: Date; updatedAt: Date }> = []
+  const groupRows: Array<typeof faceDiagramGroups.$inferInsert> = []
+  const diagramRows: Array<{ id: string; tenantId: string; groupId: string; viewType: string; createdAt: Date; updatedAt: Date }> = []
   const pointRows: Array<{
     tenantId: string
     faceDiagramId: string
@@ -915,11 +917,22 @@ async function writeClinicalRecords(tx: Tx, ctx: WriteContext, pastRecords: Past
     if (!procedureRecordId) return
 
     const diagramId = randomUUID()
+    const groupId = randomUUID()
     const drawnAt = brInstant(entry.procedure.date, entry.procedure.startTime)
+    groupRows.push({
+      id: groupId,
+      tenantId: DEMO_TENANT_ID,
+      patientId: featured[patientIndex].id,
+      practitionerId: ctx.practitionerId,
+      procedureRecordId,
+      origin: 'wizard',
+      createdAt: drawnAt,
+      updatedAt: drawnAt,
+    })
     diagramRows.push({
       id: diagramId,
       tenantId: DEMO_TENANT_ID,
-      procedureRecordId,
+      groupId,
       viewType: 'front',
       createdAt: drawnAt,
       updatedAt: drawnAt,
@@ -943,6 +956,7 @@ async function writeClinicalRecords(tx: Tx, ctx: WriteContext, pastRecords: Past
     }
   })
 
+  await inChunks(groupRows, (chunk) => tx.insert(faceDiagramGroups).values(chunk))
   await inChunks(diagramRows, (chunk) => tx.insert(faceDiagrams).values(chunk))
   await inChunks(pointRows, (chunk) => tx.insert(diagramPoints).values(chunk))
 

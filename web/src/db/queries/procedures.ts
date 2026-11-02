@@ -16,6 +16,7 @@ import {
 import { eq, and, desc, isNull, sql, inArray, gte, lte } from 'drizzle-orm'
 import type { CreateProcedureInput, UpdateProcedureInput } from '@/validations/procedure'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
+import { releaseStandaloneGroups } from './face-diagram-groups'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -434,6 +435,8 @@ export async function cancelProcedure(
       )
     )
     .returning()
+
+  if (updated) await releaseStandaloneGroups(txDb, tenantId, [procedureId])
 
   return updated
 }

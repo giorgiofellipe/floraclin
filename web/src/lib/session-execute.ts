@@ -89,6 +89,7 @@ export async function executeSession(
       .select({
         id: procedureRecords.id,
         tenantId: procedureRecords.tenantId,
+        patientId: procedureRecords.patientId,
         status: procedureRecords.status,
         sessionsTotal: procedureRecords.sessionsTotal,
         patientPackageId: procedureRecords.patientPackageId,
@@ -183,8 +184,12 @@ export async function executeSession(
     for (const diagram of input.diagrams ?? []) {
       await saveFaceDiagramForSession(
         input.tenantId,
-        input.procedureRecordId,
-        session.id,
+        {
+          patientId: record.patientId,
+          practitionerId: input.executedBy,
+          procedureRecordId: input.procedureRecordId,
+          procedureSessionId: session.id,
+        },
         diagram.viewType,
         diagram.points,
         tx,

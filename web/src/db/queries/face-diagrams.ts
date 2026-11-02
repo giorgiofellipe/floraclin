@@ -1,7 +1,13 @@
 import { db } from '@/db/client'
-import { faceDiagrams, diagramPoints, procedureSessions } from '@/db/schema'
-import { eq, and, desc, ne, isNull } from 'drizzle-orm'
+import { faceDiagrams, faceDiagramGroups, diagramPoints } from '@/db/schema'
+import { and, desc, eq, exists, isNull, ne, or, sql } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
+import {
+  ensureSessionGroup,
+  loadDiagramsWithPoints,
+  lockDiagramGroup,
+  writeGroupView,
+} from './face-diagram-groups'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -25,351 +31,136 @@ export interface DiagramPointRecord {
   sortOrder: number
 }
 
+export interface DiagramPointInput {
+  x: number
+  y: number
+  productName: string
+  activeIngredient?: string
+  quantity: number
+  quantityUnit: string
+  technique?: string
+  depth?: string
+  notes?: string
+}
+
 // ─── Queries ────────────────────────────────────────────────────────
 
 /**
- * Upsert a face diagram for a specific procedure session and replace its points.
- *
- * Writes are session-scoped: lookup is by `(procedureSessionId, viewType)` per the
- * `uq_face_diagrams_session_view` partial unique constraint (where
- * `procedure_session_id IS NOT NULL`). The `procedureRecordId` is still stored on
- * the row so reads can aggregate per-record.
- */
-export async function saveFaceDiagramForSession(
-  tenantId: string,
-  procedureRecordId: string,
-  procedureSessionId: string,
-  viewType: DiagramViewType,
-  points: Array<{
-    x: number
-    y: number
-    productName: string
-    activeIngredient?: string
-    quantity: number
-    quantityUnit: string
-    technique?: string
-    depth?: string
-    notes?: string
-  }>,
-  txDb: typeof db = db
-) {
-  // Upsert diagram: find existing by (session, viewType) per uq_face_diagrams_session_view
-  const existing = await txDb
-    .select()
-    .from(faceDiagrams)
-    .where(
-      and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureSessionId, procedureSessionId),
-        eq(faceDiagrams.viewType, viewType)
-      )
-    )
-    .limit(1)
-
-  let diagramId: string
-
-  if (existing.length > 0) {
-    diagramId = existing[0].id
-
-    // Update timestamp
-    await txDb
-      .update(faceDiagrams)
-      .set({ updatedAt: new Date() })
-      .where(eq(faceDiagrams.id, diagramId))
-
-    // Delete existing points (cascade replacement)
-    await txDb
-      .delete(diagramPoints)
-      .where(eq(diagramPoints.faceDiagramId, diagramId))
-  } else {
-    const [diagram] = await txDb
-      .insert(faceDiagrams)
-      .values({
-        tenantId,
-        procedureRecordId,
-        procedureSessionId,
-        viewType,
-      })
-      .returning()
-
-    diagramId = diagram.id
-  }
-
-  // Insert new points
-  if (points.length > 0) {
-    await txDb.insert(diagramPoints).values(
-      points.map((point, index) => ({
-        tenantId,
-        faceDiagramId: diagramId,
-        x: point.x.toFixed(2),
-        y: point.y.toFixed(2),
-        productName: point.productName,
-        activeIngredient: point.activeIngredient ?? null,
-        quantity: point.quantity.toFixed(2),
-        quantityUnit: point.quantityUnit,
-        technique: point.technique ?? null,
-        depth: point.depth ?? null,
-        notes: point.notes ?? null,
-        sortOrder: index,
-      }))
-    )
-  }
-
-  return diagramId
-}
-
-/**
- * Planning-time write: upsert keyed by (procedureRecordId, viewType, procedureSessionId IS NULL).
- * Inserts a face_diagrams row with procedureSessionId=NULL so the planner's
- * diagram persists on the draft `procedure_records` before the wizard reaches
- * step 5. At session execution time, `saveFaceDiagramForSession` creates a
- * separate row scoped to the new session.
+ * Upserts one view of a group and replaces its points. The group row is
+ * locked first because there is no unique index on (group_id, view_type).
  */
 export async function saveFaceDiagram(
   tenantId: string,
-  procedureRecordId: string,
+  groupId: string,
   viewType: DiagramViewType,
-  points: Array<{
-    x: number
-    y: number
-    productName: string
-    activeIngredient?: string
-    quantity: number
-    quantityUnit: string
-    technique?: string
-    depth?: string
-    notes?: string
-  }>,
+  points: DiagramPointInput[],
   txDb: typeof db = db
-) {
-  const existing = await txDb
-    .select()
-    .from(faceDiagrams)
-    .where(
-      and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureRecordId, procedureRecordId),
-        eq(faceDiagrams.viewType, viewType),
-        isNull(faceDiagrams.procedureSessionId)
-      )
-    )
-    .limit(1)
-
-  let diagramId: string
-  if (existing.length > 0) {
-    diagramId = existing[0].id
-    await txDb
-      .update(faceDiagrams)
-      .set({ updatedAt: new Date() })
-      .where(eq(faceDiagrams.id, diagramId))
-    await txDb
-      .delete(diagramPoints)
-      .where(eq(diagramPoints.faceDiagramId, diagramId))
-  } else {
-    const [diagram] = await txDb
-      .insert(faceDiagrams)
-      .values({ tenantId, procedureRecordId, viewType })
-      .returning()
-    diagramId = diagram.id
-  }
-
-  if (points.length > 0) {
-    await txDb.insert(diagramPoints).values(
-      points.map((point, index) => ({
-        tenantId,
-        faceDiagramId: diagramId,
-        x: point.x.toFixed(2),
-        y: point.y.toFixed(2),
-        productName: point.productName,
-        activeIngredient: point.activeIngredient ?? null,
-        quantity: point.quantity.toFixed(2),
-        quantityUnit: point.quantityUnit,
-        technique: point.technique ?? null,
-        depth: point.depth ?? null,
-        notes: point.notes ?? null,
-        sortOrder: index,
-      }))
-    )
-  }
-  return diagramId
+): Promise<string> {
+  const group = await lockDiagramGroup(txDb, tenantId, groupId)
+  if (!group) throw new Error('Diagrama não encontrado')
+  return writeGroupView(txDb, tenantId, groupId, viewType, points)
 }
 
-/**
- * List all diagrams (with their points) for a specific procedure session.
- * Tenant-scoped to prevent cross-tenant disclosure if a future caller is
- * fed an untrusted `procedureSessionId` (current caller pre-filters, but
- * the defense-in-depth filter blocks any drift).
- */
+export async function saveFaceDiagramForSession(
+  tenantId: string,
+  input: {
+    patientId: string
+    practitionerId: string
+    procedureRecordId: string
+    procedureSessionId: string
+  },
+  viewType: DiagramViewType,
+  points: DiagramPointInput[],
+  txDb: typeof db = db
+): Promise<string> {
+  const groupId = await ensureSessionGroup(txDb, { tenantId, ...input })
+  return saveFaceDiagram(tenantId, groupId, viewType, points, txDb)
+}
+
 export async function listDiagramsForSession(
   tenantId: string,
   procedureSessionId: string,
   txDb: typeof db = db
 ): Promise<DiagramWithPoints[]> {
-  const diagrams = await txDb
-    .select()
+  const rows = await txDb
+    .select({ id: faceDiagrams.id, viewType: faceDiagrams.viewType })
     .from(faceDiagrams)
+    .innerJoin(faceDiagramGroups, eq(faceDiagramGroups.id, faceDiagrams.groupId))
     .where(
       and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureSessionId, procedureSessionId),
+        eq(faceDiagramGroups.tenantId, tenantId),
+        eq(faceDiagramGroups.procedureSessionId, procedureSessionId),
+        isNull(faceDiagramGroups.deletedAt),
       ),
     )
-
-  const result: DiagramWithPoints[] = []
-
-  for (const diagram of diagrams) {
-    const points = await txDb
-      .select()
-      .from(diagramPoints)
-      .where(eq(diagramPoints.faceDiagramId, diagram.id))
-      .orderBy(diagramPoints.sortOrder)
-
-    result.push({
-      id: diagram.id,
-      viewType: diagram.viewType,
-      points,
-    })
-  }
-
-  return result
+  return loadDiagramsWithPoints(txDb, rows)
 }
 
-/**
- * List diagrams for a procedure record, returning the LAST session's diagrams
- * (ordered by session ordinal DESC). Used by the step-5 picker to seed the
- * editor with the most recent session's points as a starting point.
- *
- * Falls back to legacy record-scoped diagrams (rows where procedureSessionId
- * IS NULL) if no session-scoped diagrams exist for the record.
- */
-export async function listDiagramsForRecord(
+/** Planning and session diagrams of a procedure record. */
+export async function getFaceDiagram(
   tenantId: string,
   procedureRecordId: string,
   txDb: typeof db = db
 ): Promise<DiagramWithPoints[]> {
-  // Find the most recent session (highest ordinal) for this record that has
-  // any diagrams attached.
-  const latestSession = await txDb
-    .select({ id: procedureSessions.id })
-    .from(procedureSessions)
-    .innerJoin(faceDiagrams, eq(faceDiagrams.procedureSessionId, procedureSessions.id))
+  const rows = await txDb
+    .select({ id: faceDiagrams.id, viewType: faceDiagrams.viewType })
+    .from(faceDiagrams)
+    .innerJoin(faceDiagramGroups, eq(faceDiagramGroups.id, faceDiagrams.groupId))
     .where(
       and(
-        eq(procedureSessions.tenantId, tenantId),
-        eq(procedureSessions.procedureRecordId, procedureRecordId),
+        eq(faceDiagramGroups.tenantId, tenantId),
+        eq(faceDiagramGroups.procedureRecordId, procedureRecordId),
+        isNull(faceDiagramGroups.deletedAt),
       ),
     )
-    .orderBy(desc(procedureSessions.sessionOrdinal))
-    .limit(1)
-
-  if (latestSession.length > 0) {
-    return listDiagramsForSession(tenantId, latestSession[0].id, txDb)
-  }
-
-  // Legacy fallback: record-scoped rows (procedureSessionId IS NULL) written
-  // before B6. New writes are session-scoped, but reads still need to surface
-  // pre-migration data.
-  const legacy = await txDb
-    .select()
-    .from(faceDiagrams)
-    .where(
-      and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureRecordId, procedureRecordId),
-      ),
-    )
-
-  const result: DiagramWithPoints[] = []
-  for (const diagram of legacy) {
-    const points = await txDb
-      .select()
-      .from(diagramPoints)
-      .where(eq(diagramPoints.faceDiagramId, diagram.id))
-      .orderBy(diagramPoints.sortOrder)
-
-    result.push({
-      id: diagram.id,
-      viewType: diagram.viewType,
-      points,
-    })
-  }
-
-  return result
-}
-
-export async function getFaceDiagram(
-  tenantId: string,
-  procedureRecordId: string
-): Promise<DiagramWithPoints[]> {
-  const diagrams = await db
-    .select()
-    .from(faceDiagrams)
-    .where(
-      and(
-        eq(faceDiagrams.tenantId, tenantId),
-        eq(faceDiagrams.procedureRecordId, procedureRecordId)
-      )
-    )
-
-  const result: DiagramWithPoints[] = []
-
-  for (const diagram of diagrams) {
-    const points = await db
-      .select()
-      .from(diagramPoints)
-      .where(eq(diagramPoints.faceDiagramId, diagram.id))
-      .orderBy(diagramPoints.sortOrder)
-
-    result.push({
-      id: diagram.id,
-      viewType: diagram.viewType,
-      points,
-    })
-  }
-
-  return result
+  return loadDiagramsWithPoints(txDb, rows)
 }
 
 /**
- * Get the most recent diagram points for a patient (from the latest procedure).
- * Used for ghost overlay in the face diagram editor.
+ * Every view of the patient's latest diagram group that has points, for the
+ * ghost overlay in the editor. Standalone groups count; groups linked to
+ * `excludeProcedureId` do not.
  */
 export async function getPreviousDiagramPoints(
   tenantId: string,
   patientId: string,
   excludeProcedureId?: string
-): Promise<DiagramPointRecord[]> {
-  // Import procedureRecords here to avoid circular dependency at module level
-  const { procedureRecords } = await import('@/db/schema')
-
-  // Find the most recent procedure for this patient (excluding current)
+): Promise<(DiagramPointRecord & { viewType: DiagramViewType })[]> {
   const conditions = [
-    eq(faceDiagrams.tenantId, tenantId),
-    eq(procedureRecords.patientId, patientId),
+    eq(faceDiagramGroups.tenantId, tenantId),
+    eq(faceDiagramGroups.patientId, patientId),
+    isNull(faceDiagramGroups.deletedAt),
+    exists(
+      db
+        .select({ one: sql`1` })
+        .from(faceDiagrams)
+        .innerJoin(diagramPoints, eq(diagramPoints.faceDiagramId, faceDiagrams.id))
+        .where(eq(faceDiagrams.groupId, faceDiagramGroups.id))
+    ),
   ]
-
   if (excludeProcedureId) {
-    conditions.push(ne(faceDiagrams.procedureRecordId, excludeProcedureId))
+    conditions.push(
+      or(
+        isNull(faceDiagramGroups.procedureRecordId),
+        ne(faceDiagramGroups.procedureRecordId, excludeProcedureId)
+      )!
+    )
   }
 
-  const latestDiagrams = await db
-    .select({ id: faceDiagrams.id })
-    .from(faceDiagrams)
-    .innerJoin(
-      procedureRecords,
-      eq(faceDiagrams.procedureRecordId, procedureRecords.id)
-    )
+  const [latest] = await db
+    .select({ id: faceDiagramGroups.id })
+    .from(faceDiagramGroups)
     .where(and(...conditions))
-    .orderBy(desc(procedureRecords.performedAt))
+    .orderBy(desc(faceDiagramGroups.createdAt))
     .limit(1)
+  if (!latest) return []
 
-  if (latestDiagrams.length === 0) return []
-
-  const points = await db
-    .select()
+  const rows = await db
+    .select({ point: diagramPoints, viewType: faceDiagrams.viewType })
     .from(diagramPoints)
-    .where(eq(diagramPoints.faceDiagramId, latestDiagrams[0].id))
-    .orderBy(diagramPoints.sortOrder)
+    .innerJoin(faceDiagrams, eq(faceDiagrams.id, diagramPoints.faceDiagramId))
+    .where(and(eq(faceDiagrams.groupId, latest.id), eq(faceDiagrams.tenantId, tenantId)))
+    .orderBy(faceDiagrams.viewType, diagramPoints.sortOrder)
 
-  return points
+  return rows.map((r) => ({ ...r.point, viewType: r.viewType as DiagramViewType }))
 }

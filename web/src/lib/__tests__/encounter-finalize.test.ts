@@ -658,16 +658,17 @@ describe('finalizeEncounter', () => {
     const draftIdB = '00000000-0000-0000-0000-00000000d031'
     // Order matches the tx.execute call sequence per invocation:
     //   (1) FOR UPDATE lock → rows of the locked draft
-    //   (2) UPDATE financial_entries back-fill → no rows
-    // and the same pair for the second call.
+    //   (2) required-consent lookup, (3) UPDATE financial_entries back-fill,
+    //   (4) signed-consent lookup → no rows
+    // and the same sequence for the second call.
     txState.executeResponses.push({
       rows: [{ id: draftIdA, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
-    txState.executeResponses.push({ rows: [] })
+    txState.executeResponses.push({ rows: [] }, { rows: [] }, { rows: [] })
     txState.executeResponses.push({
       rows: [{ id: draftIdB, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
-    txState.executeResponses.push({ rows: [] })
+    txState.executeResponses.push({ rows: [] }, { rows: [] }, { rows: [] })
 
     const sharedId = '00000000-0000-0000-0000-0000000000a2'
 

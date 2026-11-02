@@ -48,6 +48,7 @@ import {
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { addMonths } from 'date-fns'
 import { createAuditLog } from '@/lib/audit'
+import { requiredConsentTypes, pendingConsentTypes } from '@/lib/consent-requirements'
 import type { PaymentMethod } from '@/types'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 
@@ -239,6 +240,39 @@ export async function finalizeEncounter(
     //    materialize fresh `approved` procedure_records here. They inherit
     //    practitioner + patient from input, with no `plannedSnapshot` (the
     //    clinician can fill planning per-session at execute time).
+    // Required consents for the whole cart, stored on the primary record so unsigned
+    // ones can be collected later.
+    const rowsOf = (result: unknown) =>
+      (Array.isArray(result)
+        ? result
+        : (result as { rows?: Record<string, unknown>[] }).rows ?? []) as Record<string, unknown>[]
+
+    const [requirementRow] = rowsOf(
+      await tx.execute(sql`
+        SELECT
+          COALESCE(
+            (SELECT json_agg(DISTINCT category)
+             FROM floraclin.procedure_types
+             WHERE tenant_id = ${input.tenantId}
+               AND id IN (${sql.join(
+                 input.cart.lines.map((l) => sql`${l.procedureTypeId}`),
+                 sql`, `,
+               )})),
+            '[]'::json
+          ) AS categories,
+          EXISTS (
+            SELECT 1 FROM floraclin.consent_templates
+            WHERE tenant_id = ${input.tenantId}
+              AND type = 'service_contract'
+              AND is_active = true
+          ) AS has_contract
+      `),
+    )
+    const required = requiredConsentTypes({
+      categories: (requirementRow?.categories as string[] | undefined) ?? [],
+      hasActiveContractTemplate: requirementRow?.has_contract === true,
+    })
+
     const now = new Date()
     const finalRecordIds: string[] = [...input.draftRecordIds]
     for (let i = 0; i < input.cart.lines.length; i++) {
@@ -255,6 +289,7 @@ export async function finalizeEncounter(
             sessionsTotal: line.sessions,
             financialPlan: input.financialPlan,
             procedureTypeId: line.procedureTypeId,
+            ...(i === 0 ? { requiredConsentTypes: required } : {}),
             updatedAt: now,
           })
           .where(
@@ -277,6 +312,7 @@ export async function finalizeEncounter(
             patientPackageId,
             sessionsTotal: line.sessions,
             financialPlan: input.financialPlan,
+            ...(i === 0 ? { requiredConsentTypes: required } : {}),
             createdAt: now,
             updatedAt: now,
           })
@@ -316,7 +352,36 @@ export async function finalizeEncounter(
       }
     }
 
-    // 7. Audit log.
+    // 7. Pending consents: required types minus what was just signed.
+    const primaryRecordId = finalRecordIds[0]
+    const signedRows = rowsOf(
+      await tx.execute(sql`
+        SELECT DISTINCT t.type
+        FROM floraclin.consent_acceptances a
+        JOIN floraclin.consent_templates t ON t.id = a.consent_template_id
+        WHERE a.tenant_id = ${input.tenantId}
+          AND a.procedure_record_id = ${primaryRecordId}
+      `),
+    )
+    const pending = pendingConsentTypes(
+      required,
+      signedRows.map((r) => String(r.type)),
+    )
+    if (pending.length > 0) {
+      await createAuditLog(
+        {
+          tenantId: input.tenantId,
+          userId: input.userId,
+          action: 'update',
+          entityType: 'procedure_record',
+          entityId: primaryRecordId,
+          changes: { pendingSignatures: { old: null, new: pending } },
+        },
+        tx,
+      )
+    }
+
+    // 8. Audit log.
     await createAuditLog(
       {
         tenantId: input.tenantId,

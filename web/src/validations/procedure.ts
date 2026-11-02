@@ -28,11 +28,12 @@ export const createProcedureSchema = z.object({
   followUpDate: z.string().optional(),
   nextSessionObjectives: z.string().max(5000, 'Objetivos devem ter no máximo 5000 caracteres').optional(),
   financialPlan: financialPlanSchema.optional(),
+  diagramGroupId: z.string().uuid('ID do diagrama inválido').optional(),
 })
 
 export type CreateProcedureInput = z.infer<typeof createProcedureSchema>
 
-export const updateProcedureSchema = createProcedureSchema.partial().extend({
+export const updateProcedureSchema = createProcedureSchema.omit({ diagramGroupId: true }).partial().extend({
   id: z.string().uuid('ID do procedimento inválido'),
 })
 
