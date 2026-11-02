@@ -50,7 +50,7 @@ describe('SubscriptionDetailDialog feedback discount', () => {
   it('offers to apply it on a trial and sends granted: true', async () => {
     detail.value = { ...TRIAL, firstPaidAt: null, feedbackDiscount: null }
     render(<SubscriptionDetailDialog open onOpenChange={() => {}} subscription={TRIAL} />)
-    expect(screen.getByText('Desconto feedback (50% por 3 meses)')).toBeInTheDocument()
+    expect(screen.getByText('Desconto feedback (50% de desconto nos 3 primeiros meses)')).toBeInTheDocument()
     expect(screen.getByTestId('admin-feedback-discount-status')).toHaveTextContent('Não aplicado')
     fireEvent.click(screen.getByRole('button', { name: 'Aplicar desconto' }))
     await waitFor(() => expect(setFeedback).toHaveBeenCalledWith({ tenantId: 't1', granted: true }))

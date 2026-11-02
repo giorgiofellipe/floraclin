@@ -14,8 +14,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  */
 
 vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn() }))
-vi.mock('@/lib/stripe', () => ({
+vi.mock('@/lib/stripe', async (importOriginal) => ({
+  CheckoutDiscountRejectedError: (await importOriginal<typeof import('@/lib/stripe')>()).CheckoutDiscountRejectedError,
   createCheckoutSession: vi.fn(),
+  createTenantCustomer: vi.fn(),
+  expireCheckoutSession: vi.fn(),
   updateSubscriptionPrice: vi.fn(),
   // Stripe confirms the win-back code unless a test says otherwise.
   checkPromotionCode: vi.fn(async () => ({
@@ -46,6 +49,8 @@ vi.mock('@/lib/referral/offer', async (importOriginal) => ({
   getValidatedReferralOffer: vi.fn(async () => null),
 }))
 vi.mock('@/db/queries/subscriptions', () => ({
+  claimStripeCustomerId: vi.fn(),
+  swapCheckoutSessionId: vi.fn(),
   getSubscription: vi.fn(),
   getPlanBySlug: vi.fn(),
   updateSubscriptionPlan: vi.fn(),
@@ -55,12 +60,17 @@ vi.mock('@/db/queries/subscriptions', () => ({
 import { getAuthContext } from '@/lib/auth'
 import { getTrialUsage } from '@/db/queries/trial-recap'
 import {
+  CheckoutDiscountRejectedError,
   checkPromotionCode,
   createCheckoutSession,
+  createTenantCustomer,
   customerHasPriorPurchase,
+  expireCheckoutSession,
   updateSubscriptionPrice,
 } from '@/lib/stripe'
 import {
+  claimStripeCustomerId,
+  swapCheckoutSessionId,
   getSubscription,
   getPlanBySlug,
   updateSubscriptionPlan,
@@ -119,6 +129,9 @@ beforeEach(() => {
     sessionId: 'cs_1',
     url: 'https://checkout.stripe.com/cs_1',
   } as never)
+  vi.mocked(createTenantCustomer).mockResolvedValue('cus_new')
+  vi.mocked(claimStripeCustomerId).mockImplementation(async (_tenantId, customerId) => customerId)
+  vi.mocked(swapCheckoutSessionId).mockResolvedValue(null)
   vi.mocked(updateSubscriptionPrice).mockResolvedValue({ id: 'sub_starter' } as never)
   vi.mocked(updateSubscriptionPlan).mockResolvedValue(undefined as never)
   vi.mocked(updateSubscriptionStatus).mockResolvedValue(undefined as never)
@@ -141,8 +154,44 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ url: 'https://checkout.stripe.com/cs_1' })
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({ promotionCodeId: null, referralId: null }))
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
+  })
+
+  // Regression: with no stored customer every checkout made a new one, so a first-time-only code could be
+  // redeemed once per tab.
+  it('stores one Stripe customer before the first session and opens it on the stored one', async () => {
+    vi.mocked(claimStripeCustomerId).mockResolvedValue('cus_winner')
+
+    await POST(request())
+
+    expect(createTenantCustomer).toHaveBeenCalledWith('tenant-1')
+    expect(claimStripeCustomerId).toHaveBeenCalledWith('tenant-1', 'cus_new')
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_winner', expect.anything())
+  })
+
+  // Regression: an older open session kept the terms it was opened with after they changed.
+  it('expires the session the new one replaces', async () => {
+    vi.mocked(swapCheckoutSessionId).mockResolvedValue('cs_old')
+
+    await POST(request())
+
+    expect(swapCheckoutSessionId).toHaveBeenCalledWith('tenant-1', 'cs_1')
+    expect(expireCheckoutSession).toHaveBeenCalledWith('cs_old')
+  })
+
+  // Regression: a promotion code Stripe refused fell back to a full-price session after a discount was shown.
+  it('answers 409 instead of opening a full-price session when Stripe refuses the discount', async () => {
+    vi.mocked(createCheckoutSession).mockRejectedValue(new CheckoutDiscountRejectedError(new Error('expired')))
+
+    const res = await POST(request())
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: 'O desconto não está mais disponível. Confira o novo valor e tente de novo.',
+      code: 'discount_unavailable',
+    })
+    expect(swapCheckoutSessionId).not.toHaveBeenCalled()
   })
 
   it('moves an existing subscription onto the new price instead of opening a second one', async () => {
@@ -231,6 +280,7 @@ describe('POST /api/billing/checkout', () => {
 
     expect(res.status).toBe(200)
     expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_1', expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createTenantCustomer).not.toHaveBeenCalled()
     expect(updateSubscriptionPrice).not.toHaveBeenCalled()
   })
 
@@ -301,7 +351,7 @@ describe('POST /api/billing/checkout', () => {
     const res = await POST(request('pro'))
 
     expect(res.status).toBe(200)
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
       promotionCodeId: 'promo_winback',
       discountKind: 'winback',
       referralId: null,
@@ -349,7 +399,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it.each([
@@ -371,7 +421,7 @@ describe('POST /api/billing/checkout', () => {
     await POST(request('pro'))
 
     expect(getTrialUsage).toHaveBeenCalledWith('tenant-1')
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('charges full price when Stripe says the win-back code is no longer usable', async () => {
@@ -388,7 +438,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('charges full price for a plan the win-back coupon does not cover', async () => {
@@ -413,7 +463,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({ promotionCodeId: null, referralId: null }))
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({ promotionCodeId: null, referralId: null }))
   })
 
   it('still applies the code to a plan a restricted coupon covers', async () => {
@@ -438,7 +488,7 @@ describe('POST /api/billing/checkout', () => {
 
     await POST(request('pro'))
 
-    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+    expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
       promotionCodeId: 'promo_winback',
       discountKind: 'winback',
       referralId: null,
@@ -453,7 +503,7 @@ describe('POST /api/billing/checkout', () => {
       referrerTenantId: 'tenant-9',
       referrerName: 'Clínica Bela',
     }
-    const REFERRAL_OFFER = { promotionCodeId: 'promo_referral', referralId: 'ref-1' }
+    const REFERRAL_OFFER = { kind: 'referral', promotionCodeId: 'promo_referral', referralId: 'ref-1' }
 
     function switchOn() {
       vi.stubEnv('REFERRAL_ENROLLMENT_ENABLED', 'true')
@@ -480,7 +530,7 @@ describe('POST /api/billing/checkout', () => {
       await POST(request('pro'))
 
       expect(getValidatedReferralOffer).not.toHaveBeenCalled()
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_winback',
         discountKind: 'winback',
         referralId: 'ref-1',
@@ -494,7 +544,7 @@ describe('POST /api/billing/checkout', () => {
 
       await POST(request('pro'))
 
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_referral',
         discountKind: 'referral',
         referralId: 'ref-1',
@@ -525,7 +575,7 @@ describe('POST /api/billing/checkout', () => {
 
       expect(getReferralAttribution).not.toHaveBeenCalled()
       expect(getValidatedReferralOffer).not.toHaveBeenCalled()
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: null,
         referralId: null,
       }))
@@ -569,6 +619,9 @@ describe('POST /api/billing/checkout', () => {
 
     function feedbackOn() {
       vi.stubEnv('STRIPE_FEEDBACK_PROMOTION_CODE_ID', 'promo_feedback')
+      vi.mocked(checkPromotionCode).mockImplementation(async (id: string) =>
+        id === 'promo_feedback' ? FEEDBACK_TERMS : { ...FEEDBACK_TERMS, percentOff: 30 },
+      )
     }
 
     it.each([
@@ -581,7 +634,7 @@ describe('POST /api/billing/checkout', () => {
       await POST(request('pro'))
 
       expect(checkPromotionCode).toHaveBeenCalledWith('promo_feedback', expect.any(Date))
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_feedback',
         discountKind: 'feedback',
       }))
@@ -596,7 +649,7 @@ describe('POST /api/billing/checkout', () => {
 
       expect(checkPromotionCode).not.toHaveBeenCalledWith('promo_winback', expect.anything())
       expect(createCheckoutSession).toHaveBeenCalledTimes(1)
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_feedback',
         discountKind: 'feedback',
       }))
@@ -613,7 +666,7 @@ describe('POST /api/billing/checkout', () => {
       await POST(request('pro'))
 
       expect(getValidatedReferralOffer).not.toHaveBeenCalled()
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_feedback',
         discountKind: 'feedback',
         referralId: 'ref-1',
@@ -630,7 +683,7 @@ describe('POST /api/billing/checkout', () => {
 
       await POST(request('pro'))
 
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_winback',
         discountKind: 'winback',
       }))
@@ -644,7 +697,7 @@ describe('POST /api/billing/checkout', () => {
       const res = await POST(request('pro'))
 
       expect(res.status).toBe(200)
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: null,
       }))
     })
@@ -656,7 +709,7 @@ describe('POST /api/billing/checkout', () => {
 
       await POST(request('pro'))
 
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: 'promo_winback',
         discountKind: 'winback',
       }))
@@ -668,7 +721,7 @@ describe('POST /api/billing/checkout', () => {
       await POST(request('pro'))
 
       expect(checkPromotionCode).not.toHaveBeenCalled()
-      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', null, expect.objectContaining({
+      expect(createCheckoutSession).toHaveBeenCalledWith('tenant-1', 'pro', 'cus_new', expect.objectContaining({
         promotionCodeId: null,
       }))
     })

@@ -177,19 +177,3 @@ export function publicReferralOffer(o: ValidatedReferralOffer | null): PublicRef
     planSlugs: o.planSlugs,
   }
 }
-
-export type CheckoutDiscountChoice =
-  | { kind: 'feedback'; promotionCodeId: string }
-  | { kind: 'winback'; promotionCodeId: string }
-  | { kind: 'referral'; promotionCodeId: string }
-  | { kind: null; promotionCodeId: null }
-
-type Offer = { promotionCodeId: string } | null
-
-/** Exactly one coupon: the feedback reward, then VOLTA30, then the referral welcome. */
-export function chooseCheckoutDiscount(offers: { feedback?: Offer; winback: Offer; referral: Offer }): CheckoutDiscountChoice {
-  if (offers.feedback) return { kind: 'feedback', promotionCodeId: offers.feedback.promotionCodeId }
-  if (offers.winback) return { kind: 'winback', promotionCodeId: offers.winback.promotionCodeId }
-  if (offers.referral) return { kind: 'referral', promotionCodeId: offers.referral.promotionCodeId }
-  return { kind: null, promotionCodeId: null }
-}

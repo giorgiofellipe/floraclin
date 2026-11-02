@@ -9,6 +9,8 @@ const m = vi.hoisted(() => ({
   grantFeedbackDiscount: vi.fn(),
   clearFeedbackDiscount: vi.fn(),
   createAuditLog: vi.fn(),
+  expireCheckoutSession: vi.fn(),
+  report: vi.fn(),
 }))
 
 vi.mock('@/lib/auth', () => ({ requirePlatformAdmin: m.requirePlatformAdmin }))
@@ -18,7 +20,8 @@ vi.mock('@/db/queries/subscriptions', () => ({
   clearFeedbackDiscount: m.clearFeedbackDiscount,
 }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: m.createAuditLog }))
-vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn(), maskPath: (p: string) => p }))
+vi.mock('@/lib/stripe', () => ({ expireCheckoutSession: m.expireCheckoutSession }))
+vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: m.report, maskPath: (p: string) => p }))
 
 import { ForbiddenError } from '@/lib/errors'
 import { DELETE, POST } from '../feedback-discount/route'
@@ -39,6 +42,7 @@ function row(over: Record<string, unknown> = {}) {
     currentPeriodEnd: FUTURE,
     feedbackDiscountGrantedAt: null,
     feedbackDiscountGrantedBy: null,
+    checkoutSessionId: null,
     plan: { id: 'p-trial', slug: 'trial' },
     ...over,
   }
@@ -128,6 +132,30 @@ describe('POST feedback-discount', () => {
   it('answers 404 for a tenant without a subscription row', async () => {
     m.getSubscription.mockResolvedValue(null)
     expect((await POST(req('POST'), params)).status).toBe(404)
+  })
+})
+
+// Regression: a checkout opened before the change kept the old terms (no discount after a grant, the discount
+// after a removal).
+describe('open checkout session', () => {
+  it.each([
+    ['granting', 'POST', POST, row(), 'grantFeedbackDiscount'],
+    ['removing', 'DELETE', DELETE, row({ feedbackDiscountGrantedAt: GRANTED_AT }), 'clearFeedbackDiscount'],
+  ] as const)('is expired when %s the discount', async (_, method, handler, existing, write) => {
+    m.getSubscription.mockResolvedValue(existing)
+    m[write].mockResolvedValue({ ...existing, checkoutSessionId: 'cs_open' })
+
+    expect((await handler(req(method), params)).status).toBe(200)
+    expect(m.expireCheckoutSession).toHaveBeenCalledWith('cs_open')
+  })
+
+  it('still answers 200, reporting it, when Stripe cannot expire the session', async () => {
+    m.getSubscription.mockResolvedValue(row())
+    m.grantFeedbackDiscount.mockResolvedValue(row({ feedbackDiscountGrantedAt: GRANTED_AT, checkoutSessionId: 'cs_open' }))
+    m.expireCheckoutSession.mockRejectedValue(new Error('stripe down'))
+
+    expect((await POST(req('POST'), params)).status).toBe(200)
+    expect(m.report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'feedback_expire_checkout' }))
   })
 })
 

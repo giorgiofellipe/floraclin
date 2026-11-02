@@ -32,7 +32,14 @@ import {
   useExtendTrial,
   useSetFeedbackDiscount,
 } from '@/hooks/mutations/use-admin-subscription-mutations'
-import { FEEDBACK_INELIGIBLE_MESSAGES, feedbackIneligibility, type AdminFeedbackDiscount } from '@/lib/feedback-eligibility'
+import {
+  FEEDBACK_INELIGIBLE_MESSAGES,
+  feedbackIneligibility,
+  type AdminFeedbackDiscount,
+  type FeedbackIneligibility,
+} from '@/lib/feedback-eligibility'
+import { FEEDBACK_COUPON_SPEC } from '@/lib/feedback-coupon-setup'
+import { winbackOfferLabel } from '@/lib/winback'
 import { toast } from 'sonner'
 import { cn, formatDate } from '@/lib/utils'
 import { Loader2Icon } from 'lucide-react'
@@ -352,7 +359,7 @@ export function SubscriptionDetailDialog({
 
           {detail && (
             <FeedbackDiscountPanel
-              discount={detail.feedbackDiscount ?? null}
+              discount={detail.feedbackDiscount}
               ineligible={feedbackIneligibility(detail)}
               isPending={isPending}
               onToggle={handleFeedbackDiscount}
@@ -594,6 +601,13 @@ function InfoField({ label, value }: { label: string; value: React.ReactNode }) 
   )
 }
 
+const FEEDBACK_TERMS = winbackOfferLabel({
+  percentOff: FEEDBACK_COUPON_SPEC.percent_off,
+  amountOffCents: null,
+  duration: FEEDBACK_COUPON_SPEC.duration,
+  durationInMonths: FEEDBACK_COUPON_SPEC.duration_in_months ?? null,
+})
+
 /** The feedback reward flag: who set it and when, and the toggle. The API
  *  enforces the same eligibility rule; clearing is always allowed. */
 function FeedbackDiscountPanel({
@@ -603,7 +617,7 @@ function FeedbackDiscountPanel({
   onToggle,
 }: {
   discount: AdminFeedbackDiscount | null
-  ineligible: ReturnType<typeof feedbackIneligibility>
+  ineligible: FeedbackIneligibility | null
   isPending: boolean
   onToggle: (granted: boolean) => void
 }) {
@@ -621,7 +635,7 @@ function FeedbackDiscountPanel({
   return (
     <div className="space-y-1.5" data-testid="admin-feedback-discount">
       <span className="text-[10px] uppercase tracking-[0.15em] text-mid font-medium">
-        Desconto feedback (50% por 3 meses)
+        Desconto feedback ({FEEDBACK_TERMS})
       </span>
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs text-mid" data-testid="admin-feedback-discount-status">{text}</p>

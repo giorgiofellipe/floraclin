@@ -4,9 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useId, useMemo, useR
 import { useRouter } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import type { TrialRecap } from '@/lib/trial-recap'
-import type { PublicWinbackOffer } from '@/lib/winback'
-import type { PublicReferralOffer } from '@/lib/referral/offer-copy'
-import type { PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
+import type { EntryOffer } from '@/components/layout/plan-checkout'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 
 const LOCK_REFRESH_WINDOW_MS = 24 * 60 * 60 * 1000
@@ -33,11 +31,8 @@ export interface SubscriptionAccess {
   tenantId: string
   canSubscribe: boolean
   plans: PaywallPlan[]
-  /** The feedback reward offer; when set, `winback` and `referral` are not. */
-  feedback: PublicFeedbackOffer | null
-  winback: PublicWinbackOffer | null
-  /** The referral welcome offer; never set together with `winback`. */
-  referral: PublicReferralOffer | null
+  /** The one discount checkout applies (see pickOffers). */
+  offer: EntryOffer | null
   /** The viewer's role in this clinic; decides which exports they can open. */
   role: string
   /** How the clinic gets access back: a new plan (checkout), or fixing the
@@ -62,9 +57,7 @@ const NOT_READ_ONLY: SubscriptionAccess = {
   tenantId: '',
   canSubscribe: false,
   plans: [],
-  feedback: null,
-  winback: null,
-  referral: null,
+  offer: null,
   role: '',
   recovery: 'checkout',
   recap: null,
@@ -81,9 +74,7 @@ export function SubscriptionAccessProvider({
   tenantId,
   canSubscribe,
   plans,
-  feedback = null,
-  winback,
-  referral = null,
+  offer = null,
   lockAt = null,
   role = '',
   recovery = 'checkout',
@@ -104,9 +95,7 @@ export function SubscriptionAccessProvider({
   tenantId: string
   canSubscribe: boolean
   plans: PaywallPlan[]
-  feedback?: PublicFeedbackOffer | null
-  winback: PublicWinbackOffer | null
-  referral?: PublicReferralOffer | null
+  offer?: EntryOffer | null
 }) {
   const [paywallOpen, setPaywallOpen] = useState(false)
   const router = useRouter()
@@ -152,9 +141,7 @@ export function SubscriptionAccessProvider({
       tenantId,
       canSubscribe,
       plans,
-      feedback,
-      winback,
-      referral,
+      offer,
       role,
       recovery,
       recap,
@@ -163,7 +150,7 @@ export function SubscriptionAccessProvider({
       openPaywall,
       closePaywall,
     }),
-    [readOnly, reason, tenantId, canSubscribe, plans, feedback, winback, referral, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
+    [readOnly, reason, tenantId, canSubscribe, plans, offer, role, recovery, recap, trialEndsAt, paywallOpen, openPaywall, closePaywall],
   )
 
   return <SubscriptionAccessContext.Provider value={value}>{children}</SubscriptionAccessContext.Provider>

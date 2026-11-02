@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { getPlanBySlug, updateSubscriptionPlan } from '@/db/queries/subscriptions'
 import { retrieveCheckoutSession, subscriptionPeriod } from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
+import { cancelDuplicateSubscription } from '@/lib/duplicate-subscription'
 
 export async function POST(request: Request) {
   try {
@@ -59,6 +60,9 @@ export async function POST(request: Request) {
     }
 
     const stripeSubscriptionId = subscription.id
+    if (await cancelDuplicateSubscription(ctx.tenantId, stripeSubscriptionId)) {
+      return NextResponse.json({ activated: false })
+    }
     const stripeCustomerId =
       typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id
 

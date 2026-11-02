@@ -10,6 +10,10 @@ export interface SubscriptionDiscountLike {
   referralPercent?: number | null
 }
 
+/** Checkout's 409 when Stripe refuses the discount the clinic was shown: it sees the real price before paying. */
+export const DISCOUNT_UNAVAILABLE_CODE = 'discount_unavailable'
+export const DISCOUNT_UNAVAILABLE_MESSAGE = 'O desconto não está mais disponível. Confira o novo valor e tente de novo.'
+
 export function brl(cents: number): string {
   return `R$ ${(cents / 100).toFixed(2).replace('.', ',')}`
 }

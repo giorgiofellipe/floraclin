@@ -43,8 +43,7 @@ const PLANS = [
 function renderModal(
   trialEndsAt: string | null,
   readOnly = false,
-  referral: typeof REFERRAL | null = null,
-  feedback: typeof FEEDBACK | null = null,
+  offer: typeof REFERRAL | typeof FEEDBACK | null = null,
 ) {
   return render(
     <SubscriptionAccessProvider
@@ -53,9 +52,7 @@ function renderModal(
       tenantId="t1"
       canSubscribe
       plans={PLANS}
-      winback={null}
-      referral={referral}
-      feedback={feedback}
+      offer={offer}
       recap={{ patients: 8, appointments: 15, procedureRecords: 0, photos: 3, diagrams: 0 }}
       trialEndsAt={trialEndsAt}
     >
@@ -98,12 +95,11 @@ describe('TrialEndingModal', () => {
     expect(modal.querySelector('s')).toHaveTextContent(/R\$\s?99,00/)
   })
 
-  it('shows the feedback offer, not the referral one, when both are set (checkout applies feedback)', async () => {
-    renderModal(TOMORROW_1830, false, REFERRAL, FEEDBACK)
+  it('shows the feedback badge and the discounted price when that is the offer', async () => {
+    renderModal(TOMORROW_1830, false, FEEDBACK)
 
     await screen.findByTestId('trial-ending-modal')
     expect(screen.getByTestId('feedback-offer')).toHaveTextContent('Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.')
-    expect(screen.queryByTestId('referral-offer')).not.toBeInTheDocument()
     expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?49,50/)
   })
 

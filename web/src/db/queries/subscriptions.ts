@@ -115,6 +115,7 @@ export async function getSubscription(tenantId: string): Promise<SubscriptionWit
       firstPaidAt: tenantSubscriptions.firstPaidAt,
       feedbackDiscountGrantedAt: tenantSubscriptions.feedbackDiscountGrantedAt,
       feedbackDiscountGrantedBy: tenantSubscriptions.feedbackDiscountGrantedBy,
+      checkoutSessionId: tenantSubscriptions.checkoutSessionId,
       plan: {
         id: plans.id,
         slug: plans.slug,
@@ -349,6 +350,51 @@ export async function clearFeedbackDiscount(tenantId: string, now: Date = new Da
     .returning()
 
   return result ?? null
+}
+
+/**
+ * Stores the clinic's Stripe customer unless one is already stored, and returns the stored one: when two
+ * checkouts race, both end up on the customer that won. Null when the tenant has no subscription row.
+ */
+export async function claimStripeCustomerId(tenantId: string, customerId: string): Promise<string | null> {
+  const [claimed] = await db
+    .update(tenantSubscriptions)
+    .set({ stripeCustomerId: customerId, updatedAt: new Date() })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), isNull(tenantSubscriptions.stripeCustomerId)))
+    .returning({ stripeCustomerId: tenantSubscriptions.stripeCustomerId })
+  if (claimed) return claimed.stripeCustomerId
+
+  const [row] = await db
+    .select({ stripeCustomerId: tenantSubscriptions.stripeCustomerId })
+    .from(tenantSubscriptions)
+    .where(eq(tenantSubscriptions.tenantId, tenantId))
+    .limit(1)
+  return row?.stripeCustomerId ?? null
+}
+
+/** Records the clinic's new Checkout Session and returns the one it replaces, so the caller can expire it. */
+export async function swapCheckoutSessionId(tenantId: string, sessionId: string): Promise<string | null> {
+  return db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ previous: tenantSubscriptions.checkoutSessionId })
+      .from(tenantSubscriptions)
+      .where(eq(tenantSubscriptions.tenantId, tenantId))
+      .for('update')
+    if (!row) return null
+    await tx
+      .update(tenantSubscriptions)
+      .set({ checkoutSessionId: sessionId, updatedAt: new Date() })
+      .where(eq(tenantSubscriptions.tenantId, tenantId))
+    return row.previous
+  })
+}
+
+/** Forgets a Checkout Session that completed or expired, unless a newer one replaced it. */
+export async function clearCheckoutSessionId(tenantId: string, sessionId: string): Promise<void> {
+  await db
+    .update(tenantSubscriptions)
+    .set({ checkoutSessionId: null, updatedAt: new Date() })
+    .where(and(eq(tenantSubscriptions.tenantId, tenantId), eq(tenantSubscriptions.checkoutSessionId, sessionId)))
 }
 
 /** The admin who flagged the feedback reward, for the admin screen. */

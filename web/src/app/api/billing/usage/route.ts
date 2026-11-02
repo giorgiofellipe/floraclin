@@ -18,8 +18,10 @@ import { referralOfferHeadline, type PublicReferralOffer } from '@/lib/referral/
 import { feedbackOfferApplies, getValidatedFeedbackOffer, publicFeedbackOffer } from '@/lib/feedback-offer'
 import { feedbackOfferHeadline, type PublicFeedbackOffer } from '@/lib/feedback-offer-copy'
 import { sellablePlans } from '@/lib/plan-benefits'
+import { pickOffers } from '@/lib/paywall-offers'
 
 type PlanLimits = Record<string, number>
+type BillingOffer = (PublicFeedbackOffer | PublicReferralOffer) & { headline: string }
 
 export async function GET(request: Request) {
   try {
@@ -64,40 +66,35 @@ export async function GET(request: Request) {
         : Promise.resolve(null)
     const [whatsappUsage, discount] = await Promise.all([getCreditUsage(ctx.tenantId), discountP])
 
-    // The paid plans, as the layout reads them, once for every offer below.
     // Not read at all for an unflagged clinic with the referral switch off.
     const referralEnabled = isReferralEnrollmentEnabled()
     const flagged = feedbackOfferApplies(subscription)
     const plans = flagged || referralEnabled ? sellablePlans(await listPlans(true)) : []
+    const attribution = referralEnabled ? await getReferralAttribution(ctx.tenantId) : null
 
-    // The feedback reward wins at checkout over every other offer, so when it
-    // applies the page shows it (and no referral offer).
-    const feedbackValidated = flagged ? publicFeedbackOffer(await getValidatedFeedbackOffer(subscription, plans)) : null
-    const feedbackOffer: (PublicFeedbackOffer & { headline: string }) | null = feedbackValidated
-      ? { ...feedbackValidated, headline: feedbackOfferHeadline(feedbackValidated) }
-      : null
+    // This page shows the feedback or referral offer; the win-back is looked up only because it beats the
+    // referral at checkout.
+    const offer = await pickOffers({
+      feedback: flagged ? () => getValidatedFeedbackOffer(subscription, plans) : null,
+      winback: referralEnabled ? () => getValidatedWinbackOffer(subscription, plans) : null,
+      referral: referralEnabled
+        ? () => getValidatedReferralOffer(subscription, plans, undefined, undefined, undefined, { attribution })
+        : null,
+    })
+    let billingOffer: BillingOffer | null = null
+    if (offer?.kind === 'feedback') {
+      const shown = publicFeedbackOffer(offer)!
+      billingOffer = { ...shown, headline: feedbackOfferHeadline(shown) }
+    } else if (offer?.kind === 'referral') {
+      const shown = publicReferralOffer(offer)!
+      billingOffer = { ...shown, headline: referralOfferHeadline(shown) }
+    }
 
-    // With the switch off there is no referral DB call at all; when on, the
-    // attribution is read once and shared. The win-back wins at checkout, so
-    // the page shows the referral offer only when there is no win-back.
-    let referral: {
-      offer: (PublicReferralOffer & { headline: string }) | null
-      canEnterCode: boolean
-      linkCode: string | null
-    } = { offer: null, canEnterCode: false, linkCode: null }
+    let referral: { canEnterCode: boolean; linkCode: string | null } = { canEnterCode: false, linkCode: null }
     if (referralEnabled) {
-      const attribution = await getReferralAttribution(ctx.tenantId)
-      const winback = feedbackOffer ? null : await getValidatedWinbackOffer(subscription, plans)
-      const validated =
-        feedbackOffer || winback
-          ? null
-          : publicReferralOffer(
-              await getValidatedReferralOffer(subscription, plans, undefined, undefined, undefined, { attribution }),
-            )
       const canEnterCode =
         ctx.role === 'owner' && !subscription.firstPaidAt && !subscription.stripeSubscriptionId && !attribution
       referral = {
-        offer: validated ? { ...validated, headline: referralOfferHeadline(validated) } : null,
         canEnterCode,
         // The link cookie survives a signup whose attribution failed; it pre-fills the code field here.
         linkCode: canEnterCode ? normalizeReferralCode((await cookies()).get(REFERRAL_COOKIE_NAME)?.value) : null,
@@ -112,9 +109,9 @@ export async function GET(request: Request) {
         status,
         currentPeriodEnd: subscription.currentPeriodEnd,
         stripeSubscriptionId: subscription.stripeSubscriptionId,
-        // Drives the billing-portal link. A lapsed tenant still has a
-        // customer record, and their invoices are in it.
-        hasStripeCustomer: Boolean(subscription.stripeCustomerId),
+        // Drives the billing-portal link: only after a payment, since checkout stores a customer before it.
+        // A lapsed tenant keeps it, and their invoices are there.
+        hasPaid: Boolean(subscription.firstPaidAt || subscription.stripeSubscriptionId),
         source: subscription.source,
       },
       plan: {
@@ -124,7 +121,7 @@ export async function GET(request: Request) {
         features: subscription.plan.features,
       },
       discount,
-      feedbackOffer,
+      offer: billingOffer,
       referral,
       usage: {
         users: {

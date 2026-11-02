@@ -24,6 +24,7 @@ vi.mock('@/lib/stripe', () => ({
   getSubscriptionDiscount: vi.fn(async () => null),
   checkPromotionCode: vi.fn(),
   customerHasPriorPurchase: vi.fn(),
+  getPriceInfo: vi.fn(),
 }))
 vi.mock('@/lib/winback-offer', () => ({ getValidatedWinbackOffer: vi.fn(async () => null) }))
 vi.mock('@/lib/feedback-offer', async (importOriginal) => ({
@@ -100,7 +101,8 @@ describe('GET /api/billing/usage referral fields', () => {
   it('does no referral work with the switch off', async () => {
     vi.mocked(isReferralEnrollmentEnabled).mockReturnValue(false)
     const body = await call()
-    expect(body.referral).toEqual({ offer: null, canEnterCode: false, linkCode: null })
+    expect(body.offer).toBeNull()
+    expect(body.referral).toEqual({ canEnterCode: false, linkCode: null })
     expect(getReferralAttribution).not.toHaveBeenCalled()
     expect(getValidatedReferralOffer).not.toHaveBeenCalled()
   })
@@ -116,16 +118,16 @@ describe('GET /api/billing/usage referral fields', () => {
     vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
     vi.mocked(getValidatedReferralOffer).mockResolvedValue(OFFER as never)
     const body = await call()
-    expect(body.referral.offer.headline).toBe('Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.')
+    expect(body.offer).toMatchObject({ kind: 'referral', headline: 'Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.' })
     expect(JSON.stringify(body)).not.toContain('promo_secret')
     expect(body.referral.canEnterCode).toBe(false)
   })
 
   it('has no referral offer when a win-back offer exists', async () => {
     vi.mocked(getReferralAttribution).mockResolvedValue(ATTRIBUTION as never)
-    vi.mocked(getValidatedWinbackOffer).mockResolvedValue({ promotionCodeId: 'w' } as never)
+    vi.mocked(getValidatedWinbackOffer).mockResolvedValue({ kind: 'winback', promotionCodeId: 'w' } as never)
     vi.mocked(getValidatedReferralOffer).mockResolvedValue(OFFER as never)
-    expect((await call()).referral.offer).toBeNull()
+    expect((await call()).offer).toBeNull()
     expect(getValidatedReferralOffer).not.toHaveBeenCalled()
   })
 
@@ -176,10 +178,12 @@ describe('GET /api/billing/usage feedback offer', () => {
 
     const body = await call()
 
-    expect(body.feedbackOffer.headline).toBe('Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.')
-    expect(body.feedbackOffer.planSlugs).toEqual(['pro'])
+    expect(body.offer).toMatchObject({
+      kind: 'feedback',
+      headline: 'Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.',
+      planSlugs: ['pro'],
+    })
     expect(JSON.stringify(body)).not.toContain('promo_feedback_secret')
-    expect(body.referral.offer).toBeNull()
     expect(getValidatedReferralOffer).not.toHaveBeenCalled()
   })
 
@@ -193,8 +197,7 @@ describe('GET /api/billing/usage feedback offer', () => {
     const body = await call()
 
     expect(getValidatedFeedbackOffer).toHaveBeenCalledTimes(1)
-    expect(body.feedbackOffer).toBeNull()
-    expect(body.referral.offer.headline).toBe('Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.')
+    expect(body.offer).toMatchObject({ kind: 'referral', headline: 'Indicação de Clínica Flor: 20% de desconto nos 2 primeiros meses.' })
   })
 
   it('reads the plans once, sellable only, for every offer', async () => {
@@ -215,8 +218,21 @@ describe('GET /api/billing/usage feedback offer', () => {
 
     const body = await call()
 
-    expect(body.feedbackOffer).toBeNull()
+    expect(body.offer).toBeNull()
     expect(getValidatedFeedbackOffer).not.toHaveBeenCalled()
     expect(listPlans).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/billing/usage billing-portal link', () => {
+  // Regression: checkout stores the Stripe customer before the first payment, so the link showed for clinics that
+  // never paid.
+  it.each([
+    ['a trial that opened checkout but never paid', { stripeCustomerId: 'cus_1' }, false],
+    ['a clinic that paid and lapsed', { stripeCustomerId: 'cus_1', status: 'expired', firstPaidAt: new Date('2026-01-10T12:00:00.000Z') }, true],
+    ['a live Stripe subscription', { stripeCustomerId: 'cus_1', source: 'stripe', status: 'past_due', stripeSubscriptionId: 'sub_1' }, true],
+  ])('reflects %s', async (_name, patch, hasPaid) => {
+    vi.mocked(getSubscription).mockResolvedValue({ ...TRIAL, ...patch } as never)
+    expect((await call()).subscription.hasPaid).toBe(hasPaid)
   })
 })

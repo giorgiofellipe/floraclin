@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 vi.mock('@/lib/stripe', () => ({ checkPromotionCode: vi.fn(), getPriceInfo: vi.fn(), customerHasPriorPurchase: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 
-import { getValidatedFeedbackOffer, publicFeedbackOffer } from '@/lib/feedback-offer'
+import { getValidatedFeedbackOffer } from '@/lib/feedback-offer'
 import type { PriceInfo, PromotionCodeTerms } from '@/lib/stripe'
 
 const NOW = new Date('2026-10-30T15:00:00.000Z')
@@ -95,6 +95,24 @@ describe('getValidatedFeedbackOffer', () => {
     expect(d.check).not.toHaveBeenCalled()
   })
 
+  // The admin screen and the copy promise FEEDBACK_COUPON_SPEC: a different coupon behind the env id must offer nothing.
+  it.each<[string, Partial<PromotionCodeTerms>]>([
+    ['another percentage', { percentOff: 30 }],
+    ['an amount off instead of a percentage', { percentOff: null, amountOffCents: 5000 }],
+    ['another duration', { duration: 'forever', durationInMonths: null }],
+    ['another number of months', { durationInMonths: 6 }],
+    ['no first-time-only restriction', { firstTimeTransaction: false }],
+  ])('offers nothing for a code with %s, and reports it once', async (name, over) => {
+    const d = deps({ ...TERMS, ...over })
+    const env = { STRIPE_FEEDBACK_PROMOTION_CODE_ID: `promo_${name}` }
+
+    expect(await getValidatedFeedbackOffer(TRIALING, PLANS, NOW, env, d)).toBeNull()
+    expect(await getValidatedFeedbackOffer(TRIALING, PLANS, NOW, env, d)).toBeNull()
+
+    expect(d.report).toHaveBeenCalledTimes(1)
+    expect(d.report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'feedback_promo_misconfigured' }))
+  })
+
   it('offers nothing when Stripe says the code is inactive or invalid', async () => {
     expect(await getValidatedFeedbackOffer(TRIALING, PLANS, NOW, ENV, deps(null))).toBeNull()
   })
@@ -116,20 +134,5 @@ describe('getValidatedFeedbackOffer', () => {
     const offer = await getValidatedFeedbackOffer(TRIALING, PLANS, NOW, ENV, deps({ ...TERMS, productIds: ['prod_pro'] }))
     expect(offer?.planSlugs).toEqual(['pro'])
     expect(offer?.label).toBe('50% de desconto nos 3 primeiros meses no plano Pro')
-  })
-
-  it('keeps the promotion code id server-side', () => {
-    const pub = publicFeedbackOffer({
-      kind: 'feedback',
-      promotionCodeId: 'promo_feedback',
-      label: 'x',
-      percentOff: 50,
-      amountOffCents: null,
-      duration: 'repeating',
-      durationInMonths: 3,
-      planSlugs: ['pro'],
-    })
-    expect(pub).not.toHaveProperty('promotionCodeId')
-    expect(publicFeedbackOffer(null)).toBeNull()
   })
 })

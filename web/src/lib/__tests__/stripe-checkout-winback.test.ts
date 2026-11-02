@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// The win-back discount must never stop a clinic from paying: a bad or
-// expired promotion code falls back to full price, and only that kind of
-// error does.
 const { create, report, retrievePromo, retrievePrice, listSubs, listCharges, listInvoices, retrieveSub, updateSub } = vi.hoisted(() => ({
   updateSub: vi.fn(),
   retrieveSub: vi.fn(),
@@ -40,6 +37,7 @@ vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: report }))
 
 import Stripe from 'stripe'
 import {
+  CheckoutDiscountRejectedError,
   updateSubscriptionDiscounts,
   checkPromotionCode,
   clearPromotionCodeCache,
@@ -72,16 +70,27 @@ describe('createCheckoutSession', () => {
     )
   })
 
-  it('falls back to full price when Stripe rejects the promotion code, and reports it', async () => {
+  // Regression: a rejected code silently opened a full-price session after the clinic was shown the discount.
+  it('refuses to fall back to full price when Stripe rejects the code, and checks the code again next time', async () => {
+    retrievePromo.mockReset().mockResolvedValue({
+      active: true,
+      restrictions: { first_time_transaction: true },
+      promotion: { type: 'coupon', coupon: { valid: true, percent_off: 50, duration: 'repeating', duration_in_months: 3 } },
+    })
+    clearPromotionCodeCache()
+    await checkPromotionCode('promo_1')
     create
       .mockRejectedValueOnce(invalidRequest('discounts[0][promotion_code]', 'This promotion code has expired.'))
-      .mockResolvedValueOnce({ id: 'cs_2', url: 'https://checkout/cs_2' })
+      .mockResolvedValueOnce({ id: 'cs_full_price', url: 'https://checkout/cs_full_price' })
 
-    const result = await createCheckoutSession('t1', 'pro', 'cus_1', { promotionCodeId: 'promo_1' })
+    await expect(
+      createCheckoutSession('t1', 'pro', 'cus_1', { promotionCodeId: 'promo_1', discountKind: 'feedback' }),
+    ).rejects.toBeInstanceOf(CheckoutDiscountRejectedError)
 
-    expect(result.url).toBe('https://checkout/cs_2')
-    expect(create).toHaveBeenLastCalledWith(expect.not.objectContaining({ discounts: expect.anything() }))
-    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'winback_discount' }))
+    expect(create).toHaveBeenCalledTimes(1)
+    expect(report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'feedback_discount' }))
+    await checkPromotionCode('promo_1')
+    expect(retrievePromo).toHaveBeenCalledTimes(2)
   })
 
   it('does not swallow an unrelated invalid request', async () => {

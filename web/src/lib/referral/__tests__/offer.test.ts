@@ -10,7 +10,7 @@ vi.mock('@/db/queries/referrals', () => ({
 vi.mock('@/lib/stripe', () => ({ checkPromotionCode: vi.fn(), customerHasPriorPurchase: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 
-import { chooseCheckoutDiscount, getValidatedReferralOffer, publicReferralOffer, type ReferralOfferDeps, type ReferralOfferRow } from '../offer'
+import { getValidatedReferralOffer, publicReferralOffer, type ReferralOfferDeps, type ReferralOfferRow } from '../offer'
 import type { PromotionCodeTerms } from '@/lib/stripe'
 
 const NOW = new Date('2026-10-21T13:00:00.000Z')
@@ -181,23 +181,5 @@ describe('publicReferralOffer', () => {
     expect(pub).not.toHaveProperty('referralId')
     expect(pub?.referrerName).toBe('Clínica Bela')
     expect(publicReferralOffer(null)).toBeNull()
-  })
-})
-
-describe('chooseCheckoutDiscount', () => {
-  const f = { promotionCodeId: 'f' }
-  const w = { promotionCodeId: 'w' }
-  const r = { promotionCodeId: 'r' }
-  it.each([
-    [null, w, null, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, null, r, { kind: 'referral', promotionCodeId: 'r' }],
-    [null, w, r, { kind: 'winback', promotionCodeId: 'w' }],
-    [null, null, null, { kind: null, promotionCodeId: null }],
-    // The feedback reward beats both, and only its code is applied.
-    [f, w, r, { kind: 'feedback', promotionCodeId: 'f' }],
-    [f, null, r, { kind: 'feedback', promotionCodeId: 'f' }],
-    [f, w, null, { kind: 'feedback', promotionCodeId: 'f' }],
-  ])('feedback %j + winback %j + referral %j', (feedback, winback, referral, expected) => {
-    expect(chooseCheckoutDiscount({ feedback, winback, referral })).toEqual(expected)
   })
 })

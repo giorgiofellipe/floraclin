@@ -1138,6 +1138,8 @@ export const tenantSubscriptions = floraclinSchema.table('tenant_subscriptions',
    *  (STRIPE_FEEDBACK_PROMOTION_CODE_ID). Migration 0047. */
   feedbackDiscountGrantedAt: timestamp('feedback_discount_granted_at', { withTimezone: true }),
   feedbackDiscountGrantedBy: uuid('feedback_discount_granted_by').references(() => users.id),
+  /** The clinic's last Checkout Session, expired when another opens or the feedback flag changes. Migration 0047. */
+  checkoutSessionId: varchar('checkout_session_id', { length: 255 }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })

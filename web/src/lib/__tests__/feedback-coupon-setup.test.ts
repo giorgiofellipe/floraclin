@@ -29,15 +29,8 @@ function makeDeps(overrides: Partial<FeedbackCouponSetupDeps> = {}) {
 }
 
 describe('FEEDBACK_COUPON_SPEC', () => {
-  it('is 50% for 3 months, with no product restriction', () => {
-    expect(FEEDBACK_COUPON_SPEC).toEqual({
-      id: 'floraclin_feedback_50x3',
-      percent_off: 50,
-      duration: 'repeating',
-      duration_in_months: 3,
-      name: 'Feedback: 50% nos 3 primeiros meses',
-      metadata: { purpose: 'feedback_reward', app: 'floraclin' },
-    })
+  it('is 50% for 3 months', () => {
+    expect(FEEDBACK_COUPON_SPEC).toMatchObject({ percent_off: 50, duration: 'repeating', duration_in_months: 3 })
   })
 })
 

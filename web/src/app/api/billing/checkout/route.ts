@@ -1,12 +1,20 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import {
+  claimStripeCustomerId,
   getSubscription,
   getPlanBySlug,
+  swapCheckoutSessionId,
   updateSubscriptionPlan,
   updateSubscriptionStatus,
 } from '@/db/queries/subscriptions'
-import { createCheckoutSession, updateSubscriptionPrice } from '@/lib/stripe'
+import {
+  CheckoutDiscountRejectedError,
+  createCheckoutSession,
+  createTenantCustomer,
+  expireCheckoutSession,
+  updateSubscriptionPrice,
+} from '@/lib/stripe'
 import { handleApiError } from '@/lib/api-error'
 import { cookieFromHeader, metaBrowserSignals } from '@/lib/meta/request-signals'
 import { getValidatedWinbackOffer } from '@/lib/winback-offer'
@@ -14,7 +22,9 @@ import { getValidatedFeedbackOffer } from '@/lib/feedback-offer'
 import { isStripeDriven } from '@/lib/subscription-access'
 import { getReferralAttribution } from '@/db/queries/referrals'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
-import { chooseCheckoutDiscount, getValidatedReferralOffer } from '@/lib/referral/offer'
+import { getValidatedReferralOffer } from '@/lib/referral/offer'
+import { pickOffers } from '@/lib/paywall-offers'
+import { DISCOUNT_UNAVAILABLE_CODE, DISCOUNT_UNAVAILABLE_MESSAGE } from '@/lib/billing-discount-copy'
 
 export async function POST(request: Request) {
   try {
@@ -90,32 +100,43 @@ export async function POST(request: Request) {
       return NextResponse.json({ url: null, updated: true })
     }
 
-    // Eligibility is decided here, from the stored row, never from the client.
-    // Only when the coupon covers this plan; otherwise checkout is full price,
-    // exactly what the paywall showed for it.
-    // The feedback reward (flagged by an admin) comes first; the others are
-    // only looked up when it does not apply.
-    const feedback = await getValidatedFeedbackOffer(subscription, [plan])
-    const winback = feedback ? null : await getValidatedWinbackOffer(subscription, [plan])
-    // With the referral switch off no referral DB call happens at all; when on, the attribution is read once.
-    const referralOn = isReferralEnrollmentEnabled()
-    const attribution = referralOn ? await getReferralAttribution(ctx.tenantId) : null
-    const referral =
-      feedback || winback || !attribution
-        ? null
-        : await getValidatedReferralOffer(subscription ?? null, [plan], undefined, undefined, undefined, {
-            attribution,
-          })
-    // Exactly one coupon at checkout: feedback, then win-back, then referral.
-    const choice = chooseCheckoutDiscount({ feedback, winback, referral })
-    const { url } = await createCheckoutSession(ctx.tenantId, planSlug, subscription?.stripeCustomerId ?? null, {
-      promotionCodeId: choice.promotionCodeId,
-      discountKind: choice.kind ?? undefined,
-      referralId: attribution?.id ?? null,
-      browser: metaBrowserSignals(request.headers, cookieFromHeader(request.headers)),
+    // Decided from the stored row, never from the client, and only for a coupon that covers this plan.
+    const attribution = isReferralEnrollmentEnabled() ? await getReferralAttribution(ctx.tenantId) : null
+    const offer = await pickOffers({
+      feedback: () => getValidatedFeedbackOffer(subscription, [plan]),
+      winback: () => getValidatedWinbackOffer(subscription, [plan]),
+      referral: attribution
+        ? () => getValidatedReferralOffer(subscription ?? null, [plan], undefined, undefined, undefined, { attribution })
+        : null,
     })
 
-    return NextResponse.json({ url })
+    // One Stripe customer per clinic, stored before any session: a first-time-only code then works once per
+    // clinic, not once per checkout tab.
+    const customerId =
+      subscription?.stripeCustomerId ??
+      (await claimStripeCustomerId(ctx.tenantId, await createTenantCustomer(ctx.tenantId)))
+    if (!customerId) {
+      return NextResponse.json({ error: 'Assinatura não encontrada' }, { status: 404 })
+    }
+
+    let session: { sessionId: string; url: string }
+    try {
+      session = await createCheckoutSession(ctx.tenantId, planSlug, customerId, {
+        promotionCodeId: offer?.promotionCodeId ?? null,
+        discountKind: offer?.kind,
+        referralId: attribution?.id ?? null,
+        browser: metaBrowserSignals(request.headers, cookieFromHeader(request.headers)),
+      })
+    } catch (err) {
+      if (!(err instanceof CheckoutDiscountRejectedError)) throw err
+      return NextResponse.json({ error: DISCOUNT_UNAVAILABLE_MESSAGE, code: DISCOUNT_UNAVAILABLE_CODE }, { status: 409 })
+    }
+
+    // One open session per clinic: the one it replaces may carry other terms.
+    const previous = await swapCheckoutSessionId(ctx.tenantId, session.sessionId)
+    if (previous && previous !== session.sessionId) await expireCheckoutSession(previous)
+
+    return NextResponse.json({ url: session.url })
   } catch (error) {
     return handleApiError(error, request)
   }

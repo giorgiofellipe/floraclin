@@ -65,9 +65,7 @@ export function ExpiredPaywall() {
     tenantId,
     canSubscribe,
     plans,
-    feedback,
-    winback,
-    referral,
+    offer,
     recap,
     recovery,
     paywallOpen,
@@ -108,8 +106,6 @@ export function ExpiredPaywall() {
     closePaywall()
   }
 
-  // One offer at most, in checkout's order: feedback, win-back, referral.
-  const offer = feedback ?? winback ?? referral
   const paymentUpdate = recovery === 'payment_update'
   const built = hasRecap(recap)
   const entryPrice = paymentUpdate ? null : entryPriceLine(plans, offer)
@@ -152,7 +148,7 @@ export function ExpiredPaywall() {
 
           {!paymentUpdate && <TrialRecapTiles recap={recap} title="O que sua clínica já tem aqui" />}
 
-          {!paymentUpdate && <OfferBadge feedback={feedback} winback={winback} referral={referral} />}
+          {!paymentUpdate && <OfferBadge offer={offer} />}
 
           {paymentUpdate && canSubscribe && (
               <Button

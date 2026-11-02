@@ -38,10 +38,8 @@ const STRIPE_DEPS: WinbackDeps = {
  * `applies_to` covers and whose price meets the code's `minimum_amount`,
  * with the label and terms taken from the coupon. With
  * `first_time_transaction`, a clinic whose Stripe customer has ever paid or
- * subscribed gets nothing. Our row rules that out for free: checkout makes a
- * fresh Stripe customer each time and only a completed one is stored, which
- * also moves the row off `trial`. Stripe is asked only if a `trial` row ever
- * carries a customer id (defence in depth; not expected today). Only for a
+ * subscribed gets nothing: checkout stores the customer before the first
+ * session, so Stripe is asked whenever the row carries one. Only for a
  * clinic that used the trial (a patient and an appointment, not deleted):
  * the discount is there to bring back clinics that got going, so a clinic
  * that never started sees full prices everywhere, checkout included.
@@ -71,6 +69,7 @@ export async function getValidatedWinbackOffer(
 
   return {
     ...offer,
+    kind: 'winback',
     label: winbackOfferLabel(
       terms,
       covered.map((p) => p.name),

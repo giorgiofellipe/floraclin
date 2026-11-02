@@ -158,16 +158,6 @@ describe('createCheckoutSession with a referral discount', () => {
     expect(arg.metadata).not.toHaveProperty('winback')
   })
 
-  it('falls back to full price keeping the referral id, reporting a referral_discount step', async () => {
-    m.create.mockRejectedValueOnce(invalid()).mockResolvedValueOnce({ id: 'cs_2', url: 'https://checkout/cs_2' })
-    await createCheckoutSession('t1', 'pro', 'cus_1', { promotionCodeId: 'promo_1', discountKind: 'referral', referralId: 'ref_1' })
-    const fallback = m.create.mock.calls[1][0]
-    expect(fallback).not.toHaveProperty('discounts')
-    expect(fallback.metadata).toMatchObject({ referralId: 'ref_1' })
-    expect(fallback.metadata).not.toHaveProperty('referral')
-    expect(m.report).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ step: 'referral_discount' }))
-  })
-
   it('carries the referral id even without a discount', async () => {
     m.create.mockResolvedValue({ id: 'cs_3', url: 'https://checkout/cs_3' })
     await createCheckoutSession('t1', 'pro', 'cus_1', { referralId: 'ref_1' })

@@ -21,12 +21,6 @@ export const FEEDBACK_COUPON_SPEC: CouponSpec = {
   metadata: { purpose: 'feedback_reward', app: 'floraclin' },
 }
 
-/**
- * Same deps as the referral setup. `createPromotionCode` creates
- * `promotion: { type: 'coupon', coupon }`, `code`,
- * `restrictions: { first_time_transaction: true }`,
- * `metadata: { purpose: 'feedback_reward', app: 'floraclin' }`.
- */
 export type FeedbackCouponSetupDeps = CouponSetupDeps
 
 export async function setupFeedbackCoupon(

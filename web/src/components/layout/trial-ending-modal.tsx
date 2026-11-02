@@ -58,7 +58,7 @@ function markSeen(tenantId: string, trialEndsAt: string) {
 }
 
 export function TrialEndingModal() {
-  const { tenantId, trialEndsAt, recap, plans, canSubscribe, readOnly, feedback, referral } = useSubscriptionAccess()
+  const { tenantId, trialEndsAt, recap, plans, canSubscribe, readOnly, offer } = useSubscriptionAccess()
   const pathname = usePathname()
   const popupRef = useRef<HTMLDivElement>(null)
   const { pending, subscribe } = usePlanCheckout()
@@ -102,9 +102,9 @@ export function TrialEndingModal() {
 
         <TrialRecapTiles recap={recap} title="O que você já montou no teste" />
 
-        <OfferBadge feedback={feedback} winback={null} referral={referral} />
+        <OfferBadge offer={offer} />
 
-        <PlanCards plans={plans} offer={feedback ?? referral} canSubscribe={canSubscribe} pending={pending} onSubscribe={subscribe} />
+        <PlanCards plans={plans} offer={offer} canSubscribe={canSubscribe} pending={pending} onSubscribe={subscribe} />
 
         {!canSubscribe && (
           <p className="text-center text-sm text-charcoal">

@@ -4,6 +4,18 @@ import { clearFeedbackDiscount, getSubscription, grantFeedbackDiscount } from '@
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
 import { FEEDBACK_INELIGIBLE_MESSAGES, feedbackIneligibility } from '@/lib/feedback-eligibility'
+import { expireCheckoutSession } from '@/lib/stripe'
+import { reportSideEffectFailure } from '@/lib/observability'
+
+/** A session opened before the change carries the old terms, so the clinic must start checkout again. */
+async function expireOpenCheckout(tenantId: string, sessionId: string | null) {
+  if (!sessionId) return
+  try {
+    await expireCheckoutSession(sessionId)
+  } catch (err) {
+    reportSideEffectFailure(err, { area: 'billing', step: 'feedback_expire_checkout', extra: { tenantId, sessionId } })
+  }
+}
 
 /** Flags the tenant: its next checkout gets the feedback reward coupon. */
 export async function POST(
@@ -50,6 +62,7 @@ export async function POST(
         feedbackDiscountGrantedBy: { old: null, new: ctx.userId },
       },
     })
+    await expireOpenCheckout(tenantId, result.checkoutSessionId)
 
     return NextResponse.json({ data: result })
   } catch (error) {
@@ -87,6 +100,7 @@ export async function DELETE(
         feedbackDiscountGrantedBy: { old: existing.feedbackDiscountGrantedBy, new: null },
       },
     })
+    await expireOpenCheckout(tenantId, result.checkoutSessionId)
 
     return NextResponse.json({ data: result })
   } catch (error) {
