@@ -777,11 +777,13 @@ export function OnboardingWizard({
             (useKeyboardInset), so Próximo is always within reach; the page's
             bottom padding keeps it from covering the content. In the page flow
             from `sm` up. While the cookie banner shows, the bar sits on top of
-            it (--cookie-banner-offset) instead of under it. No transform-based animation on it or any ancestor:
-            a transformed ancestor turns position: fixed into absolute. */}
+            it (--cookie-banner-offset) instead of under it, and leaves the
+            home-indicator inset to the banner (--cookie-banner-safe-area). No
+            transform-based animation on it or any ancestor: a transformed
+            ancestor turns position: fixed into absolute. */}
         <div
           data-testid="onboarding-actions"
-          className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"
+          className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white px-4 pt-3 pb-[calc(0.75rem+var(--cookie-banner-safe-area,env(safe-area-inset-bottom)))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"
           // With the keyboard open the cookie banner is behind it, so the bar
           // rises from the bottom edge by the keyboard alone, not from above
           // the banner as well.
