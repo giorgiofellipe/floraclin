@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { toast } from 'sonner'
 import { EmailConfirmationBanner } from '../email-confirmation-banner'
@@ -18,17 +18,29 @@ describe('EmailConfirmationBanner', () => {
     expect(banner).toHaveTextContent('ana@clinica.test')
     expect(banner).toHaveTextContent(/WhatsApp/)
     expect(banner).toHaveTextContent(/convidar sua equipe/)
-    expect(banner).toHaveTextContent(
+    expect(screen.getByTestId('email-confirmation-full')).toHaveTextContent(
       'Confirme seu e-mail ana@clinica.test para enviar mensagens por WhatsApp, convidar sua equipe e assinar um plano.',
     )
     // Not a live region: it would be read out on every page load.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
+  it('shortens the copy to one sentence on phones and keeps the full one from sm up', () => {
+    render(<EmailConfirmationBanner email="ana@clinica.test" />)
+    const short = screen.getByTestId('email-confirmation-short')
+    const full = screen.getByTestId('email-confirmation-full')
+    expect(short).toHaveClass('sm:hidden')
+    expect(full).toHaveClass('hidden', 'sm:inline')
+    // The address is not printed on phones, but the title and screen readers still get it.
+    expect(short).toHaveTextContent('Confirme seu e-mail ana@clinica.test para liberar WhatsApp, convites e planos.')
+    expect(short).toHaveAttribute('title', 'ana@clinica.test')
+    expect(within(short).getByText('ana@clinica.test')).toHaveClass('sr-only')
+  })
+
   it('keeps a long address on one line, with the full address in the title', () => {
     const email = 'ana.souza.estetica.c659ca03@example.test'
     render(<EmailConfirmationBanner email={email} />)
-    const address = screen.getByText(email)
+    const address = within(screen.getByTestId('email-confirmation-full')).getByText(email)
     expect(address).toHaveAttribute('title', email)
     expect(address).toHaveClass('truncate')
   })

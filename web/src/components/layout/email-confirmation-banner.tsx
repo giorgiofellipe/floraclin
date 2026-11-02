@@ -24,11 +24,18 @@ export function EmailConfirmationBanner({ email }: { email: string }) {
       role="region"
       aria-label="Confirmação de e-mail pendente"
       data-testid="email-confirmation-banner"
-      className="flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"
+      // One row at every width: on phones the short copy sits beside the
+      // button instead of stacking over it.
+      className="flex items-center justify-between gap-3 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900"
     >
       <p className="flex min-w-0 items-start gap-2">
         <MailIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-        <span className="min-w-0">
+        {/* Phones: one short sentence, the address left to the title and to
+            screen readers. */}
+        <span data-testid="email-confirmation-short" className="min-w-0 text-xs sm:hidden" title={email}>
+          Confirme seu e-mail<span className="sr-only"> {email}</span> para liberar WhatsApp, convites e planos.
+        </span>
+        <span data-testid="email-confirmation-full" className="hidden min-w-0 sm:inline">
           {/* The address stays on one line, cut with an ellipsis when it does
               not fit; the full one is in the title and in the text screen
               readers get. */}
@@ -43,7 +50,7 @@ export function EmailConfirmationBanner({ email }: { email: string }) {
         type="button"
         onClick={resend}
         disabled={disabled}
-        className="inline-flex min-h-11 shrink-0 items-center self-start rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-60 sm:min-h-9 sm:self-auto"
+        className="inline-flex min-h-11 shrink-0 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-60 sm:min-h-9"
       >
         {resendLabel(cooldown, isPending)}
       </button>

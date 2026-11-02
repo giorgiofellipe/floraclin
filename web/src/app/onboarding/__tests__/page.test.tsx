@@ -2,8 +2,8 @@
  * The onboarding page decides what step 1 starts with: after a Google
  * sign-up the clinic only has a stand-in name, and the field is prefilled from
  * the Google profile instead of left empty; a name the owner saved is never
- * replaced. It also carries the confirmation banner and the browser half of
- * CompleteRegistration that used to live on /confirm-email.
+ * replaced. It also carries the browser half of CompleteRegistration that used
+ * to live on /confirm-email; the confirmation banner waits for the dashboard.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
@@ -100,13 +100,11 @@ describe('onboarding page', () => {
     expect(wizardProps.current).not.toHaveProperty('tenantWorkingHours')
   })
 
-  it('shows the confirmation banner only to an unconfirmed owner', async () => {
-    await renderPage()
-    expect(screen.queryByTestId('banner')).toBeNull()
-
+  it('never shows the confirmation banner, not even to an unconfirmed owner', async () => {
     authCtx.current = { ...authCtx.current, email: 'novo@clinica.test', emailVerified: false }
     await renderPage()
-    expect(screen.getByTestId('banner')).toHaveTextContent('novo@clinica.test')
+    expect(screen.queryByTestId('banner')).toBeNull()
+    expect(screen.queryByText('novo@clinica.test')).toBeNull()
   })
 
   it('passes the Meta event id from signup to the pixel tracker', async () => {

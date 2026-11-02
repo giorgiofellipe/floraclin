@@ -214,7 +214,9 @@ test.describe('Confirmation link', () => {
     await page.getByTestId('login-submit').click()
     await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
     await page.goto('/onboarding')
-    await expect(page.getByTestId('email-confirmation-banner')).toBeVisible({ timeout: 10000 })
+    // The confirmation banner waits for the dashboard: none on the setup.
+    await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
 
     await page.goto(confirmPath)
 

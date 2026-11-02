@@ -11,7 +11,6 @@ import { OnboardingWizard } from '@/components/onboarding/onboarding-wizard'
 import { hasPlaceholderName, suggestedClinicName } from '@/lib/clinic-placeholder'
 import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
-import { EmailConfirmationBanner } from '@/components/layout/email-confirmation-banner'
 import { SignupConversionTracker } from '@/app/confirm-email/signup-conversion-tracker'
 import { onboardingDraftSchema } from '@/validations/onboarding'
 import { EmailConfirmedToast } from '@/components/layout/email-confirmed-toast'
@@ -24,7 +23,7 @@ interface OnboardingPageProps {
 export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
   const auth = await getAuthContext()
   const { meta_event_id: metaEventId, email_confirmed: emailConfirmed } = await searchParams
-  // A hand-made ?email_confirmed=1 never says so next to the "Confirme seu e-mail" banner.
+  // A hand-made ?email_confirmed=1 never says so to an owner who has not confirmed.
   const showEmailConfirmed = wantsEmailConfirmedToast(emailConfirmed) && auth.emailVerified !== false
   // The confirmation link lands here; when onboarding is done (or not theirs
   // to run) the "E-mail confirmado." toast moves on to the dashboard with it.
@@ -74,7 +73,10 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
           moved here with it. Consent-gated inside trackMetaEvent. */}
       <SignupConversionTracker eventId={typeof metaEventId === 'string' ? metaEventId : null} />
       <EmailConfirmedToast show={showEmailConfirmed} />
-      {auth.emailVerified === false && <EmailConfirmationBanner email={auth.email} />}
+      {/* No "Confirme seu e-mail" banner here: onboarding needs nothing the
+          confirmation gates, and the banner competed with step 1. It shows
+          from the dashboard on (platform layout); the confirmation e-mail and
+          its reminders still go out meanwhile. */}
       <OnboardingWizard
         // A clinic created on arrival after Google sign-up only has a stand-in
         // name ("Clínica de Ana"). Instead of an empty field, suggest one from
