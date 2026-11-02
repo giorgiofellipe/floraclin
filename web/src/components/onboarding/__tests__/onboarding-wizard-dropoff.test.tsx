@@ -310,35 +310,52 @@ describe('field interaction events', () => {
 })
 
 describe('onboarding_step_abandoned', () => {
-  it('is sent by beacon when the tab is hidden, once per step visit, with the time on the step', async () => {
+  it('is sent by beacon when the page is closed, once per step visit, with the time on the step', async () => {
     renderWizard({ tenantName: 'Clínica Bella' })
 
-    setVisibility('hidden')
-    setVisibility('visible')
-    setVisibility('hidden')
+    fireEvent(window, new Event('pagehide'))
+    fireEvent(window, new Event('beforeunload'))
     fireEvent(window, new Event('pagehide'))
 
     const sent = eventsNamed('onboarding_step_abandoned')
     expect(sent).toHaveLength(1)
     const [, props, options] = sent[0]
-    expect(props).toMatchObject({ step_index: 0, step_name: 'clinic', trigger: 'hidden' })
+    expect(props).toMatchObject({ step_index: 0, step_name: 'clinic', trigger: 'pagehide' })
     expect((props as { time_on_step_ms: number }).time_on_step_ms).toBeGreaterThanOrEqual(0)
     expect(options).toEqual({ transport: 'sendBeacon' })
   })
 
-  it('is not sent for moving to the next step, and a new visit can send it again', async () => {
-    const user = userEvent.setup()
-    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+  it('is sent on beforeunload, where pagehide does not come first', async () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    fireEvent(window, new Event('beforeunload'))
+
+    expect(eventsNamed('onboarding_step_abandoned')).toEqual([
+      ['onboarding_step_abandoned', expect.objectContaining({ step_index: 0, trigger: 'beforeunload' }), { transport: 'sendBeacon' }],
+    ])
+  })
+
+  // Catches a tab switch counted as abandonment: owners who come back looked like drop-offs.
+  it('is not sent when the tab is only hidden', async () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+
     setVisibility('hidden')
     setVisibility('visible')
+
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(0)
+  })
+
+  it('is not sent for moving to the next step, and the new step can send it', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
     await user.click(screen.getByTestId('onboarding-next'))
-    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(1)
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(0)
 
     fireEvent(window, new Event('pagehide'))
 
     const sent = eventsNamed('onboarding_step_abandoned')
-    expect(sent).toHaveLength(2)
-    expect(sent[1][1]).toMatchObject({ step_index: 1, step_name: 'procedures', trigger: 'pagehide' })
+    expect(sent).toHaveLength(1)
+    expect(sent[0][1]).toMatchObject({ step_index: 1, step_name: 'procedures', trigger: 'pagehide' })
   })
 
   it('is sent when the owner navigates away from the wizard', async () => {
@@ -402,5 +419,45 @@ describe('onboarding_step_abandoned', () => {
     fireEvent(window, new Event('pagehide'))
 
     expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(1)
+  })
+})
+
+describe('onboarding_step_backgrounded', () => {
+  // Catches the hidden tab going unrecorded once it stopped counting as abandonment.
+  it('is sent by beacon when the tab is hidden, with the step and the time on it', async () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    setVisibility('hidden')
+
+    const sent = eventsNamed('onboarding_step_backgrounded')
+    expect(sent).toHaveLength(1)
+    const [, props, options] = sent[0]
+    expect(props).toMatchObject({ step_index: 0, step_name: 'clinic' })
+    expect((props as { time_on_step_ms: number }).time_on_step_ms).toBeGreaterThanOrEqual(0)
+    expect(options).toEqual({ transport: 'sendBeacon' })
+    expect(eventsNamed('onboarding_step_abandoned')).toHaveLength(0)
+  })
+
+  it('is sent once per hide: again after the tab comes back and is hidden again', async () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+
+    setVisibility('hidden')
+    setVisibility('hidden')
+    expect(eventsNamed('onboarding_step_backgrounded')).toHaveLength(1)
+
+    setVisibility('visible')
+    setVisibility('hidden')
+    expect(eventsNamed('onboarding_step_backgrounded')).toHaveLength(2)
+  })
+
+  it('is not sent while onboarding is finishing', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    await user.click(screen.getByTestId('onboarding-use-defaults'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalled())
+
+    setVisibility('hidden')
+
+    expect(eventsNamed('onboarding_step_backgrounded')).toHaveLength(0)
   })
 })

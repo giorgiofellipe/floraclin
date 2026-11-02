@@ -38,8 +38,12 @@ export type OnboardingCompletionMethod = 'wizard' | 'defaults'
 export type OnboardingTrackedField = 'name' | 'phone'
 export type OnboardingFieldInteraction = 'focus' | 'input'
 
-/** What showed the owner left a step: the tab hidden or closed, or a navigation away from the wizard. */
-export type OnboardingAbandonTrigger = 'pagehide' | 'hidden' | 'navigation'
+/**
+ * What showed the owner left a step: the page closed or reloaded (pagehide,
+ * beforeunload) or a navigation away from the wizard. A hidden tab is not one,
+ * see `onboarding_step_backgrounded`.
+ */
+export type OnboardingAbandonTrigger = 'pagehide' | 'beforeunload' | 'navigation'
 
 export type OnboardingSubmitFailureReason =
   | 'slug_taken'
@@ -79,7 +83,8 @@ export interface AnalyticsEventProperties {
   login_succeeded: { method: LoginMethod; is_new_user: boolean }
   login_failed: { method: LoginMethod; reason: LoginFailureReason } & InAppBrowserProperties
   onboarding_step_viewed: OnboardingStepProperties
-  onboarding_step_submitted: OnboardingStepProperties
+  /** `via: 'defaults'` when submitted by "Usar padrões e começar" instead of "Próximo". */
+  onboarding_step_submitted: OnboardingStepProperties & { via?: 'defaults' }
   onboarding_step_validation_error: OnboardingStepProperties & { fields: string[] }
   onboarding_submit_failed: OnboardingStepProperties & { reason: OnboardingSubmitFailureReason; status?: number }
   onboarding_completed: { procedure_types_count: number; products_count: number; method?: OnboardingCompletionMethod }
@@ -88,6 +93,8 @@ export interface AnalyticsEventProperties {
     interaction: OnboardingFieldInteraction
   }
   onboarding_step_abandoned: OnboardingStepProperties & { time_on_step_ms: number; trigger: OnboardingAbandonTrigger }
+  /** The tab hidden (switched away, phone locked) while on a step: the owner may come back, so not an abandonment. */
+  onboarding_step_backgrounded: OnboardingStepProperties & { time_on_step_ms: number }
   first_patient_created: Record<string, never>
   first_photo_uploaded: { kind: TimelineStage }
   first_appointment_created: Record<string, never>
@@ -108,12 +115,13 @@ export const EVENT_PROPERTY_KEYS: { [E in AnalyticsEventName]: readonly (keyof A
   login_succeeded: ['method', 'is_new_user'],
   login_failed: ['method', 'reason', ...IN_APP_KEYS],
   onboarding_step_viewed: STEP_KEYS,
-  onboarding_step_submitted: STEP_KEYS,
+  onboarding_step_submitted: [...STEP_KEYS, 'via'],
   onboarding_step_validation_error: [...STEP_KEYS, 'fields'],
   onboarding_submit_failed: [...STEP_KEYS, 'reason', 'status'],
   onboarding_completed: ['procedure_types_count', 'products_count', 'method'],
   onboarding_field_interacted: [...STEP_KEYS, 'field', 'interaction'],
   onboarding_step_abandoned: [...STEP_KEYS, 'time_on_step_ms', 'trigger'],
+  onboarding_step_backgrounded: [...STEP_KEYS, 'time_on_step_ms'],
   first_patient_created: [],
   first_photo_uploaded: ['kind'],
   first_appointment_created: [],
@@ -219,6 +227,7 @@ export const CLIENT_EVENT_NAMES = [
   'onboarding_submit_failed',
   'onboarding_field_interacted',
   'onboarding_step_abandoned',
+  'onboarding_step_backgrounded',
   'referral_page_viewed',
 ] as const satisfies readonly AnalyticsEventName[]
 

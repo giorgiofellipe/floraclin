@@ -161,15 +161,25 @@ describe('the onboarding drop-off events', () => {
     })
     client.track(
       'onboarding_step_abandoned',
-      { step_index: 0, step_name: 'clinic', time_on_step_ms: 1200, trigger: 'hidden' },
+      { step_index: 0, step_name: 'clinic', time_on_step_ms: 1200, trigger: 'pagehide' },
+      { transport: 'sendBeacon' },
+    )
+    client.track(
+      'onboarding_step_backgrounded',
+      { step_index: 0, step_name: 'clinic', time_on_step_ms: 900 },
       { transport: 'sendBeacon' },
     )
     await flush()
 
-    expect(sent.map((e) => e.event)).toEqual(['onboarding_field_interacted', 'onboarding_step_abandoned'])
+    expect(sent.map((e) => e.event)).toEqual([
+      'onboarding_field_interacted',
+      'onboarding_step_abandoned',
+      'onboarding_step_backgrounded',
+    ])
     expect(sent[0].properties).toMatchObject({ field: 'name', interaction: 'input' })
     expect(JSON.stringify(sent[0].properties)).not.toContain('Bella')
-    expect(sent[1].properties).toMatchObject({ time_on_step_ms: 1200, trigger: 'hidden' })
+    expect(sent[1].properties).toMatchObject({ time_on_step_ms: 1200, trigger: 'pagehide' })
+    expect(sent[2].properties).toMatchObject({ step_index: 0, step_name: 'clinic', time_on_step_ms: 900 })
     expect(phCookies()).toEqual([])
   })
 
