@@ -5,6 +5,7 @@ import { getTenant } from '@/db/queries/tenants'
 import { getProspect, convertProspect, logProspectActivity } from '@/db/queries/prospects'
 import { createPatient, getPatient } from '@/db/queries/patients'
 import { trackFirstPatientCreated } from '@/lib/analytics/server-events'
+import { scheduleFirstPatientConversion } from '@/lib/meta/platform-conversions'
 import { pushSseEvent } from '@/db/queries/whatsapp'
 import { convertProspectSchema } from '@/validations/prospect'
 import type { Role } from '@/types'
@@ -71,6 +72,7 @@ export async function POST(
         phone: parsed.data.createPatient.phone,
       }, ctx.userId)
       trackFirstPatientCreated(ctx, patient.id)
+      scheduleFirstPatientConversion(ctx, patient.id, request.headers)
       patientId = patient.id
     } else {
       return NextResponse.json(

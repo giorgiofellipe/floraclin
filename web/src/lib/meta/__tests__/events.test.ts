@@ -147,6 +147,42 @@ describe('FloraClin conversion events', () => {
     })
   })
 
+  // The LIA promises no patient data reaches Meta.
+  it('posts FirstPatient under the fixed per-clinic id with only the clinic professional match keys', async () => {
+    process.env.META_CAPI_ACCESS_TOKEN = 'signup-token'
+    const { sendFirstPatientEvent } = await import('../events')
+
+    const sent = await sendFirstPatientEvent({
+      eventId: 'first_patient:tenant-1',
+      email: 'Maria@Clinica.com',
+      phone: '(11) 99999-8888',
+      eventSourceUrl: 'https://app.floraclin.com.br/pacientes',
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      clientIp: '203.0.113.10',
+      userAgent: 'Vitest Browser',
+    })
+
+    expect(sent).toBe(true)
+    const payload = postedPayload()
+    expect(payload).toMatchObject({
+      event_name: 'FirstPatient',
+      event_id: 'first_patient:tenant-1',
+      action_source: 'website',
+      event_source_url: 'https://app.floraclin.com.br/pacientes',
+    })
+    expect(payload).not.toHaveProperty('custom_data')
+    expect(payload.user_data).toEqual({
+      // sha256 of 'maria@clinica.com' and of '5511999998888'
+      em: ['1000b7510a739b2926732e84e297f127a1c194440831ac04f8e32df3de6db9e5'],
+      ph: ['b8e374ecc3a7a117a4df68efc21b0157f7c2ea542f7edaf29b33dc8818cf695e'],
+      fbc: 'fb.1.1700000000000.click',
+      fbp: 'fb.1.1700000000000.browser',
+      client_ip_address: '203.0.113.10',
+      client_user_agent: 'Vitest Browser',
+    })
+  })
+
   it.each([
     ['production', 1],
     ['preview', 0],
