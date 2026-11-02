@@ -1,0 +1,57 @@
+/**
+ * After the confirmation link signs the owner in, the page they land on says
+ * "E-mail confirmado." once and drops the parameter, so a reload or Back does
+ * not say it again.
+ */
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render } from '@testing-library/react'
+
+const { router, toast } = vi.hoisted(() => ({
+  router: { replace: vi.fn() },
+  toast: { success: vi.fn() },
+}))
+vi.mock('next/navigation', () => ({ useRouter: () => router }))
+vi.mock('sonner', () => ({ toast }))
+
+import { EmailConfirmedToast } from '../email-confirmed-toast'
+import { withEmailConfirmedParam, withoutEmailConfirmedParam } from '@/lib/email-confirmed-toast'
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  window.history.replaceState(null, '', '/onboarding?email_confirmed=1')
+})
+
+describe('EmailConfirmedToast', () => {
+  it('toasts once and drops the parameter without scrolling', () => {
+    const { rerender } = render(<EmailConfirmedToast show />)
+    rerender(<EmailConfirmedToast show />)
+
+    expect(toast.success).toHaveBeenCalledTimes(1)
+    expect(toast.success).toHaveBeenCalledWith('E-mail confirmado.')
+    expect(router.replace).toHaveBeenCalledTimes(1)
+    expect(router.replace).toHaveBeenCalledWith('/onboarding', { scroll: false })
+  })
+
+  it('keeps the rest of the URL', () => {
+    window.history.replaceState(null, '', '/dashboard?primeiro_paciente=1&email_confirmed=1#topo')
+    render(<EmailConfirmedToast show />)
+    expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1#topo', { scroll: false })
+  })
+
+  it('does nothing without the parameter', () => {
+    render(<EmailConfirmedToast show={false} />)
+    expect(toast.success).not.toHaveBeenCalled()
+    expect(router.replace).not.toHaveBeenCalled()
+  })
+})
+
+describe('email confirmed parameter', () => {
+  it('is appended to a path with or without a query', () => {
+    expect(withEmailConfirmedParam('/onboarding')).toBe('/onboarding?email_confirmed=1')
+    expect(withEmailConfirmedParam('/dashboard?a=1')).toBe('/dashboard?a=1&email_confirmed=1')
+  })
+
+  it('is removed on its own', () => {
+    expect(withoutEmailConfirmedParam(new URL('https://x.test/dashboard?email_confirmed=1'))).toBe('/dashboard')
+  })
+})

@@ -98,6 +98,29 @@ describe('step 1 asks only for the clinic name and phone', () => {
   })
 })
 
+describe('clinic name suggested from the Google account', () => {
+  const hint = 'Sugerido a partir da sua conta Google. Ajuste se quiser.'
+
+  it('says where the prefilled name came from until the owner edits it', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Ana Souza', tenantNameSuggested: true })
+    const name = screen.getByLabelText('Nome da clínica *')
+
+    expect(name).toHaveAccessibleDescription(hint)
+
+    await user.type(name, ' Estética')
+
+    expect(screen.queryByText(hint)).toBeNull()
+    expect(name).not.toHaveAccessibleDescription()
+  })
+
+  it('says nothing when the name was not suggested', () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+    expect(screen.queryByText(hint)).toBeNull()
+    expect(screen.getByLabelText('Nome da clínica *')).not.toHaveAttribute('aria-describedby')
+  })
+})
+
 describe('"Usar padrões e começar"', () => {
   it('is unavailable until the name and a phone with DDD are filled', async () => {
     const user = userEvent.setup()
@@ -208,6 +231,25 @@ describe('action bar on phones', () => {
     expect(bar.style.bottom).toBe('0px')
   })
 
+  it('is opaque on phones, so the form does not show through it', () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+    const bar = screen.getByTestId('onboarding-actions')
+    expect(bar).toHaveClass('bg-white')
+    expect(bar.className).not.toMatch(/bg-white\/|backdrop-blur/)
+  })
+
+  it('makes Próximo full width on phones while there is no Voltar', async () => {
+    const user = userEvent.setup()
+    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
+    expect(screen.queryByTestId('onboarding-prev')).toBeNull()
+    expect(screen.getByTestId('onboarding-next')).toHaveClass('w-full', 'sm:w-auto')
+
+    await user.click(screen.getByTestId('onboarding-next'))
+
+    expect(await screen.findByTestId('onboarding-prev')).toBeInTheDocument()
+    expect(screen.getByTestId('onboarding-next')).not.toHaveClass('w-full')
+  })
+
   it('stays in place from the sm breakpoint up, where it is in the page flow', () => {
     const openKeyboard = stubKeyboard({ wide: true })
     renderWizard({ tenantName: 'Clínica Bella' })
@@ -215,6 +257,20 @@ describe('action bar on phones', () => {
     openKeyboard()
 
     expect(screen.getByTestId('onboarding-actions').getAttribute('style')).toBeNull()
+  })
+})
+
+describe('header legibility', () => {
+  it('gives Sair a 44px hit area and readable colour', () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+    expect(screen.getByRole('button', { name: 'Sair' })).toHaveClass('min-h-11', 'text-mid')
+  })
+
+  it('does not fade the labels of the steps ahead', () => {
+    renderWizard({ tenantName: 'Clínica Bella' })
+    for (const label of ['Procedimentos', 'Produtos', 'Equipe']) {
+      expect(screen.getByText(label).className).not.toMatch(/text-mid\//)
+    }
   })
 })
 

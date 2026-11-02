@@ -48,8 +48,8 @@ export function ConfirmActions({ email, hasToken, signedIn = false }: ConfirmAct
           failed link: one action, stated as the last step. */}
       {hasToken ? (
         <p className="text-sm text-mid leading-relaxed">
-          Toque no botão abaixo para confirmar <strong className="text-charcoal">{email}</strong> e
-          continuar a configuração da sua clínica.
+          Confirme <strong className="text-charcoal">{email}</strong> no botão abaixo para continuar a configuração
+          da sua clínica.
         </p>
       ) : (
         <p className="text-sm text-mid leading-relaxed">

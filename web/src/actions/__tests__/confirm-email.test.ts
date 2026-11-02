@@ -36,13 +36,13 @@ beforeEach(() => {
 })
 
 describe('confirmEmail action', () => {
-  it('signs in with the address and token from the cookie, not from the caller', async () => {
+  it('signs in with the address and token from the cookie, not from the caller, landing with the confirmed toast', async () => {
     await confirmEmail()
 
     expect(signIn).toHaveBeenCalledWith('confirm-email', {
       email: 'ana@clinica.com.br',
       token: 'raw',
-      redirectTo: '/onboarding',
+      redirectTo: '/onboarding?email_confirmed=1',
     })
   })
 

@@ -18,6 +18,8 @@ interface ClinicStepProps {
   onFieldInteraction?: (field: OnboardingTrackedField, interaction: OnboardingFieldInteraction) => void
   /** Which field the last "Próximo" found missing, to mark it invalid. */
   invalidField?: OnboardingTrackedField | null
+  /** The name is prefilled from the Google account and not edited yet. */
+  nameSuggested?: boolean
 }
 
 /**
@@ -30,7 +32,13 @@ interface ClinicStepProps {
  * (the Input default below md) so iOS does not zoom into them, and nothing is
  * autofocused, which would throw the keyboard up over the page on load.
  */
-export function ClinicStep({ values, onChange, onFieldInteraction, invalidField = null }: ClinicStepProps) {
+export function ClinicStep({
+  values,
+  onChange,
+  onFieldInteraction,
+  invalidField = null,
+  nameSuggested = false,
+}: ClinicStepProps) {
   return (
     <div className="grid gap-5">
       <div className="space-y-2">
@@ -46,10 +54,16 @@ export function ClinicStep({ values, onChange, onFieldInteraction, invalidField 
           onChange={(e) => onChange({ ...values, name: e.target.value })}
           placeholder="Ex.: Clínica Bella Estética"
           aria-invalid={invalidField === 'name' || undefined}
+          aria-describedby={nameSuggested ? 'clinic-name-hint' : undefined}
           required
           // Room for the action bar above the keyboard when the browser scrolls the field into view.
           className="h-11 scroll-mb-32"
         />
+        {nameSuggested && (
+          <p id="clinic-name-hint" className="text-xs text-mid">
+            Sugerido a partir da sua conta Google. Ajuste se quiser.
+          </p>
+        )}
       </div>
       <div className="space-y-2">
         <Label htmlFor="clinic-phone">Telefone *</Label>

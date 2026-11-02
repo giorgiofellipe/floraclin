@@ -18,8 +18,25 @@ describe('EmailConfirmationBanner', () => {
     expect(banner).toHaveTextContent('ana@clinica.test')
     expect(banner).toHaveTextContent(/WhatsApp/)
     expect(banner).toHaveTextContent(/convidar sua equipe/)
+    expect(banner).toHaveTextContent(
+      'Confirme seu e-mail ana@clinica.test para enviar mensagens por WhatsApp, convidar sua equipe e assinar um plano.',
+    )
     // Not a live region: it would be read out on every page load.
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
+  })
+
+  it('keeps a long address on one line, with the full address in the title', () => {
+    const email = 'ana.souza.estetica.c659ca03@example.test'
+    render(<EmailConfirmationBanner email={email} />)
+    const address = screen.getByText(email)
+    expect(address).toHaveAttribute('title', email)
+    expect(address).toHaveClass('truncate')
+    expect(address.className).not.toMatch(/break-all/)
+  })
+
+  it('gives the resend button a 44px tap target on phones', () => {
+    render(<EmailConfirmationBanner email="ana@clinica.test" />)
+    expect(screen.getByRole('button', { name: 'Reenviar link' })).toHaveClass('min-h-11', 'sm:min-h-9')
   })
 
   it('resends through the existing endpoint, then holds the button for the cooldown', async () => {

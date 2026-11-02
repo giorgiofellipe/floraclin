@@ -3,13 +3,14 @@
  * `primeiro_paciente=1` the wizard adds, dropped from the URL straight away,
  * and gone after the owner acts on it.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import type { ReactNode } from 'react'
 
 const router = vi.hoisted(() => ({ replace: vi.fn(), push: vi.fn() }))
-vi.mock('next/navigation', () => ({ useRouter: () => router }))
+vi.mock('next/navigation', () => ({ useRouter: () => router, usePathname: () => '/dashboard' }))
+vi.mock('next/image', () => ({ default: () => null }))
 vi.mock('next/link', () => ({
   default: ({ children, href, onClick, ...rest }: { children: ReactNode; href: string; onClick?: (e: unknown) => void }) => (
     <a
@@ -46,8 +47,25 @@ vi.mock('@/components/dashboard/pending-reschedule-card', () => ({ PendingResche
 vi.mock('@/components/dashboard/month-selector', () => ({ MonthSelector: Nothing }))
 
 import { DashboardPageClient } from '../dashboard-page-client'
+import { InstallBanner } from '@/components/layout/install-banner'
 
-beforeEach(() => vi.clearAllMocks())
+// A phone browser that has not installed the app, for the install banner.
+function stubInstallableMobile() {
+  Object.defineProperty(window, 'matchMedia', {
+    configurable: true,
+    writable: true,
+    value: (query: string) => ({ matches: !query.startsWith('(display-mode'), media: query }),
+  })
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  localStorage.clear()
+})
+
+afterEach(() => {
+  delete (window as { matchMedia?: unknown }).matchMedia
+})
 
 describe('dashboard first-patient highlight', () => {
   it('highlights "Novo Paciente" with a described hint and drops the parameter from the URL', () => {
@@ -58,6 +76,64 @@ describe('dashboard first-patient highlight', () => {
     expect(action).toHaveAccessibleDescription(/primeiro paciente/i)
     expect(screen.getByRole('status')).toHaveTextContent('Sua clínica está pronta.')
     expect(router.replace).toHaveBeenCalledWith('/dashboard', { scroll: false })
+  })
+
+  it('makes "Novo Paciente" the primary action while the hint is up, and gives it back after', async () => {
+    const user = userEvent.setup()
+    render(<DashboardPageClient highlightFirstPatient />)
+    const patient = screen.getByTestId('dashboard-new-patient')
+    const appointment = screen.getByTestId('dashboard-new-appointment')
+
+    expect(patient).toHaveClass('bg-forest', 'text-cream', 'ring-2')
+    expect(appointment).not.toHaveClass('bg-forest')
+    expect(appointment).toHaveClass('border-sage/30')
+
+    await user.click(screen.getByRole('button', { name: 'Dispensar dica' }))
+
+    expect(patient).not.toHaveClass('bg-forest')
+    expect(patient).toHaveClass('border-sage/30')
+    expect(appointment).toHaveClass('bg-forest', 'text-cream')
+  })
+
+  it('gives the dismiss button a 44px tap target', () => {
+    render(<DashboardPageClient highlightFirstPatient />)
+    expect(screen.getByRole('button', { name: 'Dispensar dica' })).toHaveClass('size-11')
+  })
+
+  it('holds the install banner back while the hint is up, without dismissing it', async () => {
+    const user = userEvent.setup()
+    stubInstallableMobile()
+    render(
+      <>
+        <InstallBanner />
+        <DashboardPageClient highlightFirstPatient />
+      </>,
+    )
+    expect(screen.queryByTestId('install-banner')).toBeNull()
+
+    await user.click(screen.getByRole('button', { name: 'Dispensar dica' }))
+
+    expect(screen.getByTestId('install-banner')).toBeInTheDocument()
+    expect(localStorage.getItem('floraclin.install-banner.dismissed')).toBeNull()
+  })
+
+  it('leaves the install banner alone on an ordinary visit', () => {
+    stubInstallableMobile()
+    render(
+      <>
+        <InstallBanner />
+        <DashboardPageClient />
+      </>,
+    )
+    expect(screen.getByTestId('install-banner')).toBeInTheDocument()
+  })
+
+  it('lets the install banner back on the next page', () => {
+    stubInstallableMobile()
+    const { unmount } = render(<DashboardPageClient highlightFirstPatient />)
+    unmount()
+    render(<InstallBanner />)
+    expect(screen.getByTestId('install-banner')).toBeInTheDocument()
   })
 
   it('goes away once the owner opens the patient form', async () => {

@@ -8,7 +8,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 
-const { authCtx, tenant, wizardProps, trackerProps } = vi.hoisted(() => ({
+const { authCtx, tenant, wizardProps, trackerProps, toastProps } = vi.hoisted(() => ({
+  toastProps: { current: null as null | Record<string, unknown> },
   authCtx: { current: {} as Record<string, unknown> },
   tenant: { current: {} as Record<string, unknown> },
   wizardProps: { current: null as null | Record<string, unknown> },
@@ -39,6 +40,12 @@ vi.mock('@/app/confirm-email/signup-conversion-tracker', () => ({
     return null
   },
 }))
+vi.mock('@/components/layout/email-confirmed-toast', () => ({
+  EmailConfirmedToast: (props: Record<string, unknown>) => {
+    toastProps.current = props
+    return null
+  },
+}))
 vi.mock('@/components/layout/email-confirmation-banner', () => ({
   EmailConfirmationBanner: ({ email }: { email: string }) => <div data-testid="banner">{email}</div>,
 }))
@@ -52,6 +59,7 @@ async function renderPage(search: Record<string, string> = {}) {
 beforeEach(() => {
   wizardProps.current = null
   trackerProps.current = null
+  toastProps.current = null
   authCtx.current = {
     userId: 'u1',
     tenantId: 't1',
@@ -68,12 +76,21 @@ describe('onboarding page', () => {
   it('prefills the clinic name from the Google profile while the stand-in is there', async () => {
     await renderPage()
     expect(wizardProps.current?.tenantName).toBe('Clínica Ana Souza')
+    expect(wizardProps.current?.tenantNameSuggested).toBe(true)
+  })
+
+  it('flags no suggestion when the Google profile has no usable name', async () => {
+    authCtx.current = { ...authCtx.current, fullName: 'ana', email: 'ana@gmail.com' }
+    await renderPage()
+    expect(wizardProps.current?.tenantName).toBe('')
+    expect(wizardProps.current?.tenantNameSuggested).toBe(false)
   })
 
   it('keeps the name the owner saved', async () => {
     tenant.current = { ...tenant.current, name: 'Studio Bella', settings: { clinic_name_placeholder: false } }
     await renderPage()
     expect(wizardProps.current?.tenantName).toBe('Studio Bella')
+    expect(wizardProps.current?.tenantNameSuggested).toBe(false)
   })
 
   it('no longer hands the wizard the e-mail, address or hours', async () => {
@@ -99,6 +116,24 @@ describe('onboarding page', () => {
 
   it('sends a finished clinic to the dashboard', async () => {
     tenant.current = { ...tenant.current, settings: { onboarding_completed: true } }
-    await expect(renderPage()).rejects.toThrow('redirect:/dashboard')
+    await expect(renderPage()).rejects.toThrow(/^redirect:\/dashboard$/)
+  })
+
+  it('says "E-mail confirmado." once when the confirmation link lands here', async () => {
+    await renderPage({ email_confirmed: '1' })
+    expect(toastProps.current).toEqual({ show: true })
+
+    await renderPage()
+    expect(toastProps.current).toEqual({ show: false })
+  })
+
+  it('carries the confirmed toast on to the dashboard when the clinic is already set up', async () => {
+    tenant.current = { ...tenant.current, settings: { onboarding_completed: true } }
+    await expect(renderPage({ email_confirmed: '1' })).rejects.toThrow(/^redirect:\/dashboard\?email_confirmed=1$/)
+  })
+
+  it('ignores any other value of the parameter', async () => {
+    tenant.current = { ...tenant.current, settings: { onboarding_completed: true } }
+    await expect(renderPage({ email_confirmed: 'yes' })).rejects.toThrow(/^redirect:\/dashboard$/)
   })
 })

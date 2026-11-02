@@ -26,18 +26,24 @@ export function EmailConfirmationBanner({ email }: { email: string }) {
       data-testid="email-confirmation-banner"
       className="flex flex-col gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between"
     >
-      <p className="flex items-start gap-2">
+      <p className="flex min-w-0 items-start gap-2">
         <MailIcon className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-        <span>
-          Confirme seu e-mail <strong className="break-all">{email}</strong> para enviar mensagens por WhatsApp,
-          convidar sua equipe e assinar um plano.
+        <span className="min-w-0">
+          {/* The address stays on one line, cut with an ellipsis when it does
+              not fit; the full one is in the title and in the text screen
+              readers get. */}
+          Confirme seu e-mail{' '}
+          <strong title={email} className="inline-block max-w-full truncate align-bottom">
+            {email}
+          </strong>{' '}
+          para enviar mensagens por WhatsApp, convidar sua equipe e assinar um plano.
         </span>
       </p>
       <button
         type="button"
         onClick={resend}
         disabled={disabled}
-        className="shrink-0 self-start rounded-md border border-amber-300 bg-white px-3 py-1.5 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-60 sm:self-auto"
+        className="inline-flex min-h-11 shrink-0 items-center self-start rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 disabled:opacity-60 sm:min-h-9 sm:self-auto"
       >
         {resendLabel(cooldown, isPending)}
       </button>

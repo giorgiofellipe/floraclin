@@ -18,6 +18,12 @@ import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule
 import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
 import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { useHoldInstallBanner } from '@/components/layout/platform-chrome'
+
+// While the first-patient hint is up, "Novo Paciente" takes the primary style
+// and "Novo Agendamento" the outline one, so the eye goes where the hint says.
+const PRIMARY_ACTION = 'bg-forest text-cream hover:bg-sage'
+const OUTLINE_ACTION = 'border border-sage/30 text-charcoal hover:bg-confirmed-bg'
 
 function getGreeting(): string {
   const hour = new Date().getHours()
@@ -39,6 +45,8 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
   useEffect(() => {
     if (highlightFirstPatient) router.replace('/dashboard', { scroll: false })
   }, [highlightFirstPatient, router])
+  // The install banner would cover the guidance on phones; it waits.
+  useHoldInstallBanner(firstPatientHighlight)
   const currentMonth = brToday().slice(0, 7)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   // Omit the month param entirely when it's the current month, so the
@@ -99,10 +107,10 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
                 aria-describedby={firstPatientHighlight ? 'first-patient-hint' : undefined}
                 data-highlighted={firstPatientHighlight || undefined}
                 data-testid="dashboard-new-patient"
-                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
+                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
                   firstPatientHighlight
-                    ? 'border-forest bg-confirmed-bg text-forest ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse'
-                    : 'border-sage/30 text-charcoal hover:bg-confirmed-bg'
+                    ? `${PRIMARY_ACTION} ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse`
+                    : OUTLINE_ACTION
                 }`}
               >
                 <UserPlus className="mr-1.5 h-4 w-4" />
@@ -112,7 +120,10 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
             <ReadOnlyGuard label="Novo Agendamento" className="flex-1 sm:flex-none">
               <Link
                 href="/agenda?new=true"
-                className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg bg-forest px-4 py-2 text-[13px] font-medium text-cream hover:bg-sage transition-colors sm:flex-none"
+                data-testid="dashboard-new-appointment"
+                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
+                  firstPatientHighlight ? OUTLINE_ACTION : PRIMARY_ACTION
+                }`}
               >
                 <CalendarPlus className="mr-1.5 h-4 w-4" />
                 Novo Agendamento
@@ -135,7 +146,8 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
           <button
             type="button"
             onClick={() => setFirstPatientHighlight(false)}
-            className="shrink-0 rounded p-1 text-mid hover:text-charcoal"
+            // 44px tap target; the negative margin keeps the card as compact as before.
+            className="-my-2.5 -mr-2.5 inline-flex size-11 shrink-0 items-center justify-center rounded text-mid hover:text-charcoal"
             aria-label="Dispensar dica"
           >
             <X className="h-4 w-4" />

@@ -94,6 +94,8 @@ function stepProperties(index: number) {
 
 interface OnboardingWizardProps {
   tenantName: string
+  /** The name is only a suggestion from the Google profile, not one the owner saved. */
+  tenantNameSuggested?: boolean
   tenantPhone: string | null
   /** Progress autosaved on an earlier visit, to resume from. */
   draft?: OnboardingDraft | null
@@ -155,6 +157,7 @@ function selectedProductsPayload(names: Set<string>, customs: CustomProductItem[
 
 export function OnboardingWizard({
   tenantName,
+  tenantNameSuggested = false,
   tenantPhone,
   draft = null,
   existingProcedureTypes,
@@ -173,6 +176,8 @@ export function OnboardingWizard({
     phone: tenantPhone ?? '',
   })
   const [invalidField, setInvalidField] = useState<OnboardingTrackedField | null>(null)
+  // Says where the prefilled name came from until the owner edits it.
+  const [nameSuggested, setNameSuggested] = useState(tenantNameSuggested && Boolean(tenantName.trim()))
   const clinicStepValid = clinicData.name.trim().length > 0 && (!phoneRequired || hasClinicPhone(clinicData.phone))
 
   // Step 2 state: procedure types (local selection before onboarding completes)
@@ -218,6 +223,7 @@ export function OnboardingWizard({
   const keyboardInset = useKeyboardInset()
 
   function handleClinicChange(values: ClinicStepValues) {
+    if (values.name !== clinicData.name) setNameSuggested(false)
     setClinicData(values)
     if (invalidField) setInvalidField(null)
   }
@@ -394,13 +400,13 @@ export function OnboardingWizard({
     // URL bar. The bottom padding keeps the last field clear of the action bar
     // that is pinned to the bottom on phones.
     <div className="min-h-dvh bg-content-bg">
-      <div className="mx-auto max-w-3xl px-4 pt-6 pb-36 sm:py-16">
+      <div className="mx-auto max-w-3xl px-4 pt-4 pb-36 sm:py-16">
         {/* Header */}
-        <div className="mb-6 text-center sm:mb-12 animate-fade-in-up">
+        <div className="mb-3 text-center sm:mb-12 animate-fade-in-up">
           <h1 className="text-3xl text-charcoal sm:text-5xl font-semibold tracking-tight">
             Bem-vindo ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
           </h1>
-          <p className="mt-3 text-mid text-base">
+          <p className="mt-1 text-mid text-base sm:mt-3">
             Configure sua clínica em poucos passos
           </p>
           <button
@@ -412,7 +418,8 @@ export function OnboardingWizard({
               resetAnalytics()
               void logout()
             }}
-            className="mt-3 inline-flex items-center gap-1 text-xs text-mid/50 hover:text-mid transition-colors"
+            // 44px tall hit area around small text: easy to tap, not loud.
+            className="inline-flex min-h-11 items-center gap-1 px-3 text-xs text-mid hover:text-charcoal transition-colors sm:mt-3"
           >
             <LogOutIcon className="h-3 w-3" />
             Sair
@@ -420,7 +427,7 @@ export function OnboardingWizard({
         </div>
 
         {/* Stepper */}
-        <div className="mb-6 sm:mb-10 animate-fade-in-up-delay-1">
+        <div className="mb-4 sm:mb-10 animate-fade-in-up-delay-1">
           <div className="relative flex items-start justify-center">
             {/* Connector lines (absolute, behind circles) */}
             {STEPS.map((_, index) => {
@@ -450,7 +457,7 @@ export function OnboardingWizard({
               return (
                 <div
                   key={step.label}
-                  className="relative z-10 flex flex-1 flex-col items-center gap-2"
+                  className="relative z-10 flex flex-1 flex-col items-center gap-1 sm:gap-2"
                 >
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
@@ -469,7 +476,7 @@ export function OnboardingWizard({
                   </div>
                   <span
                     className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
-                      isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid/50'
+                      isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid'
                     }`}
                   >
                     {step.label}
@@ -483,7 +490,7 @@ export function OnboardingWizard({
         {/* Step Content */}
         <Card
           key={currentStep}
-          className="animate-fade-in-up border-blush/30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-5 sm:p-10"
+          className="animate-fade-in-up border-blush/30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-4 sm:p-10"
         >
           {/* Step 1: the clinic's name and phone */}
           {currentStep === 0 && (
@@ -491,7 +498,7 @@ export function OnboardingWizard({
               <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Dados da Clínica
               </h2>
-              <p className="text-sm text-mid mb-6">
+              <p className="text-sm text-mid mb-4 sm:mb-6">
                 Só o nome e o telefone. O resto você ajusta depois.
               </p>
 
@@ -500,9 +507,10 @@ export function OnboardingWizard({
                 onChange={handleClinicChange}
                 onFieldInteraction={trackFieldInteraction}
                 invalidField={invalidField}
+                nameSuggested={nameSuggested}
               />
 
-              <div className="mt-8 rounded-[3px] border border-sage/20 bg-confirmed-bg p-4">
+              <div className="mt-6 sm:mt-8 rounded-[3px] border border-sage/20 bg-confirmed-bg p-4">
                 <p className="text-sm font-medium text-charcoal">Quer começar agora?</p>
                 <p id="use-defaults-hint" className="mt-1 text-xs text-mid">
                   {clinicStepValid
@@ -754,14 +762,15 @@ export function OnboardingWizard({
             a transformed ancestor turns position: fixed into absolute. */}
         <div
           data-testid="onboarding-actions"
-          className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white/95 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] backdrop-blur-sm transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none sm:backdrop-blur-none"
+          className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"
           // With the keyboard open the cookie banner is behind it, so the bar
           // rises from the bottom edge by the keyboard alone, not from above
           // the banner as well.
           style={keyboardInset > 0 ? { bottom: 0, transform: `translateY(-${keyboardInset}px)` } : undefined}
         >
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3">
-            <div>
+            {/* Without Voltar (step 1) Próximo spans the bar on phones: a full thumb target. */}
+            <div className={currentStep === 0 ? 'hidden sm:block' : undefined}>
               {currentStep > 0 && (
                 <Button
                   type="button"
@@ -776,7 +785,7 @@ export function OnboardingWizard({
               )}
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className={cn('flex items-center gap-2 sm:gap-3', currentStep === 0 && 'w-full sm:w-auto')}>
               {currentStep === 3 && (
                 <Button
                   type="button"
@@ -795,7 +804,10 @@ export function OnboardingWizard({
                   type="button"
                   onClick={handleNext}
                   disabled={isPending}
-                  className="h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8 sm:h-9"
+                  className={cn(
+                    'h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8 sm:h-9',
+                    currentStep === 0 && 'w-full sm:w-auto',
+                  )}
                   data-testid="onboarding-next"
                 >
                   Próximo

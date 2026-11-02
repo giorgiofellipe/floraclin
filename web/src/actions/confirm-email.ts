@@ -11,6 +11,7 @@ import {
   parseConfirmEmailPageState,
   serializeConfirmEmailPageState,
 } from '@/lib/confirm-email-page-state'
+import { withEmailConfirmedParam } from '@/lib/email-confirmed-toast'
 
 export type ConfirmEmailResult = { error: string } | null
 
@@ -23,7 +24,7 @@ export async function confirmEmail(): Promise<ConfirmEmailResult> {
 
   try {
     cookieStore.delete({ name: CONFIRM_EMAIL_STATE_COOKIE, path: CONFIRM_EMAIL_STATE_PATH })
-    await signIn('confirm-email', { email: state.email, token: state.token, redirectTo: '/onboarding' })
+    await signIn('confirm-email', { email: state.email, token: state.token, redirectTo: withEmailConfirmedParam('/onboarding') })
     return null
   } catch (error) {
     if (error instanceof CredentialsSignin) {

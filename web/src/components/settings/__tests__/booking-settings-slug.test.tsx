@@ -24,6 +24,13 @@ beforeEach(() => {
 })
 
 describe('BookingSettings link editing', () => {
+  it('prefixes the slug field with the readable address, not a bare "/c/"', () => {
+    renderSettings()
+    const host = window.location.host
+    expect(screen.getByTitle(`${host}/c/`)).toHaveTextContent(`${host}/c/`)
+    expect(screen.getByText(/através de um link/)).toBeInTheDocument()
+  })
+
   it('saves the new link through the tenant API and shows it', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({ success: true, slug: 'studio-bella' }))

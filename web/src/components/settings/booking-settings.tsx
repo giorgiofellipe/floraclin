@@ -38,6 +38,8 @@ export function BookingSettings({
     ? window.location.origin
     : process.env.NEXT_PUBLIC_APP_URL || ''
   const bookingUrl = `${appUrl}/c/${slug}`
+  // The slug field's prefix: the readable address, without the protocol.
+  const bookingHost = appUrl.replace(/^https?:\/\//, '')
 
   async function handleToggle(checked: boolean) {
     setEnabled(checked)
@@ -89,7 +91,7 @@ export function BookingSettings({
     <div className="space-y-6">
       <div className="space-y-2">
         <p className="text-sm text-mid">
-          Permita que pacientes agendem consultas diretamente pela internet atraves de um link
+          Permita que pacientes agendem consultas diretamente pela internet através de um link
           exclusivo da sua clínica.
         </p>
       </div>
@@ -163,7 +165,11 @@ export function BookingSettings({
           </Label>
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <div className="flex flex-1 items-center gap-1 min-w-0">
-              <span className="shrink-0 text-sm text-mid">/c/</span>
+              {/* The host gives way on narrow screens; "/c/" and the slug field stay. */}
+              <span className="flex min-w-0 items-center text-sm text-mid" title={`${bookingHost}/c/`}>
+                <span className="truncate">{bookingHost}</span>
+                <span className="shrink-0">/c/</span>
+              </span>
               <Input
                 id="booking-slug"
                 value={slugDraft}
@@ -177,7 +183,7 @@ export function BookingSettings({
                 spellCheck={false}
                 aria-invalid={!!slugError || undefined}
                 aria-describedby="booking-slug-hint"
-                className="h-9 font-mono"
+                className="h-9 min-w-32 flex-1 font-mono"
               />
             </div>
             <Button type="submit" variant="outline" disabled={!slugChanged || updateSlug.isPending} className="h-9">

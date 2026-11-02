@@ -14,18 +14,24 @@ import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 import { EmailConfirmationBanner } from '@/components/layout/email-confirmation-banner'
 import { SignupConversionTracker } from '@/app/confirm-email/signup-conversion-tracker'
 import { onboardingDraftSchema } from '@/validations/onboarding'
+import { EmailConfirmedToast } from '@/components/layout/email-confirmed-toast'
+import { wantsEmailConfirmedToast, withEmailConfirmedParam } from '@/lib/email-confirmed-toast'
 
 interface OnboardingPageProps {
-  searchParams: Promise<{ meta_event_id?: string | string[] }>
+  searchParams: Promise<{ meta_event_id?: string | string[]; email_confirmed?: string | string[] }>
 }
 
 export default async function OnboardingPage({ searchParams }: OnboardingPageProps) {
   const auth = await getAuthContext()
-  const { meta_event_id: metaEventId } = await searchParams
+  const { meta_event_id: metaEventId, email_confirmed: emailConfirmed } = await searchParams
+  const showEmailConfirmed = wantsEmailConfirmedToast(emailConfirmed)
+  // The confirmation link lands here; when onboarding is done (or not theirs
+  // to run) the "E-mail confirmado." toast moves on to the dashboard with it.
+  const dashboardPath = showEmailConfirmed ? withEmailConfirmedParam('/dashboard') : '/dashboard'
 
   // Only owners can run onboarding
   if (auth.role !== 'owner') {
-    redirect('/dashboard')
+    redirect(dashboardPath)
   }
 
   const tenant = await getTenant(auth.tenantId)
@@ -35,7 +41,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
 
   const settings = (tenant.settings as Record<string, unknown>) || {}
   if (isOnboardingCompleted(settings)) {
-    redirect('/dashboard')
+    redirect(dashboardPath)
   }
 
   // Load existing procedure types (in case user partially completed onboarding before)
@@ -57,6 +63,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   const existingProducts = await listProducts(auth.tenantId)
 
   const draft = onboardingDraftSchema.safeParse(settings.onboarding_draft)
+  const suggestedName = hasPlaceholderName(settings) ? suggestedClinicName(auth.fullName, auth.email) : null
 
   return (
     <>
@@ -65,13 +72,15 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
           half of CompleteRegistration (paired with the server's by this id)
           moved here with it. Consent-gated inside trackMetaEvent. */}
       <SignupConversionTracker eventId={typeof metaEventId === 'string' ? metaEventId : null} />
+      <EmailConfirmedToast show={showEmailConfirmed} />
       {auth.emailVerified === false && <EmailConfirmationBanner email={auth.email} />}
       <OnboardingWizard
         // A clinic created on arrival after Google sign-up only has a stand-in
         // name ("Clínica de Ana"). Instead of an empty field, suggest one from
         // the Google profile; the flag clears once a name is saved, so what
         // the owner typed is never replaced.
-        tenantName={hasPlaceholderName(settings) ? suggestedClinicName(auth.fullName, auth.email) : tenant.name}
+        tenantName={suggestedName ?? tenant.name}
+        tenantNameSuggested={Boolean(suggestedName)}
         phoneRequired
         tenantPhone={tenant.phone}
         draft={draft.success ? draft.data : null}
