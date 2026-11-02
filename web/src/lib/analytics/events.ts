@@ -31,6 +31,16 @@ export type LoginFailureReason =
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
 
+/** `wizard`: through every step. `defaults`: "Usar padrões e começar" from the clinic step. */
+export type OnboardingCompletionMethod = 'wizard' | 'defaults'
+
+/** Step-1 fields whose first focus and first input are tracked. Names only, never values. */
+export type OnboardingTrackedField = 'name' | 'phone'
+export type OnboardingFieldInteraction = 'focus' | 'input'
+
+/** What showed the owner left a step: the tab hidden or closed, or a navigation away from the wizard. */
+export type OnboardingAbandonTrigger = 'pagehide' | 'hidden' | 'navigation'
+
 export type OnboardingSubmitFailureReason =
   | 'slug_taken'
   | 'validation'
@@ -72,7 +82,12 @@ export interface AnalyticsEventProperties {
   onboarding_step_submitted: OnboardingStepProperties
   onboarding_step_validation_error: OnboardingStepProperties & { fields: string[] }
   onboarding_submit_failed: OnboardingStepProperties & { reason: OnboardingSubmitFailureReason; status?: number }
-  onboarding_completed: { procedure_types_count: number; products_count: number }
+  onboarding_completed: { procedure_types_count: number; products_count: number; method?: OnboardingCompletionMethod }
+  onboarding_field_interacted: OnboardingStepProperties & {
+    field: OnboardingTrackedField
+    interaction: OnboardingFieldInteraction
+  }
+  onboarding_step_abandoned: OnboardingStepProperties & { time_on_step_ms: number; trigger: OnboardingAbandonTrigger }
   first_patient_created: Record<string, never>
   first_photo_uploaded: { kind: TimelineStage }
   first_appointment_created: Record<string, never>
@@ -96,7 +111,9 @@ export const EVENT_PROPERTY_KEYS: { [E in AnalyticsEventName]: readonly (keyof A
   onboarding_step_submitted: STEP_KEYS,
   onboarding_step_validation_error: [...STEP_KEYS, 'fields'],
   onboarding_submit_failed: [...STEP_KEYS, 'reason', 'status'],
-  onboarding_completed: ['procedure_types_count', 'products_count'],
+  onboarding_completed: ['procedure_types_count', 'products_count', 'method'],
+  onboarding_field_interacted: [...STEP_KEYS, 'field', 'interaction'],
+  onboarding_step_abandoned: [...STEP_KEYS, 'time_on_step_ms', 'trigger'],
   first_patient_created: [],
   first_photo_uploaded: ['kind'],
   first_appointment_created: [],
@@ -200,6 +217,8 @@ export const CLIENT_EVENT_NAMES = [
   'onboarding_step_submitted',
   'onboarding_step_validation_error',
   'onboarding_submit_failed',
+  'onboarding_field_interacted',
+  'onboarding_step_abandoned',
   'referral_page_viewed',
 ] as const satisfies readonly AnalyticsEventName[]
 

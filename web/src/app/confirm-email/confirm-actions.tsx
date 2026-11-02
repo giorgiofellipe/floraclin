@@ -22,9 +22,11 @@ const RESEND_COOLDOWN_SECONDS = 60
 interface ConfirmActionsProps {
   email: string
   hasToken: boolean
+  /** Signed in (signup signs in before confirming): the clinic setup is open already. */
+  signedIn?: boolean
 }
 
-export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
+export function ConfirmActions({ email, hasToken, signedIn = false }: ConfirmActionsProps) {
   const [isConfirming, startConfirm] = useTransition()
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(0)
@@ -76,16 +78,30 @@ export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
 
   return (
     <div className="space-y-6">
-      <div>
+      {/* With the token this is the page the e-mail link opened. It must not
+          read like the "check your inbox" screen, or people take it for a
+          failed link: one action, stated as the last step. */}
+      {hasToken ? (
+        <p className="text-sm text-mid leading-relaxed">
+          Toque no botão abaixo para confirmar <strong className="text-charcoal">{email}</strong> e
+          continuar a configuração da sua clínica.
+        </p>
+      ) : (
         <p className="text-sm text-mid leading-relaxed">
           Enviamos um link de confirmação para <strong className="text-charcoal">{email}</strong>.
           Verifique sua caixa de entrada e a pasta de spam.
         </p>
-      </div>
+      )}
 
       {hasToken && (
         <div>
-          <Button type="button" className="w-full h-11" disabled={isConfirming} onClick={handleConfirm}>
+          <Button
+            type="button"
+            className="w-full h-11"
+            disabled={isConfirming}
+            onClick={handleConfirm}
+            data-testid="confirm-email-submit"
+          >
             {isConfirming ? 'Confirmando...' : 'Confirmar e-mail'}
           </Button>
           <p className="mt-2 text-xs text-mid">
@@ -99,6 +115,11 @@ export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
       {confirmError && <p className="text-sm text-red-600">{confirmError}</p>}
 
       <div className="grid gap-3">
+        {signedIn && !hasToken && (
+          <Button render={<a href="/onboarding" />} nativeButton={false} className="w-full h-11">
+            Continuar configurando a clínica
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"

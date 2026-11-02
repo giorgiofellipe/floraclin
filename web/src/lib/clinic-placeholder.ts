@@ -31,3 +31,23 @@ export function placeholderClinicName(ownerName: string | null | undefined): str
 export function isPlatformAdminSession(session: unknown): boolean {
   return (session as { isPlatformAdmin?: boolean } | null | undefined)?.isPlatformAdmin === true
 }
+
+/** Longest suggestion, the clinic name column's limit. */
+const MAX_SUGGESTED_NAME_LENGTH = 255
+
+/**
+ * What onboarding prefills as the clinic name after a Google sign-up, while
+ * the clinic still carries the stand-in: "Clínica" and the owner's name from
+ * the Google profile ("Clínica Ana Souza"). Many aesthetics clinics carry the
+ * professional's name, and an editable suggestion beats an empty required
+ * field on a phone. Empty when the profile has no real name: the adapter
+ * falls back to the e-mail's local part ("ana.souza93"), which would make a
+ * poor clinic name.
+ */
+export function suggestedClinicName(ownerName: string | null | undefined, ownerEmail: string | null | undefined): string {
+  const name = ownerName?.trim().replace(/\s+/g, ' ') ?? ''
+  if (!name || !/\p{L}/u.test(name)) return ''
+  const localPart = ownerEmail?.split('@')[0]?.toLowerCase()
+  if (localPart && name.toLowerCase() === localPart) return ''
+  return Array.from(`Clínica ${name}`).slice(0, MAX_SUGGESTED_NAME_LENGTH).join('')
+}

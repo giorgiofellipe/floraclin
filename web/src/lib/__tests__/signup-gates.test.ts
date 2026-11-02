@@ -6,9 +6,8 @@ import { drizzle } from 'drizzle-orm/pg-proxy'
  * deleted, the whole 2500-test suite stayed green, and each is load-bearing
  * for the public signup this branch opens:
  *
- *  - `authorize` refusing an unconfirmed account. Signup no longer creates a
- *    session, so this is the only thing standing between a password and a
- *    working login.
+ *  - Discarding a planted password revoking the sessions it opened
+ *    (unconfirmed accounts can sign in with the password).
  *  - `markEmailVerifiedViaGoogle` discarding a password planted on an
  *    unconfirmed account. Without it, registering someone else's address and
  *    waiting for them to sign in with Google leaves the planted credential
@@ -60,20 +59,25 @@ describe('Google verification discards a planted password', () => {
   })
 })
 
-describe('the credentials gate refuses an unconfirmed account', () => {
-  it('is present in authorize and not merely described in a comment', async () => {
-    // A behavioural test would have to boot Auth.js. This reads the source
-    // with comments stripped, so it cannot pass on the paragraph above the
-    // line the way the signup mapping test used to.
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const src = fs
-      .readFileSync(path.resolve(__dirname, '../auth-config.ts'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n')
+// Unconfirmed accounts can sign in with the password now (signup signs in
+// before the e-mail is confirmed), so a planted password may already hold a
+// session when the real owner proves the address. Discarding it must revoke
+// that session too, through passwordChangedAt (getAuthContext).
+describe('proving the address revokes the planted password\'s sessions', () => {
+  it('moves password_changed_at with the Google verification, only for an unconfirmed password', async () => {
+    const { markEmailVerifiedViaGoogle } = await import('@/db/queries/users')
 
-    expect(src).toMatch(/if \(!user\.emailVerified\) return null/)
+    await markEmailVerifiedViaGoogle('vitima@clinica.com.br')
+
+    expect(captured[0]).toMatch(/password_changed_at"?\s*=\s*case when .*email_verified"? is null and .*password_hash"? is not null/i)
+  })
+
+  it('moves password_changed_at with the magic-link discard', async () => {
+    const { discardUnconfirmedPassword } = await import('@/db/queries/users')
+
+    await discardUnconfirmedPassword('vitima@clinica.com.br')
+
+    expect(captured[0]).toMatch(/set "password_hash" = \$1, "password_changed_at" = \$2/i)
+    expect(captured[0]).toMatch(/email_verified"? is null/i)
   })
 })

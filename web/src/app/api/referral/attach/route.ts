@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { emailConfirmationGate } from '@/lib/email-confirmation-gate'
 import { handleApiError } from '@/lib/api-error'
 import { getSubscription } from '@/db/queries/subscriptions'
 import { isReferralEnrollmentEnabled } from '@/lib/referral/config'
@@ -12,6 +13,9 @@ export async function POST(request: Request) {
     if (ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    // Stripe keeps the address as the customer's; it has to be a proven one.
+    const unconfirmed = emailConfirmationGate(ctx)
+    if (unconfirmed) return unconfirmed
     if (!isReferralEnrollmentEnabled()) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }

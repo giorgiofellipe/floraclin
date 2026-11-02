@@ -342,7 +342,7 @@ describe('signUp action', () => {
 
     await signUp(null, formData)
 
-    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
     consoleWarnSpy.mockRestore()
   })
 
@@ -359,7 +359,7 @@ describe('signUp action', () => {
     await signUp(null, formData)
 
     expect(tenantExecuteSpy).toHaveBeenCalled()
-    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
   })
 
   // Regression: signups without marketing consent never reached Meta.
@@ -441,7 +441,7 @@ describe('signUp action', () => {
 
       expect(result).toBeUndefined()
       expect(attributeReferralMock).toHaveBeenCalledWith({ referredTenantId: 'tenant-1', rawCode: 'NAOEXISTE', capturedVia: 'signup_field' })
-      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
     })
 
     it('ignores a malformed typed code without an error and still creates the account', async () => {
@@ -451,7 +451,7 @@ describe('signUp action', () => {
 
       expect(result).toBeUndefined()
       expect(attributeReferralMock).not.toHaveBeenCalled()
-      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
     })
 
     it('reports and still redirects when attribution throws', async () => {
@@ -460,7 +460,7 @@ describe('signUp action', () => {
       await signUp(null, validFormData({ email: 'ref-throw@test.com' }))
 
       expect(reportSideEffectFailureMock).toHaveBeenCalledWith(expect.any(Error), { area: 'referral', step: 'attribute_signup' })
-      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+      expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
     })
   })
 
@@ -477,7 +477,7 @@ describe('signUp action', () => {
     expect(confirmUrl).toContain('/api/auth/confirm')
   })
 
-  it('still reaches /confirm-email when the confirmation email fails to send, and reports it', async () => {
+  it('still reaches onboarding when the confirmation email fails to send, and reports it', async () => {
     // The rows are already committed by this point. If a Resend failure
     // escaped, the account would exist, be unregisterable because the email
     // is taken, and have no way to ask for a resend.
@@ -486,30 +486,41 @@ describe('signUp action', () => {
 
     await signUp(null, validFormData({ email: 'send-fails@test.com' }))
 
-    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/confirm-email')
+    expect(vi.mocked(redirect).mock.calls.at(-1)?.[0]).toContain('/onboarding')
     expect(reportSideEffectFailureMock).toHaveBeenCalledWith(sendError, expect.objectContaining({ area: 'signup' }))
   })
 
-  it('never signs the new account in', async () => {
-    // Double opt-in is only real if an unconfirmed account has no session.
-    // Middleware lets every /api request through before it checks
-    // emailVerified, so a session here would make the whole API reachable
-    // without ever opening the email.
-    await signUp(null, validFormData({ email: 'nosession@test.com' }))
+  it('signs the new account in with the password it was created with', async () => {
+    // Unconfirmed owners set up the clinic before opening the e-mail; the
+    // sends that need a proven address are gated server-side instead.
+    await signUp(null, validFormData({ email: 'session@test.com' }))
 
-    expect(signIn).not.toHaveBeenCalled()
+    expect(signIn).toHaveBeenCalledWith('credentials', expect.objectContaining({ email: 'session@test.com', redirect: false }))
   })
 
-  it('redirects to /confirm-email without putting the address in the URL', async () => {
-    await signUp(null, validFormData({ email: 'redirect@test.com' }))
+  it('redirects to onboarding with the Meta event id and without the address in the URL', async () => {
+    const formData = validFormData({ email: 'redirect@test.com' })
+    formData.set('metaEventId', 'complete_registration:event-redirect')
+    await signUp(null, formData)
+
+    const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
+    expect(target.startsWith('/onboarding?')).toBe(true)
+    expect(new URLSearchParams(target.split('?')[1]).get('meta_event_id')).toBe('complete_registration:event-redirect')
+    expect(target).not.toContain('redirect%40test.com')
+    expect(vi.mocked(redirect)).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to /confirm-email, address in the cookie, when the sign-in fails', async () => {
+    vi.mocked(signIn).mockRejectedValueOnce(new Error('db down'))
+    await signUp(null, validFormData({ email: 'fallback@test.com' }))
 
     const target = vi.mocked(redirect).mock.calls.at(-1)?.[0] as string
     expect(target).toContain('/confirm-email')
-    expect(target).not.toContain('redirect%40test.com')
-    expect(target).not.toContain('/pending-approval')
+    expect(target).not.toContain('fallback%40test.com')
+    expect(vi.mocked(redirect)).toHaveBeenCalledTimes(1)
     expect(cookieSetMock).toHaveBeenCalledWith(
       'floraclin_confirm_email',
-      expect.stringContaining('redirect@test.com'),
+      expect.stringContaining('fallback@test.com'),
       expect.objectContaining({ httpOnly: true, path: '/confirm-email' }),
     )
   })

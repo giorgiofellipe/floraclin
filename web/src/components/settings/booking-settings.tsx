@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Card } from '@/components/ui/card'
-import { useUpdateBookingSettings } from '@/hooks/mutations/use-tenant-mutations'
+import { useUpdateBookingSettings, useUpdateBookingSlug } from '@/hooks/mutations/use-tenant-mutations'
 import { toast } from 'sonner'
 import { CopyIcon, CheckIcon, ExternalLinkIcon } from 'lucide-react'
 
@@ -19,7 +19,7 @@ interface BookingSettingsProps {
 }
 
 export function BookingSettings({
-  slug,
+  slug: initialSlug,
   publicBookingEnabled: initialEnabled,
   embedded = false,
   onChange,
@@ -28,6 +28,11 @@ export function BookingSettings({
   const isPending = updateBookingSettings.isPending
   const [enabled, setEnabled] = useState(initialEnabled)
   const [copied, setCopied] = useState(false)
+  const updateSlug = useUpdateBookingSlug()
+  const [slug, setSlug] = useState(initialSlug)
+  const [slugDraft, setSlugDraft] = useState(initialSlug)
+  const [slugError, setSlugError] = useState<string | null>(null)
+  const slugChanged = slugDraft.trim() !== slug
 
   const appUrl = typeof window !== 'undefined'
     ? window.location.origin
@@ -52,6 +57,20 @@ export function BookingSettings({
     } catch (err) {
       setEnabled(!checked) // revert
       toast.error(err instanceof Error ? err.message : 'Erro ao atualizar configurações')
+    }
+  }
+
+  async function handleSaveSlug(e: React.FormEvent) {
+    e.preventDefault()
+    setSlugError(null)
+    try {
+      const result = (await updateSlug.mutateAsync(slugDraft.trim())) as { slug?: string } | undefined
+      const saved = result?.slug ?? slugDraft.trim()
+      setSlug(saved)
+      setSlugDraft(saved)
+      toast.success('Link de agendamento atualizado')
+    } catch (err) {
+      setSlugError(err instanceof Error ? err.message : 'Erro ao atualizar o link')
     }
   }
 
@@ -133,9 +152,43 @@ export function BookingSettings({
           </div>
           <p className="text-xs text-mid">
             Compartilhe este link com seus pacientes para que possam agendar online.
-            O slug &ldquo;{slug}&rdquo; foi definido durante a criação da clínica e não pode ser alterado.
           </p>
         </div>
+      )}
+
+      {!embedded && (
+        <form onSubmit={handleSaveSlug} className="space-y-2" data-testid="booking-slug-form">
+          <Label htmlFor="booking-slug" className="uppercase tracking-wider text-xs text-mid font-medium">
+            Endereço do link
+          </Label>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <div className="flex flex-1 items-center gap-1 min-w-0">
+              <span className="shrink-0 text-sm text-mid">/c/</span>
+              <Input
+                id="booking-slug"
+                value={slugDraft}
+                onChange={(e) => {
+                  setSlugDraft(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+                  setSlugError(null)
+                }}
+                maxLength={100}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-invalid={!!slugError || undefined}
+                aria-describedby="booking-slug-hint"
+                className="h-9 font-mono"
+              />
+            </div>
+            <Button type="submit" variant="outline" disabled={!slugChanged || updateSlug.isPending} className="h-9">
+              {updateSlug.isPending ? 'Salvando...' : 'Salvar link'}
+            </Button>
+          </div>
+          {slugError && <p className="text-xs text-red-600">{slugError}</p>}
+          <p id="booking-slug-hint" className="text-xs text-mid">
+            Criado a partir do nome da clínica. Ao mudar, o endereço antigo deixa de funcionar para quem já o recebeu.
+          </p>
+        </form>
       )}
     </div>
   )

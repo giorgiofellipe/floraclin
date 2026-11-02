@@ -197,12 +197,31 @@ export async function deactivateUser(
   return updated ?? null
 }
 
+/** Whether the user's address is confirmed, as the database has it (the JWT claim can be stale). */
+export async function isUserEmailVerified(userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ emailVerified: users.emailVerified })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1)
+  return !!row?.emailVerified
+}
+
 /** Drops the password of a still-unconfirmed account. Magic-link counterpart of markEmailVerifiedViaGoogle. */
 export async function discardUnconfirmedPassword(email: string): Promise<void> {
+  // An unconfirmed account can be signed into with its password, so whoever
+  // planted it may hold a session: moving passwordChangedAt revokes it
+  // (getAuthContext). A JS clock, the same one that stamps the new token's authAt.
   await db
     .update(users)
-    .set({ passwordHash: null })
-    .where(and(sql`lower(${users.email}) = ${email.toLowerCase()}`, isNull(users.emailVerified)))
+    .set({ passwordHash: null, passwordChangedAt: new Date() })
+    .where(
+      and(
+        sql`lower(${users.email}) = ${email.toLowerCase()}`,
+        isNull(users.emailVerified),
+        sql`${users.passwordHash} is not null`,
+      ),
+    )
 }
 
 /**
@@ -220,11 +239,15 @@ export async function discardUnconfirmedPassword(email: string): Promise<void> {
  * which is why the password column is a CASE rather than a plain null.
  */
 export async function markEmailVerifiedViaGoogle(email: string): Promise<void> {
+  const now = new Date()
   await db
     .update(users)
     .set({
-      emailVerified: new Date(),
+      emailVerified: now,
       passwordHash: sql`case when ${users.emailVerified} is null then null else ${users.passwordHash} end`,
+      // Unconfirmed accounts can be signed into with the password, so the
+      // planted one may have a live session: revoke it with the password.
+      passwordChangedAt: sql`case when ${users.emailVerified} is null and ${users.passwordHash} is not null then ${now.toISOString()}::timestamptz else ${users.passwordChangedAt} end`,
     })
     .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 }

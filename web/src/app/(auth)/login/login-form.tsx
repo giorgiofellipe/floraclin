@@ -57,7 +57,6 @@ export function LoginForm({
   }, [authFailure, inAppBrowser])
 
   // A new state object per submission, so each refused attempt counts once.
-  // The action cannot tell a wrong password from an unconfirmed address.
   const reportedState = useRef<LoginState>(null)
   useEffect(() => {
     if (!state?.error || reportedState.current === state) return
@@ -159,17 +158,6 @@ export function LoginForm({
           {state?.error?.general && (
             <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3">
               <p className="text-sm text-red-700" data-testid="login-error">{state.error.general[0]}</p>
-              {/* An unconfirmed account is refused here and looks exactly like
-                  a wrong password, so the message alone leaves a new customer
-                  stuck on the credentials they just chose. The error cannot
-                  say which case it is without revealing whether the address
-                  has an account, so it offers the route out instead. */}
-              <p className="mt-2 text-sm text-red-700">
-                Ainda não confirmou seu e-mail?{' '}
-                <Link href="/confirm-email" className="font-medium underline" data-testid="login-confirm-link">
-                  Reenviar link de confirmação
-                </Link>
-              </p>
             </div>
           )}
           <div className="relative mt-1">

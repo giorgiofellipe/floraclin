@@ -93,10 +93,10 @@ export async function issueConfirmationToken(
 
 /**
  * Rebuilds the outstanding link instead of rotating it, so a reminder never
- * kills the link in an earlier email. A link a password change revoked is
+ * kills the link in an earlier email (unless it has under `minRemainingMs` left). A link a password change revoked is
  * replaced, since confirmEmailWithToken would refuse it.
  */
-export async function getOrIssueConfirmationUrl(email: string): Promise<string> {
+export async function getOrIssueConfirmationUrl(email: string, minRemainingMs = 0): Promise<string> {
   const identifier = confirmIdentifier(email)
   const [row] = await db
     .select({ expires: verificationTokens.expires })
@@ -104,7 +104,9 @@ export async function getOrIssueConfirmationUrl(email: string): Promise<string> 
     .where(
       and(
         eq(verificationTokens.identifier, identifier),
-        gt(verificationTokens.expires, new Date()),
+        // A link about to lapse is replaced: a reminder whose button dies
+        // minutes after it arrives is no reminder.
+        gt(verificationTokens.expires, new Date(Date.now() + minRemainingMs)),
         sql`not exists (
           select 1 from ${users}
           where lower(${users.email}) = ${email.toLowerCase()}

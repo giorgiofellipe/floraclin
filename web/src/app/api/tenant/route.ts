@@ -8,11 +8,12 @@ import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant } from '@/db/queries/tenants'
 import { signLogoPath } from '@/lib/logo'
-import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
+import { updateTenantSchema, bookingSettingsSchema, bookingSlugSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
 import { verifyCredentials } from '@/lib/whatsapp'
+import { isUniqueViolation } from '@/lib/errors'
 
 type Settings = Record<string, unknown> | undefined
 
@@ -184,6 +185,41 @@ export async function PUT(request: Request) {
       })
 
       return NextResponse.json({ success: true })
+    }
+
+    // The public booking link. Chosen in onboarding before; now set here,
+    // any time. The unique index is the collision check, race included.
+    if (body._action === 'booking_slug') {
+      const parsed = bookingSlugSchema.safeParse(body)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message ?? 'Link inválido', fieldErrors: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+      const current = await getTenant(ctx.tenantId)
+      if (!current) return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+      if (current.slug === parsed.data.slug) return NextResponse.json({ success: true, slug: current.slug })
+
+      try {
+        await db.update(tenants).set({ slug: parsed.data.slug, updatedAt: new Date() }).where(eq(tenants.id, ctx.tenantId))
+      } catch (err) {
+        if (isUniqueViolation(err, 'tenants_slug_unique')) {
+          return NextResponse.json({ error: 'Este link já está em uso. Escolha outro.' }, { status: 409 })
+        }
+        throw err
+      }
+
+      await createAuditLog({
+        tenantId: ctx.tenantId,
+        userId: ctx.userId,
+        action: 'update',
+        entityType: 'tenant',
+        entityId: ctx.tenantId,
+        changes: { slug: { old: current.slug, new: parsed.data.slug } },
+      })
+
+      return NextResponse.json({ success: true, slug: parsed.data.slug })
     }
 
     // Regular tenant update

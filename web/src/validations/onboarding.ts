@@ -33,14 +33,21 @@ const clinicAddressSchema = addressSchema.unwrap().transform((address) =>
   Object.values(address).some(Boolean) ? address : null,
 )
 
+// Onboarding asks for the name and phone only (the phone is required by the
+// route). Slug, e-mail, address and hours moved to Settings; they stay
+// accepted, optional, for a wizard tab opened before the change.
 const clinicDataSchema = z.object({
   name: z.string().trim().min(1),
   slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido').optional(),
   phone: z.string().optional(),
   email: z.string().optional(),
   address: clinicAddressSchema.optional(),
-  workingHours: workingHoursSchema,
+  workingHours: workingHoursSchema.optional(),
 })
+
+/** How onboarding was finished: through the steps, or "Usar padrões e começar". */
+export const ONBOARDING_COMPLETION_METHODS = ['wizard', 'defaults'] as const
+export type OnboardingCompletionMethod = (typeof ONBOARDING_COMPLETION_METHODS)[number]
 
 const procedureTypeInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -53,6 +60,7 @@ export const onboardingCompleteSchema = z.object({
   clinic: clinicDataSchema,
   procedureTypes: z.array(procedureTypeInputSchema).max(100, 'Muitos procedimentos').default([]),
   selectedProducts: z.array(productSelectionSchema).max(200, 'Muitos produtos').default([]),
+  method: z.enum(ONBOARDING_COMPLETION_METHODS).default('wizard'),
 })
 
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>
@@ -85,7 +93,9 @@ export const onboardingDraftSchema = z.object({
   selectedProductNames: z.array(z.string().max(150)).max(200),
   productsTouched: z.boolean(),
   customProducts: z.array(productSelectionSchema).max(200),
-  customSlug: z.string().max(100).regex(/^[a-z0-9-]*$/),
+  // The booking link moved to Settings. Drafts saved before still carry it,
+  // and must keep parsing or the owner would lose the rest of the draft.
+  customSlug: z.string().max(100).regex(/^[a-z0-9-]*$/).optional(),
 })
 
 export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>

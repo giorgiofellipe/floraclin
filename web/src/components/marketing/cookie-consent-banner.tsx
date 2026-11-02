@@ -12,6 +12,9 @@ import {
 
 const OPEN_COOKIE_PREFERENCES_EVENT = 'floraclin-open-cookie-preferences'
 
+/** How far from the bottom the banner reaches while it shows, as a CSS length; unset otherwise. */
+export const COOKIE_BANNER_OFFSET_VAR = '--cookie-banner-offset'
+
 export function CookieConsentBanner() {
   const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => 'unset')
   const [isPreferencesOpen, setIsPreferencesOpen] = useState(false)
@@ -25,14 +28,21 @@ export function CookieConsentBanner() {
     const banner = bannerRef.current
     if (!shouldShowBanner || !banner) return
 
+    // Bars pinned to the bottom (the onboarding actions) sit above the banner
+    // through this variable; otherwise the banner covers "Próximo" on a phone
+    // until the cookie choice is made.
+    const root = document.documentElement
     const previousPadding = document.body.style.paddingBottom
     const observer = new ResizeObserver(() => {
-      document.body.style.paddingBottom = `${window.innerHeight - banner.getBoundingClientRect().top}px`
+      const offset = `${window.innerHeight - banner.getBoundingClientRect().top}px`
+      document.body.style.paddingBottom = offset
+      root.style.setProperty(COOKIE_BANNER_OFFSET_VAR, offset)
     })
     observer.observe(banner)
     return () => {
       observer.disconnect()
       document.body.style.paddingBottom = previousPadding
+      root.style.removeProperty(COOKIE_BANNER_OFFSET_VAR)
     }
   }, [shouldShowBanner])
 

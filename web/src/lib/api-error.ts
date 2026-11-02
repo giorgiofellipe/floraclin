@@ -4,6 +4,7 @@ import { ForbiddenError } from './errors'
 import { InvalidWhatsAppPhoneError } from './phone'
 import { CreditExhaustedError, WhatsAppTemplateNotFoundError } from './whatsapp-credits'
 import { maskPath } from './observability'
+import { EMAIL_CONFIRMATION_REQUIRED, EmailConfirmationRequiredError } from './email-confirmation-gate'
 
 // Next 16.2.3 (the version installed here, see `web/package.json`) no
 // longer re-exports `isRedirectError` from the public `next/navigation`
@@ -83,6 +84,8 @@ export function handleApiError(
       { error: 'Créditos de WhatsApp insuficientes para este envio. Faça upgrade do plano para mais créditos.' },
       { status: 402 },
     )
+  if (error instanceof EmailConfirmationRequiredError)
+    return NextResponse.json(EMAIL_CONFIRMATION_REQUIRED.body, { status: EMAIL_CONFIRMATION_REQUIRED.status })
   if (error instanceof WhatsAppTemplateNotFoundError)
     return NextResponse.json({ error: 'Template de WhatsApp não encontrado.' }, { status: 400 })
   if (isNextRedirectError(error))

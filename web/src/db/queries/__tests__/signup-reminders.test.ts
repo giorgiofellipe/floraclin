@@ -21,7 +21,9 @@ import { GET } from '@/app/api/cron/signup-reminders/route'
 import {
   claimSignupReminder,
   findConfirmReminderRecipients,
+  findFinalConfirmReminderRecipients,
   findFinishReminderRecipients,
+  SIGNUP_CONFIRM_FINAL_REMINDER_KEY,
   SIGNUP_CONFIRM_REMINDER_KEY,
   SIGNUP_FINISH_REMINDER_KEY,
 } from '../signup-reminders'
@@ -92,7 +94,7 @@ async function deleteFixtures(fixtures: Fixture[]) {
     .where(inArray(verificationTokens.identifier, fixtures.map((f) => confirmIdentifier(email(f)))))
 }
 
-type Case = Fixture & { name: string; expected: 'confirm' | 'finish' | 'none' }
+type Case = Fixture & { name: string; expected: 'confirm' | 'final' | 'finish' | 'none' }
 
 const GOOGLE = { passwordHash: null, emailVerified: true } as const
 
@@ -155,17 +157,41 @@ const CASES: Case[] = [
     expected: 'finish',
   },
   { name: 'unconfirmed account with no password', id: id(11), createdAgo: '2 hours', passwordHash: null, expected: 'none' },
+  // The 24 hour reminder, and the 1 hour one stopping where it starts.
+  { name: 'unconfirmed signup 23h old', id: id(14), createdAgo: '23 hours', expected: 'confirm' },
+  { name: 'unconfirmed signup 30h old, never reminded', id: id(15), createdAgo: '30 hours', expected: 'final' },
+  {
+    name: 'unconfirmed signup 30h old, reminded at 1h',
+    id: id(16),
+    createdAgo: '30 hours',
+    reminders: [{ key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent' }],
+    expected: 'final',
+  },
+  {
+    name: 'unconfirmed signup 30h old, reminded at 24h already',
+    id: id(17),
+    createdAgo: '30 hours',
+    reminders: [
+      { key: SIGNUP_CONFIRM_REMINDER_KEY, status: 'sent' },
+      { key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY, status: 'sent' },
+    ],
+    expected: 'none',
+  },
+  { name: 'confirmed signup 30h old', id: id(18), createdAgo: '30 hours', emailVerified: true, expected: 'none' },
+  { name: 'unconfirmed signup 30h old on a deleted clinic', id: id(19), createdAgo: '30 hours', deleted: true, expected: 'none' },
 ]
 
 describeIntegration('signup reminders (integration, requires test DB)', () => {
   describe('selection', () => {
     let confirmIds: Set<string>
+    let finalIds: Set<string>
     let finishIds: Set<string>
 
     beforeAll(async () => {
       await deleteFixtures(CASES)
       await insertFixtures(CASES)
       confirmIds = new Set((await findConfirmReminderRecipients()).map((r) => r.tenantId))
+      finalIds = new Set((await findFinalConfirmReminderRecipients()).map((r) => r.tenantId))
       finishIds = new Set((await findFinishReminderRecipients()).map((r) => r.tenantId))
     })
 
@@ -174,8 +200,9 @@ describeIntegration('signup reminders (integration, requires test DB)', () => {
     })
 
     it.each(CASES)('$name: $expected', ({ id, expected }) => {
-      expect({ confirm: confirmIds.has(id), finish: finishIds.has(id) }).toEqual({
+      expect({ confirm: confirmIds.has(id), final: finalIds.has(id), finish: finishIds.has(id) }).toEqual({
         confirm: expected === 'confirm',
+        final: expected === 'final',
         finish: expected === 'finish',
       })
     })

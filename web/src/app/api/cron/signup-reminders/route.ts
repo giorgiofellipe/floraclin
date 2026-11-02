@@ -3,7 +3,9 @@ import { finishLifecycleSend } from '@/db/queries/lifecycle'
 import {
   claimSignupReminder,
   findConfirmReminderRecipients,
+  findFinalConfirmReminderRecipients,
   findFinishReminderRecipients,
+  SIGNUP_CONFIRM_FINAL_REMINDER_KEY,
   SIGNUP_CONFIRM_REMINDER_KEY,
   SIGNUP_FINISH_REMINDER_KEY,
   type SignupReminderRecipient,
@@ -52,15 +54,24 @@ async function sendOnce(
   }
 }
 
-function sendConfirmReminder(recipient: SignupReminderRecipient) {
-  return sendOnce(recipient, SIGNUP_CONFIRM_REMINDER_KEY, async () =>
-    sendConfirmationReminderEmail(
-      recipient.ownerEmail,
-      await getOrIssueConfirmationUrl(recipient.ownerEmail),
-      recipient.tenantName,
-    ),
-  )
+// The 24 hour reminder comes about when the signup link expires; a link with
+// less than this left is replaced rather than resent.
+const MIN_LINK_VALIDITY_MS = 6 * 60 * 60 * 1000
+
+function confirmReminder(key: string, reminder: 'first' | 'last') {
+  return (recipient: SignupReminderRecipient) =>
+    sendOnce(recipient, key, async () =>
+      sendConfirmationReminderEmail(
+        recipient.ownerEmail,
+        await getOrIssueConfirmationUrl(recipient.ownerEmail, MIN_LINK_VALIDITY_MS),
+        recipient.tenantName,
+        reminder,
+      ),
+    )
 }
+
+const sendConfirmReminder = confirmReminder(SIGNUP_CONFIRM_REMINDER_KEY, 'first')
+const sendFinalConfirmReminder = confirmReminder(SIGNUP_CONFIRM_FINAL_REMINDER_KEY, 'last')
 
 function sendFinishReminder(recipient: SignupReminderRecipient) {
   return sendOnce(recipient, SIGNUP_FINISH_REMINDER_KEY, () => sendFinishSetupReminderEmail(recipient.ownerEmail))
@@ -69,6 +80,11 @@ function sendFinishReminder(recipient: SignupReminderRecipient) {
 async function run() {
   const batches = [
     { key: SIGNUP_CONFIRM_REMINDER_KEY, recipients: await findConfirmReminderRecipients(), send: sendConfirmReminder },
+    {
+      key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY,
+      recipients: await findFinalConfirmReminderRecipients(),
+      send: sendFinalConfirmReminder,
+    },
     { key: SIGNUP_FINISH_REMINDER_KEY, recipients: await findFinishReminderRecipients(), send: sendFinishReminder },
   ]
   const outcomes: Outcome[] = []

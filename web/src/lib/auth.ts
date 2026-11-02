@@ -57,6 +57,7 @@ export async function getAuthContext(): Promise<AuthContext> {
       email: users.email,
       isPlatformAdmin: users.isPlatformAdmin,
       passwordChangedAt: users.passwordChangedAt,
+      emailVerified: users.emailVerified,
     })
     .from(tenantUsers)
     .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
@@ -121,6 +122,7 @@ export async function getAuthContext(): Promise<AuthContext> {
         email: memberships[0]?.email ?? '',
         isPlatformAdmin: true,
         passwordChangedAt,
+        emailVerified: memberships[0]?.emailVerified ?? null,
       }
     }
   }
@@ -151,6 +153,8 @@ export async function getAuthContext(): Promise<AuthContext> {
     email: activeMembership.email,
     fullName: activeMembership.fullName,
     isPlatformAdmin,
+    // A platform admin is never held back by it, see email-confirmation-gate.
+    emailVerified: isPlatformAdmin || !!activeMembership.emailVerified,
   }
 }
 

@@ -94,21 +94,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash)
         if (!valid) return null
 
-        // Double opt-in is enforced here rather than only in proxy.
-        // Signup no longer signs anyone in, so refusing here means the
-        // password never yields a session, and proxy lets every /api
-        // request through before it looks at emailVerified: gating pages
-        // alone would have left the whole API callable with a cookie.
+        // An unconfirmed address signs in too: the owner sets up the clinic
+        // before opening the confirmation e-mail. What an unconfirmed account
+        // must not do (message patients, invite, check out) is refused at
+        // those sends, see lib/email-confirmation-gate.ts.
         //
-        // This is not the only door, and deliberately so. Google sign-in and
-        // the Resend magic link both bypass `authorize` entirely, and both
-        // prove the person controls the address, which is the same thing the
-        // confirmation email proves. Auth.js stamps emailVerified on those
-        // paths, so they satisfy the gate rather than sidestep it.
-        //
-        // Existing accounts were backfilled by 0023_email_confirmation.sql,
-        // so no current customer is caught by this.
-        if (!user.emailVerified) return null
+        // A password planted on someone else's address stays harmless: the
+        // real owner's Google or magic-link sign-in discards it and revokes
+        // every session it opened (markEmailVerifiedViaGoogle,
+        // discardUnconfirmedPassword), and a reset does the same.
 
         return { id: user.id, email: user.email, name: user.fullName }
       },
@@ -168,9 +162,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user, account, trigger }) {
       if (user) {
         token.sub = user.id
-        // Not `iat`: Auth.js re-signs the token on every refresh, so `iat` moves
-        // forward and would outlive a password change.
-        token.authAt = Date.now()
       }
 
       // Google already verifies the address itself (the signIn callback above
@@ -187,6 +178,14 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // hook covers both cases.
       if (user?.email && account?.provider === 'google') {
         await markEmailVerifiedViaGoogle(user.email)
+      }
+
+      if (user) {
+        // Not `iat`: Auth.js re-signs the token on every refresh, so `iat` moves
+        // forward and would outlive a password change. Stamped after
+        // markEmailVerifiedViaGoogle: discarding a planted password revokes the
+        // sessions signed in before it, and this one must not be among them.
+        token.authAt = Date.now()
       }
 
       if (user || trigger === 'update') {

@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { UserPlus, CalendarPlus } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { UserPlus, CalendarPlus, X } from 'lucide-react'
 import { useDashboard } from '@/hooks/queries/use-dashboard'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { brToday } from '@/lib/dates'
@@ -25,7 +26,19 @@ function getGreeting(): string {
   return 'Boa noite'
 }
 
-export function DashboardPageClient() {
+interface DashboardPageClientProps {
+  /** Just finished onboarding: point at "Novo Paciente" until the owner acts on it. */
+  highlightFirstPatient?: boolean
+}
+
+export function DashboardPageClient({ highlightFirstPatient = false }: DashboardPageClientProps) {
+  const router = useRouter()
+  // Read once from the URL, which is cleaned straight away: a reload or Back
+  // to this page does not highlight again. Leaving the page drops it too.
+  const [firstPatientHighlight, setFirstPatientHighlight] = useState(highlightFirstPatient)
+  useEffect(() => {
+    if (highlightFirstPatient) router.replace('/dashboard', { scroll: false })
+  }, [highlightFirstPatient, router])
   const currentMonth = brToday().slice(0, 7)
   const [selectedMonth, setSelectedMonth] = useState(currentMonth)
   // Omit the month param entirely when it's the current month, so the
@@ -82,7 +95,15 @@ export function DashboardPageClient() {
             <ReadOnlyGuard label="Novo Paciente" className="flex-1 sm:flex-none">
               <Link
                 href="/pacientes?new=true"
-                className="inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border border-sage/30 px-4 py-2 text-[13px] font-medium text-charcoal hover:bg-[#F0F7F1] transition-colors sm:flex-none"
+                onClick={() => setFirstPatientHighlight(false)}
+                aria-describedby={firstPatientHighlight ? 'first-patient-hint' : undefined}
+                data-highlighted={firstPatientHighlight || undefined}
+                data-testid="dashboard-new-patient"
+                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg border px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
+                  firstPatientHighlight
+                    ? 'border-forest bg-[#F0F7F1] text-forest ring-2 ring-forest ring-offset-2 motion-safe:animate-subtle-pulse'
+                    : 'border-sage/30 text-charcoal hover:bg-[#F0F7F1]'
+                }`}
               >
                 <UserPlus className="mr-1.5 h-4 w-4" />
                 Novo Paciente
@@ -100,6 +121,27 @@ export function DashboardPageClient() {
           </div>
         </div>
       </div>
+
+      {firstPatientHighlight && (
+        <div
+          role="status"
+          className="flex items-start justify-between gap-3 rounded-lg border border-forest/40 bg-[#F0F7F1] px-4 py-3"
+          data-testid="first-patient-hint"
+        >
+          <p id="first-patient-hint" className="text-sm text-charcoal">
+            <strong className="font-medium">Sua clínica está pronta.</strong> Comece cadastrando seu primeiro paciente
+            em <span className="font-medium">Novo Paciente</span>.
+          </p>
+          <button
+            type="button"
+            onClick={() => setFirstPatientHighlight(false)}
+            className="shrink-0 rounded p-1 text-mid hover:text-charcoal"
+            aria-label="Dispensar dica"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
 
       <TrialChecklistCard activation={data.activation} />
 

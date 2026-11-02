@@ -249,13 +249,19 @@ export async function POST(request: Request) {
           trackServerEvent(
             'onboarding_completed',
             { distinctId: auth.userId, tenantId: auth.tenantId },
-            { procedure_types_count: data.procedureTypes.length, products_count: data.selectedProducts.length },
+            {
+              procedure_types_count: data.procedureTypes.length,
+              products_count: data.selectedProducts.length,
+              method: data.method,
+            },
           )
         }
         await reportOnboardingCompleted({
           tenantId: auth.tenantId,
           userId: auth.userId,
-          clinic: data.clinic,
+          // The address is set in Settings now, so it is usually not in this
+          // request; whatever the clinic already has still names the city.
+          clinic: { ...data.clinic, address: data.clinic.address ?? (current.address as { city?: string; state?: string } | null) },
           signedUpAt: current.createdAt,
         })
       }
@@ -279,6 +285,7 @@ export async function POST(request: Request) {
               completed: true,
               procedureTypesCount: data.procedureTypes.length,
               productsCount: data.selectedProducts.length,
+              method: data.method,
             },
           },
         },

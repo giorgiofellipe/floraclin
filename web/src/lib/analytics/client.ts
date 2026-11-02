@@ -213,11 +213,19 @@ export async function applyAnalyticsConsent(granted: boolean): Promise<void> {
 
 // The provider is an earlier sibling of every caller, so its effect has
 // already started PostHog; no instance means this page is not tracked.
-export function track<E extends ClientEventName>(event: E, properties: AnalyticsEventProperties[E]): void {
+//
+// `transport: 'sendBeacon'` is for events sent while the page is going away
+// (pagehide, a hidden tab): a beacon outlives the page, a fetch may not.
+export function track<E extends ClientEventName>(
+  event: E,
+  properties: AnalyticsEventProperties[E],
+  options?: { transport?: 'sendBeacon' },
+): void {
   if (!instance) return
   const picked = pickEventProperties(event, properties)
   void instance.then((posthog) => {
-    posthog?.capture(event, picked)
+    if (options?.transport) posthog?.capture(event, picked, { transport: options.transport, send_instantly: true })
+    else posthog?.capture(event, picked)
   })
 }
 

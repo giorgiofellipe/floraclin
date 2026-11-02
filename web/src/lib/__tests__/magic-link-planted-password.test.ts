@@ -50,8 +50,14 @@ describe('magic-link sign-in and a password planted before confirmation', () => 
 
     expect(allowed).toBe(true)
     const update = captured.find(({ sql }) => sql.startsWith('update "floraclin"."users"'))
-    expect(update?.sql).toMatch(/set "password_hash" = \$1 where \(lower\("floraclin"\."users"\."email"\) = \$2 and "floraclin"\."users"\."email_verified" is null\)/)
-    expect(update?.params).toEqual([null, 'vitima@clinica.com.br'])
+    expect(update?.sql).toMatch(
+      /set "password_hash" = \$1, "password_changed_at" = \$2 where \(lower\("floraclin"\."users"\."email"\) = \$3 and "floraclin"\."users"\."email_verified" is null and "floraclin"\."users"\."password_hash" is not null\)/,
+    )
+    expect(update?.params[0]).toBeNull()
+    expect(update?.params[2]).toBe('vitima@clinica.com.br')
+    // Unconfirmed accounts can be signed into with the password: moving
+    // password_changed_at revokes the sessions the planted one opened.
+    expect(Date.parse(String(update?.params[1]))).toBeGreaterThan(Date.now() - 60_000)
   })
 
   it('leaves the account alone when the link is only being requested', async () => {

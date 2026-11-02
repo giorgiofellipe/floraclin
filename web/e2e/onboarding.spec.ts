@@ -56,15 +56,27 @@ test.describe('Onboarding', () => {
     await expect(page.getByTestId('onboarding-prev')).not.toBeVisible()
   })
 
-  test('should show clinic form with pre-filled name and booking link', async ({ page }) => {
+  test('should ask only for the clinic name and phone on step 1', async ({ page }) => {
     await loginTestUser(page)
     skipIfNotOnboarding(page)
 
     await expect(page.locator('text=Dados da Clínica')).toBeVisible({ timeout: 10000 })
 
-    // Booking link preview should be visible
-    await expect(page.locator('text=Link de agendamento online')).toBeVisible()
-    await expect(page.locator('text=floraclin.com.br/c/')).toBeVisible()
+    await expect(page.getByLabel('Nome da clínica *')).toBeVisible()
+    await expect(page.getByLabel('Telefone *')).toBeVisible()
+    // Address, hours and the booking link moved to Settings.
+    await expect(page.locator('text=floraclin.com.br/c/')).toHaveCount(0)
+    await expect(page.locator('input[type="time"]')).toHaveCount(0)
+    await expect(page.getByTestId('onboarding-use-defaults')).toBeVisible()
+  })
+
+  test('should keep Próximo on screen on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 })
+    await loginTestUser(page)
+    skipIfNotOnboarding(page)
+
+    const next = page.getByTestId('onboarding-next')
+    await expect(next).toBeInViewport({ timeout: 10000 })
   })
 
   test('should navigate to step 2 — Procedimentos', async ({ page }) => {
@@ -158,6 +170,9 @@ test.describe('Onboarding', () => {
 
     // Wait for redirect to dashboard (onboarding API + redirect)
     await page.waitForURL(/\/dashboard/, { timeout: 30000 })
+    // Pointed at the first patient once; the parameter is dropped from the URL.
+    await expect(page.getByTestId('first-patient-hint')).toBeVisible({ timeout: 10000 })
+    await expect(page).toHaveURL(/\/dashboard$/)
   })
 
   test('should not redirect to onboarding after completion', async ({ page }) => {
