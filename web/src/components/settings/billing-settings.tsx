@@ -277,7 +277,7 @@ function PlanCard({
 
       {!isCurrent && !isFree && (
         <Button
-          className="w-full bg-forest text-white hover:bg-forest/90"
+          className="w-full bg-forest text-white hover:bg-sage"
           disabled={isCheckingOut}
           onClick={() => onSubscribe(plan.slug)}
         >
