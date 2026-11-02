@@ -2322,3 +2322,49 @@ export async function getPaymentRecipients(tenantId: string, installmentIds: str
       ),
     )
 }
+
+export interface PatientFinancialSummary {
+  openAmount: number
+  overdueAmount: number
+  nextDueDate: string | null
+}
+
+export async function getPatientFinancialSummary(
+  tenantId: string,
+  patientId: string
+): Promise<PatientFinancialSummary> {
+  const rows = await db
+    .select({
+      amount: installments.amount,
+      amountPaid: installments.amountPaid,
+      dueDate: installments.dueDate,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(financialEntries.tenantId, tenantId),
+        eq(financialEntries.patientId, patientId),
+        isNull(financialEntries.deletedAt),
+        notInArray(financialEntries.status, ['cancelled', 'renegotiated']),
+        notInArray(installments.status, ['paid', 'cancelled', 'renegotiated'])
+      )
+    )
+
+  const today = brToday()
+  let openCents = 0
+  let overdueCents = 0
+  let nextDueDate: string | null = null
+  for (const row of rows) {
+    const cents = Math.round((Number(row.amount) - Number(row.amountPaid)) * 100)
+    if (cents <= 0) continue
+    openCents += cents
+    if (row.dueDate < today) {
+      overdueCents += cents
+    } else if (nextDueDate === null || row.dueDate < nextDueDate) {
+      nextDueDate = row.dueDate
+    }
+  }
+  return { openAmount: openCents / 100, overdueAmount: overdueCents / 100, nextDueDate }
+}
