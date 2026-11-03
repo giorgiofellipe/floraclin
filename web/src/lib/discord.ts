@@ -7,7 +7,7 @@ import type { CapturedVia, IneligibleReason, PausedReason, ReferralStatus } from
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
-//   grew. signup.started / onboarding.completed / clinic.approved /
+//   grew. signup.started / onboarding.completed / onboarding.import_requested / clinic.approved /
 //   subscription.created / lifecycle.reply / referral.*.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest
@@ -60,6 +60,8 @@ export type DiscordEvent =
       elapsed: string
       tenantId: string
     }
+  // The owner asked for help importing patients from another system.
+  | { kind: 'onboarding.import_requested'; tenantId: string; tenantName: string; phone: string | null; ownerEmail: string }
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
   | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
@@ -127,6 +129,7 @@ export type DiscordPayload = {
 
 const COLOR_ONBOARDING_COMPLETED = 0x4a9d5f
 const COLOR_SIGNUP_STARTED = 0x94a3b8
+const COLOR_IMPORT_REQUESTED = 0x14b8a6
 const COLOR_APPROVED = 0x3b82f6
 const COLOR_SUBSCRIPTION = 0xf59e0b
 const COLOR_DIGEST_OK = 0x4a9d5f
@@ -226,6 +229,25 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
               { name: 'Clínica', value: asInlineCode(event.tenantName), inline: true },
               { name: 'Telefone', value: asInlineCode(event.phone || 'Não informado'), inline: true },
               { name: 'Localização', value: location ? asInlineCode(location) : 'Não informado', inline: true },
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'onboarding.import_requested': {
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Pedido de importação',
+            color: COLOR_IMPORT_REQUESTED,
+            description: 'A clínica quer ajuda para importar pacientes. Entre em contato pelo WhatsApp para receber os arquivos.',
+            fields: [
+              { name: 'Clínica', value: asInlineCode(event.tenantName), inline: true },
+              { name: 'Telefone', value: asInlineCode(event.phone || 'Não informado'), inline: true },
+              { name: 'E-mail', value: asInlineCode(event.ownerEmail), inline: true },
               { name: 'Admin', value: adminLink },
             ],
             timestamp: new Date().toISOString(),
@@ -449,7 +471,8 @@ function webhookForEvent(kind: DiscordEvent['kind']): string | undefined {
  *    posting to a real channel.
  * 3. It never posts patient data, enforced by DiscordEvent's shape, not by
  *    this function. The only contact data is the owner's name and e-mail
- *    (signup.started) and the clinic phone (onboarding.completed).
+ *    (signup.started, onboarding.import_requested) and the clinic phone
+ *    (onboarding.completed, onboarding.import_requested).
  *    lifecycle.reply carries the reply text a clinic owner chose to send
  *    FloraClin.
  */
@@ -459,27 +482,47 @@ export async function notifyDiscord(event: DiscordEvent): Promise<void> {
 
   try {
     after(async () => {
-      try {
-        const payload = buildDiscordPayload(event)
-        const res = await fetch(webhookUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        })
-        if (!res.ok) {
-          Sentry.captureMessage('Discord notification rejected by webhook', {
-            level: 'warning',
-            extra: { kind: event.kind, status: res.status },
-          })
-        }
-      } catch (err) {
-        Sentry.captureException(err, { extra: { kind: event.kind } })
-      }
+      await postToDiscord(webhookUrl, event)
     })
   } catch (err) {
     // after() itself throws if called outside a request scope. Should not
     // happen from the current call sites (server actions and route
     // handlers), but a signup must never fail because of it.
     Sentry.captureException(err, { extra: { kind: event.kind, phase: 'schedule' } })
+  }
+}
+
+/**
+ * Posts within the request, for a caller that has to know whether the team
+ * got the event. Never throws; false means it was not delivered. Unconfigured
+ * counts as delivered, as notifyDiscord's no-op does.
+ */
+export async function sendDiscordNow(event: DiscordEvent): Promise<boolean> {
+  const webhookUrl = webhookForEvent(event.kind)
+  if (!webhookUrl) return true
+  return postToDiscord(webhookUrl, event, AbortSignal.timeout(SEND_NOW_TIMEOUT_MS))
+}
+
+const SEND_NOW_TIMEOUT_MS = 5000
+
+async function postToDiscord(webhookUrl: string, event: DiscordEvent, signal?: AbortSignal): Promise<boolean> {
+  try {
+    const payload = buildDiscordPayload(event)
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal,
+    })
+    if (!res.ok) {
+      Sentry.captureMessage('Discord notification rejected by webhook', {
+        level: 'warning',
+        extra: { kind: event.kind, status: res.status },
+      })
+    }
+    return res.ok
+  } catch (err) {
+    Sentry.captureException(err, { extra: { kind: event.kind } })
+    return false
   }
 }

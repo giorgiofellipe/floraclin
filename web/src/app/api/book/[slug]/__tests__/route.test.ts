@@ -47,7 +47,6 @@ vi.mock('@/db/schema', () => ({
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
-  checkTimeConflict: vi.fn().mockResolvedValue(false),
   createAppointment: vi.fn().mockResolvedValue({
     id: 'appt-1',
     date: '2026-09-01',
@@ -95,6 +94,7 @@ vi.mock('@/lib/logo', () => ({
 import { POST } from '../route'
 import { GET as GET_SLOTS } from '../slots/route'
 import { isSubscriptionActive } from '@/lib/plans'
+import { createAppointment, getAvailableSlots } from '@/db/queries/appointments'
 
 const TENANT_ROW = {
   id: 'tenant-1',
@@ -168,6 +168,52 @@ describe('POST /api/book/[slug]', () => {
     expect(res.status).toBe(201)
     const data = await res.json()
     expect(data.success).toBe(true)
+  })
+
+  describe('only books a time the slots route offers', () => {
+    beforeEach(() => {
+      vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+      vi.mocked(createAppointment).mockClear()
+      pushDbResult([TENANT_ROW]) // getTenantBySlug
+      pushDbResult([]) // duplicate-booking check
+      pushDbResult([{ id: PRACTITIONER_ID }]) // practitioner belongs to tenant
+    })
+
+    // The clock is 06:00 in São Paulo on 2026-08-31.
+    it.each([
+      ['a time earlier today', { date: '2026-08-31', startTime: '05:30' }],
+      ['a time off the 30-minute grid', { startTime: '10:15' }],
+      ['a time outside the offered slots', { startTime: '18:00' }],
+    ])('refuses %s', async (_case, overrides) => {
+      vi.mocked(getAvailableSlots).mockResolvedValueOnce([
+        { start: '05:30', end: '06:00' },
+        { start: '10:00', end: '10:30' },
+        { start: '10:30', end: '11:00' },
+      ])
+
+      const res = await POST(makeBookingRequest({ ...VALID_BOOKING_BODY, ...overrides }), {
+        params: Promise.resolve({ slug: 'clinica-teste' }),
+      })
+
+      expect(res.status).toBe(409)
+      expect((await res.json()).error).toBe('Este horário já não está mais disponível. Por favor, escolha outro.')
+      expect(createAppointment).not.toHaveBeenCalled()
+    })
+
+    it('books an offered time with that slot\'s end', async () => {
+      vi.mocked(getAvailableSlots).mockResolvedValueOnce([{ start: '06:30', end: '07:00' }])
+
+      const res = await POST(makeBookingRequest({ ...VALID_BOOKING_BODY, date: '2026-08-31', startTime: '06:30' }), {
+        params: Promise.resolve({ slug: 'clinica-teste' }),
+      })
+
+      expect(res.status).toBe(201)
+      expect(getAvailableSlots).toHaveBeenCalledWith('tenant-1', PRACTITIONER_ID, '2026-08-31', 30)
+      expect(createAppointment).toHaveBeenCalledWith(
+        'tenant-1',
+        expect.objectContaining({ date: '2026-08-31', startTime: '06:30', endTime: '07:00' }),
+      )
+    })
   })
 })
 

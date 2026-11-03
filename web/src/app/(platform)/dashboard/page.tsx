@@ -15,13 +15,16 @@ interface DashboardPageProps {
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const params = await searchParams
+  const auth = await getAuthContext()
   // A hand-made ?email_confirmed=1 never says so to an owner who has not confirmed.
-  const showEmailConfirmed =
-    wantsEmailConfirmedToast(params[EMAIL_CONFIRMED_PARAM]) && (await getAuthContext()).emailVerified !== false
+  const showEmailConfirmed = wantsEmailConfirmedToast(params[EMAIL_CONFIRMED_PARAM]) && auth.emailVerified !== false
   return (
     <>
       <EmailConfirmedToast show={showEmailConfirmed} />
-      <DashboardPageClient highlightFirstPatient={wantsFirstPatientHighlight(params[FIRST_PATIENT_HIGHLIGHT_PARAM])} />
+      <DashboardPageClient
+        highlightFirstPatient={wantsFirstPatientHighlight(params[FIRST_PATIENT_HIGHLIGHT_PARAM])}
+        canRequestImport={auth.role === 'owner' && !auth.isPlatformAdmin}
+      />
     </>
   )
 }

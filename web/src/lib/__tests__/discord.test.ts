@@ -14,7 +14,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: (...args: unknown[]) => captureMessageMock(...args),
 }))
 
-import { buildDiscordPayload, notifyDiscord, type DiscordEvent } from '../discord'
+import { buildDiscordPayload, notifyDiscord, sendDiscordNow, type DiscordEvent } from '../discord'
 
 describe('buildDiscordPayload', () => {
   it('formats signup.started with the person, e-mail and method, and no clinic name', () => {
@@ -123,6 +123,22 @@ describe('buildDiscordPayload', () => {
     const embed = payload.embeds[0]
     expect(embed.fields).toContainEqual({ name: 'Telefone', value: '`Não informado`', inline: true })
     expect(embed.fields).toContainEqual({ name: 'Localização', value: 'Não informado', inline: true })
+  })
+
+  it('formats onboarding.import_requested with the contact the team needs to collect the files', () => {
+    const payload = buildDiscordPayload({
+      kind: 'onboarding.import_requested',
+      tenantId: 'tenant-1',
+      tenantName: 'Clínica Bela Pele',
+      phone: null,
+      ownerEmail: 'ana@clinica.test',
+    })
+
+    const embed = payload.embeds[0]
+    expect(embed.title).toBe('Pedido de importação')
+    expect(embed.fields).toContainEqual({ name: 'Clínica', value: '`Clínica Bela Pele`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Telefone', value: '`Não informado`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'E-mail', value: '`ana@clinica.test`', inline: true })
   })
 
   it('formats clinic.approved with title and clinic field', () => {
@@ -414,6 +430,31 @@ describe('notifyDiscord', () => {
     ).resolves.toBeUndefined()
 
     expect(captureMessageMock).toHaveBeenCalledOnce()
+  })
+
+  // The import request clears its stamp on false so the owner can ask again.
+  describe('sendDiscordNow', () => {
+    const event: DiscordEvent = { kind: 'clinic.approved', tenantName: 'Clínica Bela Pele', tenantId: 'tenant-1' }
+
+    it('counts an unconfigured channel as delivered, without posting', async () => {
+      delete process.env.DISCORD_WEBHOOK_EVENTS
+      const fetchMock = vi.fn()
+      global.fetch = fetchMock as unknown as typeof fetch
+
+      expect(await sendDiscordNow(event)).toBe(true)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it.each([
+      ['accepted', async () => new Response(null, { status: 204 }), true],
+      ['rejected', async () => new Response(null, { status: 500 }), false],
+      ['unreachable', async () => { throw new Error('network down') }, false],
+    ])('reports a post the webhook %s', async (_case, respond, delivered) => {
+      process.env.DISCORD_WEBHOOK_EVENTS = 'https://discord.com/api/webhooks/test'
+      global.fetch = vi.fn(respond) as unknown as typeof fetch
+
+      expect(await sendDiscordNow(event)).toBe(delivered)
+    })
   })
 
   describe('whatsapp_automations.digest destination (DISCORD_WEBHOOK_LOGS)', () => {

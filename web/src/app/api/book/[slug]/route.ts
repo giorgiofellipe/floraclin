@@ -3,7 +3,8 @@ import { db } from '@/db/client'
 import { tenants, tenantUsers, users, appointments } from '@/db/schema'
 import { eq, and, isNull, or, gte } from 'drizzle-orm'
 import { z } from 'zod'
-import { checkTimeConflict, createAppointment } from '@/db/queries/appointments'
+import { createAppointment } from '@/db/queries/appointments'
+import { getBookableSlots } from '@/lib/booking-slots'
 import { getProspectByPhone, createNewProspect, updateProspect } from '@/db/queries/prospects'
 import { recordAttribution } from '@/db/queries/lead-attributions'
 import { buildFbc } from '@/lib/meta/attribution'
@@ -199,21 +200,8 @@ export async function POST(
       )
     }
 
-    // Calculate end time (30 min slots by default)
-    const [h, m] = startTime.split(':').map(Number)
-    const endMinutes = h * 60 + m + 30
-    const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}`
-
-    // Check for time conflict
-    const hasConflict = await checkTimeConflict(
-      tenant.id,
-      practitionerId,
-      date,
-      startTime,
-      endTime
-    )
-
-    if (hasConflict) {
+    const slot = (await getBookableSlots(tenant.id, practitionerId, date)).find((s) => s.start === startTime)
+    if (!slot) {
       return NextResponse.json(
         { error: 'Este horário já não está mais disponível. Por favor, escolha outro.' },
         { status: 409 }
@@ -292,7 +280,7 @@ export async function POST(
       practitionerId,
       date,
       startTime,
-      endTime,
+      endTime: slot.end,
       status: 'scheduled',
       source: 'online_booking',
       patientId: null,

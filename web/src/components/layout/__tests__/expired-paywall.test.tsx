@@ -135,7 +135,8 @@ describe('ExpiredPaywall', () => {
     expect(screen.getByTestId('paywall-eyebrow')).toHaveTextContent('Seu teste gratuito terminou')
     expect(screen.getByTestId('paywall-subscribe-starter')).toHaveTextContent('Continuar com o Starter')
     expect(screen.getByTestId('paywall-plan-starter')).toHaveTextContent(/R\$\s?99,00\/mês/)
-    expect(screen.getByTestId('paywall-trust')).toHaveTextContent('Cancele quando quiser')
+    expect(screen.getByTestId('paywall-trust')).toHaveTextContent('Sem fidelidade: cancele em poucos cliques')
+    expect(screen.getByText('Você cancela quando quiser em Configurações › Assinatura.')).toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('paywall-read-only'))
     await waitFor(() => expect(screen.queryByTestId('expired-paywall')).not.toBeInTheDocument())
@@ -311,6 +312,7 @@ describe('ExpiredPaywall', () => {
 
     await screen.findByTestId('expired-paywall')
     expect(screen.queryByTestId('paywall-subscribe-starter')).not.toBeInTheDocument()
+    expect(screen.queryByText('Você cancela quando quiser em Configurações › Assinatura.')).not.toBeInTheDocument()
     expect(screen.getByText(/só a pessoa responsável pela clínica pode assinar/i)).toBeInTheDocument()
   })
 })

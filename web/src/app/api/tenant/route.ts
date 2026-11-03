@@ -231,7 +231,7 @@ export async function PUT(request: Request) {
 
     // The same entitlement check as the whatsapp_settings branch above, and
     // it has to be here too. `tenantSettingsSchema` is `.passthrough()` and
-    // `updateTenant` writes `settings` wholesale, so this branch could set
+    // `updateTenant` writes any key it is given, so this branch could set
     // whatsapp_mode without ever touching the guarded branch. Gating one
     // entry point and not the other is the same as not gating it.
     const incomingMode = (parsed.data.settings as Record<string, unknown> | undefined)

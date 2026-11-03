@@ -1,5 +1,9 @@
+'use client'
+
 import Link from 'next/link'
 import { CheckCircle2, Circle } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { useRequestImportHelp } from '@/hooks/mutations/use-tenant-mutations'
 import type { ActivationState } from '@/lib/activation'
 
 const STEPS: { label: string; href: string; isDone: (a: ActivationState) => boolean }[] = [
@@ -16,8 +20,12 @@ const STEPS: { label: string; href: string; isDone: (a: ActivationState) => bool
 
 export function TrialChecklistCard({
   activation,
+  canRequestImport = false,
+  importHelpRequested = false,
 }: {
   activation: ActivationState | null | undefined
+  canRequestImport?: boolean
+  importHelpRequested?: boolean
 }) {
   if (!activation || activation.subscriptionStatus !== 'trialing') return null
 
@@ -50,6 +58,46 @@ export function TrialChecklistCard({
           </li>
         ))}
       </ul>
+      {canRequestImport && <ImportHelpRow requested={importHelpRequested} />}
+    </div>
+  )
+}
+
+// fetch rejects with a TypeError when the request never reached the server.
+const REQUEST_FAILED_MESSAGE = 'Não foi possível enviar agora. Tente de novo.'
+
+function ImportHelpRow({ requested }: { requested: boolean }) {
+  const request = useRequestImportHelp()
+  const done = requested || request.isSuccess
+
+  return (
+    <div className="mt-3 flex flex-col gap-2 border-t border-sage/20 pt-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2 text-sm">
+        {done ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-sage" /> : <Circle className="mt-0.5 size-4 shrink-0 text-mid" />}
+        <div>
+          <p className={done ? 'text-mid' : 'text-charcoal'}>Importar pacientes de outro sistema</p>
+          <p className="text-xs text-mid">
+            {done
+              ? 'A gente entra em contato pelo WhatsApp para receber seus arquivos.'
+              : 'Tem pacientes em outro sistema ou planilha? A gente ajuda a trazer.'}
+          </p>
+          {request.isError && (
+            <p role="alert" className="text-xs text-destructive">
+              {request.error instanceof TypeError ? REQUEST_FAILED_MESSAGE : request.error.message}
+            </p>
+          )}
+        </div>
+      </div>
+      {!done && (
+        <Button
+          variant="outline"
+          className="self-start sm:self-auto"
+          disabled={request.isPending}
+          onClick={() => request.mutate()}
+        >
+          Quero ajuda
+        </Button>
+      )}
     </div>
   )
 }

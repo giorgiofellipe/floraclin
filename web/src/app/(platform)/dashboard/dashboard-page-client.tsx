@@ -14,6 +14,7 @@ import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
 import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
 import { TrialChecklistCard } from '@/components/dashboard/trial-checklist-card'
+import { IMPORT_HELP_REQUESTED_SETTING } from '@/lib/import-help'
 import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
 import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
@@ -36,9 +37,10 @@ function getGreeting(): string {
 interface DashboardPageClientProps {
   /** Just finished onboarding: point at "Novo Paciente" until the owner acts on it. */
   highlightFirstPatient?: boolean
+  canRequestImport?: boolean
 }
 
-export function DashboardPageClient({ highlightFirstPatient = false }: DashboardPageClientProps) {
+export function DashboardPageClient({ highlightFirstPatient = false, canRequestImport = false }: DashboardPageClientProps) {
   const router = useRouter()
   // Read once from the URL, which is cleaned straight away: a reload or Back
   // to this page does not highlight again. Leaving the page drops it too.
@@ -156,7 +158,11 @@ export function DashboardPageClient({ highlightFirstPatient = false }: Dashboard
         </div>
       )}
 
-      <TrialChecklistCard activation={data.activation} />
+      <TrialChecklistCard
+        activation={data.activation}
+        canRequestImport={canRequestImport}
+        importHelpRequested={!!(tenant?.settings as Record<string, unknown> | undefined)?.[IMPORT_HELP_REQUESTED_SETTING]}
+      />
 
       {/* Pending Reschedule Alert */}
       <PendingRescheduleCard count={data.pendingRescheduleCount ?? 0} />
