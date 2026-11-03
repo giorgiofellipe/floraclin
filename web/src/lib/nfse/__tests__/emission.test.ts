@@ -410,6 +410,23 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
 
       expect(mocks.gateway.emit).not.toHaveBeenCalled()
       expect(await row(id)).toMatchObject({ status: 'failed', errorCode: code })
+      expect(mocks.report).toHaveBeenCalledTimes(1)
+      expect(mocks.report).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ step: code }))
+    })
+
+    it.each([
+      ['a Sefin rejection', new NfseGatewayError('invalid_request', 'E0310: rejeitada'), 'invalid_request', 1],
+      ['Sefin unavailable', new NfseGatewayError('provider_error', UNAVAILABLE), 'provider_error', 1],
+      ['an unexpected error', new Error('boom'), 'provider_error', 1],
+      ['an expired certificate', new NfseGatewayError('certificate_expired', 'Certificado vencido.'), 'certificate_expired', 0],
+    ])('reports %s to Sentry only when it is not clinic data', async (_name, error, code, reports) => {
+      const id = await insertDoc(PAY_1)
+      mocks.gateway.emit.mockRejectedValueOnce(error)
+
+      await processDocument(id)
+
+      expect(await row(id)).toMatchObject({ status: 'failed', errorCode: code })
+      expect(mocks.report).toHaveBeenCalledTimes(reports)
     })
 
     it('does not emit for a reversed payment', async () => {
@@ -484,6 +501,7 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
 
       expect(await row(id)).toMatchObject({ status: 'failed', errorCode: 'not_configured' })
       expect(mocks.gateway.emit).not.toHaveBeenCalled()
+      expect(mocks.report).not.toHaveBeenCalled()
     })
 
     it('uses the document environment for reconcile and cancel', async () => {

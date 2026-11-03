@@ -56,6 +56,8 @@ const REVERSED_MESSAGE = 'O pagamento foi estornado.'
 const UNAVAILABLE_MESSAGE = 'Sefin Nacional indisponível. Tentaremos de novo.'
 const EXHAUSTED_MESSAGE = 'A emissão não foi concluída depois de várias tentativas. Tente de novo.'
 const NOTHING_AT_SEFIN = new Set(NOTHING_AT_SEFIN_CODES)
+// Clinic-data failures (missing CPF, expired certificate, not configured) are shown to the clinic, not reported.
+const REPORTED_FAILURES = new Set(['provider_error', 'invalid_request', 'reconcile_unavailable', 'reconcile_ambiguous'])
 
 type LoadedDocument = NonNullable<Awaited<ReturnType<typeof loadDocumentForProcessing>>>
 
@@ -74,7 +76,19 @@ async function finish(id: string): Promise<NfseProcessResult> {
   }
 }
 
-async function fail(claimed: ClaimedNfseDocument, code: string, message: string): Promise<NfseProcessResult> {
+async function fail(
+  claimed: ClaimedNfseDocument,
+  code: string,
+  message: string,
+  cause?: unknown,
+): Promise<NfseProcessResult> {
+  if (REPORTED_FAILURES.has(code)) {
+    reportSideEffectFailure(cause ?? new Error(`NFS-e ${code}: ${message}`), {
+      area: 'nfse',
+      step: code,
+      extra: { documentId: claimed.id, environment: claimed.environment },
+    })
+  }
   await markFailed(claimed, code, message)
   return finish(claimed.id)
 }
@@ -342,8 +356,7 @@ async function run(claimed: ClaimedNfseDocument): Promise<NfseProcessResult> {
     issued = await gateway.emit(snapshot)
   } catch (error) {
     if (error instanceof NfseGatewayError) return fail(claimed, error.code, error.message)
-    reportSideEffectFailure(error, { area: 'nfse', step: 'emit', extra: { documentId: id } })
-    return fail(claimed, 'provider_error', UNAVAILABLE_MESSAGE)
+    return fail(claimed, 'provider_error', UNAVAILABLE_MESSAGE, error)
   }
   return completeIssued(claimed, loaded, issued)
 }
