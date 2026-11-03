@@ -13,7 +13,7 @@ import { areReferralRewardsActive, canRefer as isPayingReferrer, isReferralEnrol
 import { isReferralDashboardVisible } from '@/lib/referral/dashboard-access'
 import { isReferralEligiblePlan } from '@/lib/referral/rules'
 import { buildReferralDashboard } from '@/lib/referral/dashboard'
-import { effectiveSubscriptionStatus } from '@/lib/subscription-access'
+import { isStripeDriven } from '@/lib/subscription-access'
 
 export async function GET(request: Request) {
   try {
@@ -43,9 +43,7 @@ export async function GET(request: Request) {
         canRefer,
         enrollmentOpen,
         subscribeToUnlock:
-          enrollmentOpen &&
-          !canRefer &&
-          (subscription?.source === 'trial' || effectiveSubscriptionStatus(subscription) === 'expired'),
+          enrollmentOpen && !canRefer && !(subscription && isStripeDriven(subscription) && subscription.status === 'past_due'),
         code,
         previousCodes,
         rewardsActive: areReferralRewardsActive(),

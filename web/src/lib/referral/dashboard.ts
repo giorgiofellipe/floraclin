@@ -22,7 +22,7 @@ const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUN
 export interface DashboardInput {
   canRefer: boolean
   enrollmentOpen: boolean
-  /** Trial or expired clinic while enrollment is open: subscribing unlocks the link. */
+  /** Not paying through Stripe (a failed card payment aside) while enrollment is open: subscribing unlocks the link. */
   subscribeToUnlock: boolean
   code: string | null
   /** Retired codes that still resolve to the clinic, newest first. */
