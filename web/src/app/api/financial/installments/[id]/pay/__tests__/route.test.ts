@@ -45,7 +45,7 @@ const AUTH_OK = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
-  vi.mocked(recordPayment).mockResolvedValue({ allocation: [{ id: 'inst-1', amount: 150 }] } as never)
+  vi.mocked(recordPayment).mockResolvedValue({ allocation: [{ id: 'inst-1', amount: 150 }], nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } } as never)
 })
 
 describe('PUT /api/financial/installments/[id]/pay', () => {
@@ -97,7 +97,7 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ success: true, data: { allocation: [{ id: 'inst-1', amount: 150 }] } })
+    expect(body).toEqual({ success: true, data: { allocation: [{ id: 'inst-1', amount: 150 }], nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } } })
     expect(recordPayment).toHaveBeenCalledWith('tenant-1', 'user-1', {
       installmentId,
       amount: 150,
@@ -124,7 +124,7 @@ describe('PUT /api/financial/installments/[id]/pay', () => {
 
   // Regression: a recorded payment that commits without telling the patient.
   it('schedules the payment confirmation for the recorded payment after the response', async () => {
-    vi.mocked(recordPayment).mockResolvedValue({ paymentRecord: { id: 'pay-1' }, allocation: {} } as never)
+    vi.mocked(recordPayment).mockResolvedValue({ paymentRecord: { id: 'pay-1' }, allocation: {}, nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } } as never)
 
     await callPut(validBody)
     const [scheduled] = vi.mocked(after).mock.calls[0]

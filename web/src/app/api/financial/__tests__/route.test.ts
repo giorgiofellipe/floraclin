@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(requireWrite).mockResolvedValue({ ctx: AUTH_OK, blocked: null } as never)
   vi.mocked(createFinancialEntry).mockResolvedValue(ENTRY as never)
-  vi.mocked(recordPayment).mockResolvedValue({} as never)
+  vi.mocked(recordPayment).mockResolvedValue({ nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } } as never)
 })
 
 describe('POST /api/financial with a card payment', () => {

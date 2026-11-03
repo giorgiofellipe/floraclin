@@ -25,6 +25,16 @@ function chain(result: unknown) {
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+vi.mock('@/db/queries/nfse', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/db/queries/nfse')>()),
+  getNfseSettings: vi.fn().mockResolvedValue(null),
+  listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
+}))
+vi.mock('@/lib/nfse/emission', () => ({
+  createDocuments: vi.fn().mockResolvedValue([]),
+  markReversalInTx: vi.fn().mockResolvedValue([]),
+}))
+
 const enqueueMetaEventMock = vi.fn()
 const resolveMetaEventPrerequisitesMock = vi.fn()
 const claimAndSendPendingEventMock = vi.fn()
@@ -918,7 +928,7 @@ describe('financial.ts meta conversions', () => {
 
       enqueueMetaEventMock.mockRejectedValueOnce(new Error('unique index does not exist'))
 
-      const results = await bulkPayInstallments(TENANT, USER_ID, {
+      const { results } = await bulkPayInstallments(TENANT, USER_ID, {
         installmentIds: ['installment-a', 'installment-b'],
         paymentMethod: 'pix',
       })
@@ -1074,7 +1084,7 @@ describe('financial.ts meta conversions', () => {
         tx.insert.mockReturnValueOnce(chain(undefined)) // auditLogs
       }
 
-      const results = await bulkPayInstallments(TENANT, USER_ID, {
+      const { results } = await bulkPayInstallments(TENANT, USER_ID, {
         installmentIds: [INSTALLMENT_A, INSTALLMENT_B],
         paymentMethod: 'pix',
       })

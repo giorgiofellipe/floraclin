@@ -51,6 +51,10 @@ import { META_EVENT_MAX_AGE_MS } from '@/db/queries/meta-events'
 import { resolveProspectForPatient } from '@/lib/meta/resolve-prospect'
 import type { MetaActionSource } from '@/lib/meta/types'
 import { reportSideEffectFailure } from '@/lib/observability'
+import { getNfseSettings, listDocumentsForPaymentRecords } from '@/db/queries/nfse'
+import { createDocuments, markReversalInTx } from '@/lib/nfse/emission'
+import { nfseEnvironment } from '@/lib/nfse/config'
+import type { NfseEmissionMode, NfseEnvironment } from '@/lib/nfse/types'
 
 function requireCard(card: RecordPaymentInput['card']): NonNullable<RecordPaymentInput['card']> {
   if (!card) throw new BusinessError('CARD_TERMINAL_REQUIRED', 'Selecione a maquininha')
@@ -616,12 +620,81 @@ async function persistReplay(
   return { isPaid, splitChanges }
 }
 
+// ─── NFS-e intake on payment ────────────────────────────────────────
+
+interface NfseIntake {
+  mode: NfseEmissionMode
+  emailPatient: boolean
+  environment: NfseEnvironment
+}
+
+export interface PaymentNfseOutcome {
+  mode: NfseEmissionMode | null
+  documentIds: string[]
+  promptPaymentRecordIds: string[]
+}
+
+const NO_NFSE: PaymentNfseOutcome = { mode: null, documentIds: [], promptPaymentRecordIds: [] }
+
+/**
+ * Read on the global pool before the payment transaction opens, for the same
+ * pool-exhaustion reason as prepareMetaPurchaseContexts. Null means "not
+ * configured", including when the read or the environment lookup fails: a
+ * payment never waits on NFS-e.
+ */
+async function prepareNfseIntake(tenantId: string): Promise<NfseIntake | null> {
+  try {
+    const settings = await getNfseSettings(tenantId)
+    if (!settings?.configured) return null
+    return {
+      mode: settings.emissionMode,
+      emailPatient: settings.emailPatient,
+      environment: nfseEnvironment(),
+    }
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'nfse', step: 'prepare_intake' })
+    return null
+  }
+}
+
+async function intakeNfseInTx(
+  tx: typeof db,
+  tenantId: string,
+  userId: string,
+  intake: NfseIntake | null,
+  paymentRecordIds: string[]
+): Promise<PaymentNfseOutcome> {
+  if (!intake || paymentRecordIds.length === 0) return { ...NO_NFSE, mode: intake?.mode ?? null }
+  if (intake.mode === 'ask') {
+    return { mode: 'ask', documentIds: [], promptPaymentRecordIds: paymentRecordIds }
+  }
+
+  try {
+    let documentIds: string[] = []
+    await tx.transaction(async (savepoint) => {
+      documentIds = await createDocuments(savepoint as unknown as typeof db, {
+        tenantId,
+        userId,
+        paymentRecordIds,
+        competence: 'service',
+        emailRequested: intake.emailPatient,
+        environment: intake.environment,
+      })
+    })
+    return { mode: 'always', documentIds, promptPaymentRecordIds: [] }
+  } catch (error) {
+    reportSideEffectFailure(error, { area: 'nfse', step: 'payment_intake' })
+    return { mode: 'always', documentIds: [], promptPaymentRecordIds: [] }
+  }
+}
+
 export async function recordPayment(
   tenantId: string,
   userId: string,
   data: RecordPaymentInput
 ) {
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, [data.installmentId])
+  const nfseIntake = await prepareNfseIntake(tenantId)
 
   const { purchase, ...result } = await withTransaction(async (tx) => {
     const [row] = await tx
@@ -759,6 +832,8 @@ export async function recordPayment(
       metaContexts.get(financialEntryId)
     )
 
+    const nfse = await intakeNfseInTx(tx, tenantId, userId, nfseIntake, [paymentRecord.id])
+
     await createAuditLog({
       tenantId,
       userId,
@@ -785,6 +860,7 @@ export async function recordPayment(
       allocation: paymentAllocation,
       installmentPaid: isPaid,
       purchase,
+      nfse,
     }
   })
 
@@ -799,7 +875,8 @@ export async function reversePayment(
   tenantId: string,
   userId: string,
   paymentRecordId: string,
-  reason?: string
+  reason: string | undefined,
+  opts: { cancelNfse: boolean }
 ) {
   return withTransaction(async (tx) => {
     const [pr] = await tx
@@ -874,6 +951,7 @@ export async function reversePayment(
 
     const card = pr.cardPaymentId ? await cancelCardPaymentTx(tx, tenantId, userId, pr.cardPaymentId) : undefined
 
+    const reversedIds: string[] = []
     for (const record of records) {
       const inst = installmentById.get(record.installmentId)!
       const entry = entryById.get(inst.financialEntryId)
@@ -902,6 +980,7 @@ export async function reversePayment(
           reversalReason: reason ?? null,
         })
         .where(eq(paymentRecords.id, record.id))
+      reversedIds.push(record.id)
 
       if (!card) {
         const [outflow] = await tx
@@ -961,7 +1040,20 @@ export async function reversePayment(
       }, tx)
     }
 
-    return card ? { success: true, card } : { success: true }
+    let nfseCancelDocumentIds: string[] = []
+    try {
+      await tx.transaction(async (savepoint) => {
+        nfseCancelDocumentIds = await markReversalInTx(
+          savepoint as unknown as typeof db,
+          reversedIds,
+          opts.cancelNfse
+        )
+      })
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'nfse', step: 'payment_reversal' })
+    }
+
+    return { success: true, ...(card && { card }), nfseCancelDocumentIds }
   })
 }
 
@@ -973,8 +1065,9 @@ export async function bulkPayInstallments(
   data: { installmentIds: string[]; paymentMethod: string; paidAt?: string; card?: RecordPaymentInput['card'] }
 ) {
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
+  const nfseIntake = await prepareNfseIntake(tenantId)
 
-  const { results, purchases } = await withTransaction(async (tx) => {
+  const { results, purchases, nfse } = await withTransaction(async (tx) => {
     // ORDER BY id so this and renegotiation acquire overlapping rows in one
     // order instead of deadlocking on each other.
     const lockedRows = await tx
@@ -1166,12 +1259,20 @@ export async function bulkPayInstallments(
         .where(inArray(paymentRecords.id, cardRecords.map((r) => r.id)))
     }
 
-    return { results, purchases }
+    const nfse = await intakeNfseInTx(
+      tx,
+      tenantId,
+      userId,
+      nfseIntake,
+      results.map((r) => r.paymentRecord.id)
+    )
+
+    return { results, purchases, nfse }
   })
 
   await deliverPurchaseEvents(purchases)
 
-  return results
+  return { results, nfse }
 }
 
 // ─── BULK CANCEL ENTRIES ────────────────────────────────────────────
@@ -1862,8 +1963,17 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
       [...paymentsByInstallment.values()].flat().flatMap((p) => (p.cardPaymentId ? [p.cardPaymentId] : [])),
     ),
   ])
+  const nfseDocuments = await listDocumentsForPaymentRecords(
+    tenantId,
+    [...paymentsByInstallment.values()].flat().map((p) => p.id),
+  )
+  const nfseByPayment = new Map(nfseDocuments.map((d) => [d.paymentRecordId, d]))
   const withCard = (payments: (typeof paymentRecords.$inferSelect)[]) =>
-    payments.map((p) => ({ ...p, card: (p.cardPaymentId && cardSummaries.get(p.cardPaymentId)) || null }))
+    payments.map((p) => ({
+      ...p,
+      card: (p.cardPaymentId && cardSummaries.get(p.cardPaymentId)) || null,
+      nfse: nfseByPayment.get(p.id) ?? null,
+    }))
 
   const now = new Date()
 

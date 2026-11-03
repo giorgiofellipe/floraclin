@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InstallmentTable } from '../installment-table'
 
@@ -308,5 +308,97 @@ describe('InstallmentTable', () => {
         await screen.findByText('Este pagamento em cartão cobre 3 parcelas. Todas serão estornadas.'),
       ).toBeInTheDocument()
     })
+  })
+})
+
+describe('InstallmentTable NFS-e reversal', () => {
+  const issuedNfse = {
+    id: 'nfse-1',
+    paymentRecordId: 'pay-1',
+    status: 'issued',
+    errorCode: null,
+    errorMessage: null,
+    nfseNumber: '12',
+    competenceDate: '2026-09-01',
+    emailSentAt: null,
+    cancelRequested: false,
+    retryable: false,
+  }
+
+  function mockEntry(nfse: typeof issuedNfse | null, card?: object) {
+    return vi.spyOn(globalThis, 'fetch').mockClear().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        installments: [
+          {
+            ...mockInstallments[0],
+            paymentRecords: [
+              {
+                id: 'pay-1',
+                amount: '500.00',
+                paymentMethod: 'pix',
+                interestCovered: '0',
+                fineCovered: '0',
+                principalCovered: '500.00',
+                paidAt: '2026-09-01T12:00:00.000Z',
+                recordedAt: '2026-09-01T12:00:00.000Z',
+                notes: null,
+                nfse,
+                card,
+              },
+            ],
+          },
+        ],
+      }),
+    } as Response)
+  }
+
+  async function openReverseDialog() {
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+    fireEvent.click(await screen.findByTestId('payment-reverse'))
+  }
+
+  function reverseBody(fetchSpy: ReturnType<typeof mockEntry>) {
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/reverse'))
+    return call ? JSON.parse(String((call[1] as RequestInit).body)) : undefined
+  }
+
+  it('asks to cancel the issued note and sends cancelNfse true by default', async () => {
+    const fetchSpy = mockEntry(issuedNfse)
+    await openReverseDialog()
+
+    expect(screen.getByText('Cancelar a NFS-e também')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Confirmar Estorno'))
+
+    await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: true }))
+  })
+
+  it('sends cancelNfse false when the payment has no issued note', async () => {
+    const fetchSpy = mockEntry(null)
+    await openReverseDialog()
+
+    expect(screen.queryByText('Cancelar a NFS-e também')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByText('Confirmar Estorno'))
+
+    await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: false }))
+  })
+
+  it('asks to cancel the note and sends cancelNfse true for a card payment covering several records, even without a note on the clicked one', async () => {
+    const fetchSpy = mockEntry(null, {
+      terminalName: 'Stone',
+      method: 'credit_card',
+      installmentCount: 6,
+      pendingRepasses: 0,
+      receivedRepasses: 0,
+      linkedPaymentCount: 2,
+    })
+    await openReverseDialog()
+
+    expect(screen.getByText('Cancelar a NFS-e também')).toBeInTheDocument()
+    fireEvent.click(screen.getByText('Confirmar Estorno'))
+
+    await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: true }))
   })
 })

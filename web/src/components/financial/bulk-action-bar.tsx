@@ -17,6 +17,7 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
+import { NFSE_MAX_PER_REQUEST } from '@/lib/nfse/config'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { cn } from '@/lib/utils'
 import { ReasonDialog } from './reason-dialog'
@@ -26,6 +27,7 @@ import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
+import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
 import type { PaymentMethod } from '@/types'
 
 interface BulkActionBarProps {
@@ -75,6 +77,7 @@ export function BulkActionBar({
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
+  const [emitIds, setEmitIds] = useState<string[] | null>(null)
 
   const queryClient = useQueryClient()
   const bulkPay = useBulkPay()
@@ -97,7 +100,7 @@ export function BulkActionBar({
 
   async function handleBulkPay() {
     try {
-      await bulkPay.mutateAsync({
+      const result = await bulkPay.mutateAsync({
         installmentIds: selectedInstallmentIds,
         paymentMethod,
         paidAt: paidAtIso,
@@ -106,6 +109,13 @@ export function BulkActionBar({
       setPayDialogOpen(false)
       onClear()
       onSuccess?.()
+      if (result?.nfse && result.nfse.promptPaymentRecordIds.length > 0) {
+        const ids = result.nfse.promptPaymentRecordIds
+        if (ids.length > NFSE_MAX_PER_REQUEST) {
+          toast.info(`A NFS-e dos outros ${ids.length - NFSE_MAX_PER_REQUEST} pagamentos pode ser emitida na tabela de parcelas.`)
+        }
+        setEmitIds(ids.slice(0, NFSE_MAX_PER_REQUEST))
+      }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
         queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
@@ -146,10 +156,21 @@ export function BulkActionBar({
     }
   }
 
-  if (selectedCount === 0) return null
+  const emitDialog = emitIds && (
+    <EmitNfseDialog
+      paymentRecordIds={emitIds}
+      open
+      onOpenChange={(open) => {
+        if (!open) setEmitIds(null)
+      }}
+    />
+  )
+
+  if (selectedCount === 0) return emitDialog || null
 
   return (
     <>
+      {emitDialog}
       <div
         data-testid="bulk-action-bar"
         className={cn(
