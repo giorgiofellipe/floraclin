@@ -10,7 +10,7 @@ export function useReferralDashboard({ enabled = true }: { enabled?: boolean } =
     queryKey: queryKeys.referral,
     enabled,
     retry: false,
-    // The sidebar card keeps this query mounted, and a subscription can change in another tab or by an admin.
+    // Overrides the app defaults: the sidebar card keeps this mounted, and an admin or another tab can change the subscription.
     staleTime: 0,
     refetchOnWindowFocus: true,
     queryFn: async () => {

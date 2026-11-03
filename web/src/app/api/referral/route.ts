@@ -9,7 +9,12 @@ import {
   listReferralsForReferrer,
   listRewardEvents,
 } from '@/db/queries/referrals'
-import { areReferralRewardsActive, canRefer as isPayingReferrer, isReferralEnrollmentEnabled } from '@/lib/referral/config'
+import {
+  areReferralRewardsActive,
+  canRefer as isActiveReferrer,
+  isReferralEnrollmentEnabled,
+  subscribingUnlocksReferral,
+} from '@/lib/referral/config'
 import { isReferralDashboardVisible } from '@/lib/referral/dashboard-access'
 import { isReferralEligiblePlan } from '@/lib/referral/rules'
 import { buildReferralDashboard } from '@/lib/referral/dashboard'
@@ -27,7 +32,8 @@ export async function GET(request: Request) {
 
     const enrollmentOpen = isReferralEnrollmentEnabled()
     const subscription = await getSubscription(ctx.tenantId)
-    const canRefer = isPayingReferrer(subscription)
+    const canRefer = isActiveReferrer(subscription)
+    const paying = canRefer && !!subscription && isStripeDriven(subscription)
     const code = canRefer && enrollmentOpen ? await getOrCreateReferralCode(ctx.tenantId) : null
 
     const [counting, referrals, events, previousCodes] = await Promise.all([
@@ -42,15 +48,15 @@ export async function GET(request: Request) {
       buildReferralDashboard({
         canRefer,
         enrollmentOpen,
-        subscribeToUnlock:
-          enrollmentOpen && !canRefer && !(subscription && isStripeDriven(subscription) && subscription.status === 'past_due'),
+        subscribeToUnlock: enrollmentOpen && subscribingUnlocksReferral(subscription),
         code,
         previousCodes,
         rewardsActive: areReferralRewardsActive(),
         counting,
         planPriceCents: plan?.priceCents ?? null,
-        planEligible: plan ? isReferralEligiblePlan(plan) : false,
-        nextInvoiceAt: canRefer ? (subscription?.currentPeriodEnd ?? null) : null,
+        // A grant earns no discount: there is no Stripe invoice to apply it to until the clinic subscribes.
+        planEligible: paying && plan ? isReferralEligiblePlan(plan) : false,
+        nextInvoiceAt: paying ? (subscription?.currentPeriodEnd ?? null) : null,
         referrals,
         events,
       }),

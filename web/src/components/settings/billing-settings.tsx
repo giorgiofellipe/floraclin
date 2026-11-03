@@ -328,7 +328,7 @@ export function BillingSettings() {
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
   const [checkingOutSlug, setCheckingOutSlug] = useState<string | null>(null)
   const queryClient = useQueryClient()
-  const invalidateSubscription = () => {
+  const refreshSubscriptionQueries = () => {
     queryClient.invalidateQueries({ queryKey: ['billing'] })
     queryClient.invalidateQueries({ queryKey: queryKeys.referral })
   }
@@ -376,7 +376,7 @@ export function BillingSettings() {
       // Refresh the JWT so it picks up the new subscription status, then
       // refetch whatever drives this page.
       await update()
-      invalidateSubscription()
+      refreshSubscriptionQueries()
       // The platform layout (read-only mode, banner, paywall) is a server
       // component that client navigation keeps as is; re-render it so a
       // clinic that just paid stops looking locked.
@@ -451,7 +451,7 @@ export function BillingSettings() {
       if (!res.ok) {
         const body = await res.clone().json().catch(() => ({}))
         if (body.code === DISCOUNT_UNAVAILABLE_CODE) {
-          invalidateSubscription()
+          refreshSubscriptionQueries()
           router.refresh()
         }
         throw new Error(await errorMessage(res, 'Erro ao criar sessão de pagamento'))
@@ -468,7 +468,7 @@ export function BillingSettings() {
         // fires in both directions.
         toast.success('Plano alterado. A diferença é ajustada proporcionalmente.')
         await update()
-        invalidateSubscription()
+        refreshSubscriptionQueries()
         router.refresh()
         return
       }
@@ -507,7 +507,7 @@ export function BillingSettings() {
     onSuccess: async () => {
       toast.success('Assinatura reativada.')
       await update()
-      invalidateSubscription()
+      refreshSubscriptionQueries()
       router.refresh()
     },
     onError: (err: Error) => {
@@ -526,7 +526,7 @@ export function BillingSettings() {
     onSuccess: () => {
       setCancelDialogOpen(false)
       toast.success('Assinatura cancelada com sucesso.')
-      invalidateSubscription()
+      refreshSubscriptionQueries()
     },
     onError: (err: Error) => {
       toast.error(err.message)

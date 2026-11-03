@@ -9,8 +9,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { toast } from 'sonner'
-import { renderWithProviders as render, createTestQueryClient } from '@/tests/test-utils'
-import { queryKeys } from '@/hooks/queries/query-keys'
+import { renderWithProviders as render } from '@/tests/test-utils'
+import { useReferralDashboard } from '@/hooks/queries/use-referral-dashboard'
 import { BillingSettings } from '../billing-settings'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -31,6 +31,12 @@ vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'authenticated', update: mockUpdate }),
 }))
+
+function ReferralProbe() {
+  const { data } = useReferralDashboard()
+  if (!data) return null
+  return <p data-testid="referral-probe">{data.subscribeToUnlock ? 'locked' : 'sharing'}</p>
+}
 
 // ─── Fixtures ──────────────────────────────────────────────────────
 
@@ -130,17 +136,26 @@ describe('BillingSettings payment race', () => {
 
   it('refreshes the Indique e Ganhe dashboard once the payment is confirmed', async () => {
     searchParamsValue = new URLSearchParams('session_id=cs_test_123')
-    vi.stubGlobal('fetch', mockFetch({
-      '/api/billing/usage': USAGE_RESPONSE,
-      '/api/billing/plans': PLANS_RESPONSE,
-      'POST /api/billing/confirm': { activated: true },
+    let referralFetches = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/referral') {
+        referralFetches += 1
+        return { ok: true, status: 200, json: async () => ({ subscribeToUnlock: referralFetches === 1 }) } as Response
+      }
+      if (url === '/api/billing/usage') return { ok: true, json: async () => USAGE_RESPONSE } as Response
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS_RESPONSE } as Response
+      if (url === '/api/billing/confirm') return { ok: true, json: async () => ({ activated: true }) } as Response
+      throw new Error(`unexpected fetch: ${url}`)
     }))
-    const queryClient = createTestQueryClient()
-    queryClient.setQueryData(queryKeys.referral, { subscribeToUnlock: true })
 
-    render(<BillingSettings />, { queryClient })
+    render(
+      <>
+        <ReferralProbe />
+        <BillingSettings />
+      </>,
+    )
 
-    await waitFor(() => expect(queryClient.getQueryState(queryKeys.referral)?.isInvalidated).toBe(true))
+    await waitFor(() => expect(screen.getByTestId('referral-probe')).toHaveTextContent('sharing'))
   })
 
   it('removes session_id from the URL after confirming', async () => {

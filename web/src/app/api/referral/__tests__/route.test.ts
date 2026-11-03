@@ -70,8 +70,13 @@ describe('GET /api/referral', () => {
     expect(getOrCreateReferralCode).not.toHaveBeenCalled()
   })
 
-  it('does not create a code for a clinic that is not paying through Stripe', async () => {
-    vi.mocked(getSubscription).mockResolvedValue({ source: 'admin', status: 'active', plan } as never)
+  it('does not create a code for a clinic that cannot refer', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({
+      source: 'trial',
+      status: 'trialing',
+      plan,
+      currentPeriodEnd: new Date('2099-01-01T12:00:00Z'),
+    } as never)
     const res = await GET(request())
     expect(res.status).toBe(200)
     const body = await res.json()
@@ -82,15 +87,25 @@ describe('GET /api/referral', () => {
 
   it.each([
     ['a trial clinic', { source: 'trial', status: 'trialing', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, true],
-    ['an expired trial', { source: 'trial', status: 'expired', currentPeriodEnd: new Date('2026-01-01T12:00:00Z') }, true],
-    ['a gifted clinic', { source: 'gift', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, true],
-    ['an admin-granted clinic', { source: 'admin', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, true],
-    ['a canceled Stripe clinic', { source: 'stripe', status: 'canceled', currentPeriodEnd: new Date('2026-01-01T12:00:00Z') }, true],
-    ['a Stripe clinic with a failed payment, which fixes the card instead', { source: 'stripe', status: 'past_due', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, false],
-    ['a paying clinic', { source: 'stripe', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, false],
+    ['a gifted clinic, which already refers', { source: 'gift', status: 'active', currentPeriodEnd: new Date('2099-01-01T12:00:00Z') }, false],
   ])('subscribeToUnlock for %s', async (_n, sub, expected) => {
     vi.mocked(getSubscription).mockResolvedValue({ ...sub, plan } as never)
     expect((await (await GET(request())).json()).subscribeToUnlock).toBe(expected)
+  })
+
+  it('shares a link from a gifted clinic without claiming a discount it has no invoice for', async () => {
+    vi.mocked(getSubscription).mockResolvedValue({
+      source: 'gift',
+      status: 'active',
+      plan,
+      currentPeriodEnd: new Date('2099-01-01T12:00:00Z'),
+    } as never)
+    vi.mocked(countCountingReferrals).mockResolvedValue(2)
+    const body = await (await GET(request())).json()
+    expect(getOrCreateReferralCode).toHaveBeenCalledWith('tenant-1')
+    expect(body.link).not.toBeNull()
+    expect(body.discountPercent).toBe(0)
+    expect(body.discountLine).not.toMatch(/próxima fatura/)
   })
 
   it('creates the code for a paying clinic and returns the dashboard', async () => {

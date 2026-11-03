@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { focusManager } from '@tanstack/react-query'
-import { createTestQueryClient, createWrapper } from '@/tests/test-utils'
+import { createWrapper } from '@/tests/test-utils'
+import { makeQueryClient } from '@/lib/react-query'
 import { useReferralDashboard } from '../use-referral-dashboard'
 
 afterEach(() => {
@@ -16,8 +17,7 @@ describe('useReferralDashboard', () => {
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ subscribeToUnlock: true }) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ subscribeToUnlock: false }) })
     vi.stubGlobal('fetch', fetchMock)
-    const queryClient = createTestQueryClient()
-    queryClient.setDefaultOptions({ queries: { ...queryClient.getDefaultOptions().queries, refetchOnWindowFocus: false, staleTime: 30_000 } })
+    const queryClient = makeQueryClient()
 
     const { result } = renderHook(() => useReferralDashboard(), { wrapper: createWrapper(queryClient) })
     await waitFor(() => expect(result.current.data?.subscribeToUnlock).toBe(true))

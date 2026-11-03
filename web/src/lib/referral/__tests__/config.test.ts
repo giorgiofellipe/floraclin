@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   areReferralRewardsActive,
   canRefer,
+  subscribingUnlocksReferral,
   couponIdForPercent,
   isReferralEnrollmentEnabled,
   isReferrerCoupon,
@@ -90,12 +91,34 @@ describe('isReferrerCoupon', () => {
 })
 
 describe('canRefer', () => {
-  it('holds only for stripe + active', () => {
-    expect(canRefer({ source: 'stripe', status: 'active' })).toBe(true)
-    expect(canRefer({ source: 'gift', status: 'active' })).toBe(false)
-    expect(canRefer({ source: null, status: 'trial' })).toBe(false)
-    expect(canRefer({ source: 'stripe', status: 'past_due' })).toBe(false)
-    expect(canRefer({ source: 'stripe', status: 'canceled' })).toBe(false)
-    expect(canRefer(null)).toBe(false)
+  const NOW = new Date('2026-11-03T12:00:00Z')
+  const OPEN = new Date('2026-12-01T12:00:00Z')
+  const CLOSED = new Date('2026-11-01T12:00:00Z')
+  it.each([
+    ['a paying Stripe clinic', { source: 'stripe', status: 'active', currentPeriodEnd: CLOSED }, true],
+    ['a running gift', { source: 'gift', status: 'active', currentPeriodEnd: OPEN }, true],
+    ['a running admin grant', { source: 'admin', status: 'active', currentPeriodEnd: OPEN }, true],
+    ['a gift past its end before the expiry cron ran', { source: 'gift', status: 'active', currentPeriodEnd: CLOSED }, false],
+    ['a trial', { source: 'trial', status: 'trialing', currentPeriodEnd: OPEN }, false],
+    ['a Stripe clinic with a failed payment', { source: 'stripe', status: 'past_due', currentPeriodEnd: OPEN }, false],
+    ['a canceled Stripe clinic', { source: 'stripe', status: 'canceled', currentPeriodEnd: OPEN }, false],
+    ['no subscription', null, false],
+  ])('%s', (_n, row, expected) => {
+    expect(canRefer(row, NOW)).toBe(expected)
+  })
+})
+
+describe('subscribingUnlocksReferral', () => {
+  const OPEN = new Date('2099-01-01T12:00:00Z')
+  it.each([
+    ['a trial', { source: 'trial', status: 'trialing', currentPeriodEnd: OPEN }, true],
+    ['an expired gift', { source: 'gift', status: 'expired', currentPeriodEnd: null }, true],
+    ['a canceled Stripe clinic', { source: 'stripe', status: 'canceled', currentPeriodEnd: OPEN }, true],
+    ['a clinic that can already refer', { source: 'gift', status: 'active', currentPeriodEnd: OPEN }, false],
+    ['a Stripe clinic with a failed payment, which fixes the card instead', { source: 'stripe', status: 'past_due', currentPeriodEnd: OPEN }, false],
+    ['a Stripe trial, which becomes active on its own', { source: 'stripe', status: 'trialing', currentPeriodEnd: OPEN }, false],
+    ['no subscription row, whose billing tab cannot load', null, false],
+  ])('%s', (_n, row, expected) => {
+    expect(subscribingUnlocksReferral(row)).toBe(expected)
   })
 })

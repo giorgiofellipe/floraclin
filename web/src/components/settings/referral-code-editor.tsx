@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { throwIfNotOk } from '@/hooks/throw-if-not-ok'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { useDebounced } from '@/hooks/use-debounced'
 import {
   CUSTOM_CODE_MESSAGES,
@@ -85,14 +86,14 @@ export function ReferralCodeEditor({ currentCode, previousCodes = [] }: { curren
       toast.success(`Código alterado para ${code}`)
       setEditing(false)
       setValue('')
-      await queryClient.invalidateQueries({ queryKey: ['referral'] })
+      await queryClient.invalidateQueries({ queryKey: queryKeys.referral })
     },
     onError: (err: Error) => {
       toast.error(err.message)
       // A 409 usually means someone else took it since the check: re-check so the status and Save button reflect
       // that, and reload the dashboard in case the old-code list (alias limit) changed in another tab.
       if (toCheck) void check.refetch()
-      void queryClient.invalidateQueries({ queryKey: ['referral'] })
+      void queryClient.invalidateQueries({ queryKey: queryKeys.referral })
     },
   })
 
