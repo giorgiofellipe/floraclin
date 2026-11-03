@@ -86,7 +86,7 @@ Across the programs reviewed, no one keeps an ongoing discount for lifetime refe
 
 ### 5.1 Who can refer (Giorgio's decision)
 
-A clinic can refer only while it is **paying through Stripe**: `tenant_subscriptions.source='stripe'` and local `status='active'`. Trial clinics, expired clinics and gifted or admin clinics (`source='gift'|'admin'`) don't get an active link. This includes gifted influencer clinics such as Dra. Micaela's. Their "Indique e Ganhe" page explains: "Seu link de indicação fica ativo quando sua clínica tem uma assinatura paga."
+A clinic can refer while it is **paying through Stripe**: `tenant_subscriptions.source='stripe'` and local `status='active'`. A running gift or admin grant (`source='gift'|'admin'`, `status='active'`, period open) also gets an active link, so gifted influencer clinics such as Dra. Micaela's can refer. They earn no discount until they subscribe: there is no Stripe invoice to apply it to, and the counted referrals carry over when they do. Trial, expired and canceled clinics don't get an active link. Their "Indique e Ganhe" page offers to subscribe instead.
 
 If the referrer stops paying, its code goes inactive. Signups that arrive through an inactive code are **not attributed**, and the visitor sees the normal site with no discount. Referrals captured while the code was active stay attributed.
 
@@ -292,7 +292,8 @@ The platform admin tenant page shows the referrer, the referrals and the reward 
 
 | Case | Behaviour |
 |---|---|
-| Referrer on a gift or admin plan, or in trial | No active link (§5.1). Its "Indique e Ganhe" page explains why. No rewards. |
+| Referrer on a gift or admin plan | Active link, no discount until it subscribes (§5.1). |
+| Referrer in trial | No active link (§5.1). Its "Indique e Ganhe" page offers to subscribe. No rewards. |
 | Referrer churns (subscription deleted) | Its code goes inactive. Its referrals keep their own status. When it subscribes again, checkout runs as normal and its new subscription gets the discount at the next sync (from its 2nd invoice; the first is charged at the price shown at checkout). |
 | Referrer on scheduled cancel or `past_due` | The code goes inactive while the local status isn't `active`. The discount stays on the Stripe subscription, which keeps billing until it ends. |
 | Referred clinic upgrades or downgrades | It still counts as one clinic (20% each, regardless of plan). Its welcome coupon has no `applies_to`, so it carries over. |

@@ -2,6 +2,7 @@
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queries/query-keys'
+import type { NfseIntake } from '@/types'
 
 /** A failed request, carrying the `code` a BusinessError response includes. */
 export class ApiError extends Error {
@@ -87,7 +88,7 @@ export function usePayInstallment() {
         expectedTotalDue,
         acceptOverpayment,
         card,
-      }),
+      }) as Promise<{ data: { nfse?: NfseIntake } }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
       queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
@@ -128,7 +129,7 @@ export function useBulkPay() {
       paymentMethod: string
       paidAt?: string
       card?: CardPaymentPayload
-    }) => mutateJson('/api/financial/bulk/pay', 'POST', data),
+    }) => mutateJson('/api/financial/bulk/pay', 'POST', data) as Promise<{ nfse?: NfseIntake }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
       queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })
@@ -173,8 +174,15 @@ export function useBulkUncancel() {
 export function useReversePayment() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ paymentRecordId, reason }: { paymentRecordId: string; reason?: string }) =>
-      mutateJson(`/api/financial/payments/${paymentRecordId}/reverse`, 'POST', { reason }),
+    mutationFn: ({
+      paymentRecordId,
+      reason,
+      cancelNfse,
+    }: {
+      paymentRecordId: string
+      reason?: string
+      cancelNfse: boolean
+    }) => mutateJson(`/api/financial/payments/${paymentRecordId}/reverse`, 'POST', { reason, cancelNfse }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
       queryClient.invalidateQueries({ queryKey: ['financial', 'detail'] })

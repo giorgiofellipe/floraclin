@@ -27,7 +27,7 @@ import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { brToday, toPaidAtIso } from '@/lib/dates'
 import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
 import { isCardMethod } from '@/lib/financial/card-repasses'
-import type { PaymentMethod } from '@/types'
+import type { NfseIntake, PaymentMethod } from '@/types'
 
 interface PartialPaymentDialogProps {
   open: boolean
@@ -39,6 +39,7 @@ interface PartialPaymentDialogProps {
   defaultPaymentMethod?: PaymentMethod
   defaultCardInstallmentCount?: number
   onSuccess?: () => void
+  onNfse?: (nfse: NfseIntake) => void
 }
 
 // Nothing the operator can do from this dialog once the installment is no
@@ -52,6 +53,7 @@ export function PartialPaymentDialog({
   defaultPaymentMethod = 'pix',
   defaultCardInstallmentCount = 1,
   onSuccess,
+  onNfse,
 }: PartialPaymentDialogProps) {
   const [amountStr, setAmountStr] = useState('')
   const [amountTouched, setAmountTouched] = useState(false)
@@ -125,7 +127,7 @@ export function PartialPaymentDialog({
   async function handleConfirm() {
     if (!quote || parsedAmount <= 0) return
     try {
-      await payInstallment.mutateAsync({
+      const result = await payInstallment.mutateAsync({
         id: installment.id,
         amount: parsedAmount,
         paymentMethod,
@@ -137,6 +139,7 @@ export function PartialPaymentDialog({
       })
       onOpenChange(false)
       onSuccess?.()
+      if (result?.data?.nfse) onNfse?.(result.data.nfse)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'QUOTE_CHANGED') {
         // A prefilled amount follows the fresh quote on its own; an amount

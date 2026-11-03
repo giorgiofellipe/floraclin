@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextResponse, after } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
@@ -9,6 +9,7 @@ import {
 } from '@/db/queries/financial'
 import { financialFilterSchema, createFinancialEntrySchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
 
 export async function GET(request: Request) {
@@ -72,13 +73,14 @@ export async function POST(request: Request) {
     let paymentError: string | undefined
     if (card && paymentMethod) {
       try {
-        await recordPayment(ctx.tenantId, ctx.userId, {
+        const payment = await recordPayment(ctx.tenantId, ctx.userId, {
           installmentId: entry.installmentIds[0],
           amount: totalAmount,
           paymentMethod,
           card,
           expectedTotalDue: totalAmount,
         })
+        if (payment.nfse.documentIds.length > 0) after(() => processDocuments(payment.nfse.documentIds))
       } catch (error) {
         paymentError = cardPaymentErrorMessage(error, { area: 'financial', tenantId: ctx.tenantId })
       }

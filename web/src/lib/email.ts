@@ -55,6 +55,17 @@ async function sendOrThrow(payload: Parameters<Resend['emails']['send']>[0]): Pr
   return { id: data.id }
 }
 
+export function sendEmailWithAttachments(payload: {
+  to: string
+  subject: string
+  html: string
+  text: string
+  replyTo?: string
+  attachments: { filename: string; content: Buffer }[]
+}): Promise<{ id: string }> {
+  return sendOrThrow({ from: FROM, ...payload })
+}
+
 export async function sendConfirmationEmail(email: string, url: string, clinicName: string) {
   await sendOrThrow({
     from: FROM,

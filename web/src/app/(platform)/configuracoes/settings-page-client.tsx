@@ -16,6 +16,7 @@ import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { CardTerminalsManager } from '@/components/financial/settings/card-terminals-manager'
+import { NfseSettingsTab } from '@/components/nfse/nfse-settings-tab'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
 import { BillingSettings } from '@/components/settings/billing-settings'
 import { ReferralSettings } from '@/components/settings/referral-settings'
@@ -48,6 +49,7 @@ import {
   CreditCardIcon,
   GiftIcon,
   PlugIcon,
+  ReceiptTextIcon,
   ArrowLeftIcon,
   ChevronRightIcon,
 } from 'lucide-react'
@@ -129,7 +131,7 @@ interface SettingsPageClientProps {
 type TabKey =
   | 'clinica' | 'equipe' | 'perfil'
   | 'procedimentos' | 'anamnese' | 'produtos' | 'pacotes' | 'termos' | 'documentos'
-  | 'agendamento' | 'financeiro' | 'whatsapp'
+  | 'agendamento' | 'financeiro' | 'nota-fiscal' | 'whatsapp'
   | 'assinatura' | 'indique' | 'auditoria' | 'integracoes'
 
 interface TabItem {
@@ -168,6 +170,7 @@ const SIDEBAR_GROUPS: SidebarGroup[] = [
     items: [
       { key: 'agendamento', label: 'Agendamento', icon: CalendarIcon },
       { key: 'financeiro', label: 'Financeiro', icon: DollarSignIcon },
+      { key: 'nota-fiscal', label: 'Nota fiscal', icon: ReceiptTextIcon },
       { key: 'whatsapp', label: 'WhatsApp', icon: MessageCircleIcon },
     ],
   },
@@ -518,6 +521,8 @@ export function SettingsPageClient({
                   <CardTerminalsManager />
                 </div>
               )}
+
+              {effectiveTab === 'nota-fiscal' && <NfseSettingsTab />}
 
               {effectiveTab === 'whatsapp' && (
                 <WhatsAppSettingsForm

@@ -13,9 +13,7 @@ import { tenants } from '@/db/schema'
 import { eq } from 'drizzle-orm'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { effectiveSubscriptionStatus, isStripeDriven, isSubscriptionRowActive } from '@/lib/subscription-access'
-import { publicWinbackOffer } from '@/lib/winback'
-import { getValidatedWinbackOffer } from '@/lib/winback-offer'
-import { getValidatedReferralOffer, publicReferralOffer } from '@/lib/referral/offer'
+import { paywallOffer } from '@/lib/paywall-offers'
 import { getTrialRecap } from '@/db/queries/trial-recap'
 import { planBenefits, recommendedPlanSlug, sellablePlans } from '@/lib/plan-benefits'
 import { brCalendarDaysBetween } from '@/lib/dates'
@@ -67,15 +65,15 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     readOnly && subscription?.status === 'past_due' && isStripeDriven(subscription) ? 'payment_update' : 'checkout'
   const needsPlans = readOnly || trialEndsAt !== null
 
-  const paidPlansP =
-    needsPlans && recovery === 'checkout' ? listPlans(true).then(sellablePlans) : Promise.resolve([])
-  const [paidPlans, recap, validatedWinback] = await Promise.all([
+  const checkoutPlans = needsPlans && recovery === 'checkout'
+  const paidPlansP = checkoutPlans ? listPlans(true).then(sellablePlans) : Promise.resolve([])
+  const offerP = paidPlansP.then((plans) =>
+    paywallOffer(subscription, plans, now, { readOnly, trialEnding: trialEndsAt !== null, recovery }),
+  )
+  const [paidPlans, recap, offer] = await Promise.all([
     paidPlansP,
-    needsPlans && recovery === 'checkout' ? getTrialRecap(auth.tenantId) : Promise.resolve(null),
-    // Per plan: a coupon restricted to some products discounts only those.
-    readOnly && recovery === 'checkout'
-      ? paidPlansP.then((plans) => getValidatedWinbackOffer(subscription, plans, now))
-      : Promise.resolve(null),
+    checkoutPlans ? getTrialRecap(auth.tenantId) : Promise.resolve(null),
+    offerP,
   ])
   const recommended = recommendedPlanSlug(paidPlans)
   const paywallPlans: PaywallPlan[] = paidPlans.map((p) => ({
@@ -86,12 +84,6 @@ export default async function PlatformLayout({ children }: { children: React.Rea
     benefits: planBenefits(p),
     recommended: p.slug === recommended,
   }))
-  const winback = publicWinbackOffer(validatedWinback)
-  // Exactly one offer: the win-back (VOLTA30) wins over the referral one.
-  const referral =
-    !winback && ((readOnly && recovery === 'checkout') || trialEndsAt !== null)
-      ? publicReferralOffer(await getValidatedReferralOffer(subscription, paidPlans, now).catch(() => null))
-      : null
   // A running trial / gift / admin grant locks at an exact instant; the
   // provider re-renders this layout then. Stripe rows follow the webhook.
   const lockAt =
@@ -122,8 +114,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       tenantId={auth.tenantId}
       canSubscribe={auth.role === 'owner'}
       plans={paywallPlans}
-      winback={winback}
-      referral={referral}
+      offer={offer}
       lockAt={lockAt}
       role={auth.role}
       recovery={recovery}

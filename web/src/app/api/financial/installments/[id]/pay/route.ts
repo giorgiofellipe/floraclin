@@ -4,6 +4,7 @@ import { recordPayment } from '@/db/queries/financial'
 import { recordPaymentSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
+import { processDocuments } from '@/lib/nfse/emission'
 import { sendPaymentConfirmations } from '@/lib/whatsapp-payment-confirmation'
 
 export async function PUT(
@@ -35,6 +36,7 @@ export async function PUT(
 
     const result = await recordPayment(ctx.tenantId, ctx.userId, parsed.data)
     after(() => sendPaymentConfirmations(ctx.tenantId, [result.paymentRecord]))
+    if (result.nfse.documentIds.length > 0) after(() => processDocuments(result.nfse.documentIds))
 
     return NextResponse.json({ success: true, data: result })
   } catch (error) {

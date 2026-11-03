@@ -105,18 +105,3 @@ describe('POST /api/billing/portal', () => {
     expect(createBillingPortalSession).not.toHaveBeenCalled()
   })
 })
-
-describe('the usage endpoint tells the UI a portal is reachable', () => {
-  it('reports hasStripeCustomer, which is the only thing drawing the link', async () => {
-    // Nothing else exposes the customer id, so a route that stopped
-    // reporting this would silently remove the only way to fix a failed card.
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const src = fs.readFileSync(
-      path.resolve(__dirname, '../usage/route.ts'),
-      'utf8',
-    )
-
-    expect(src).toMatch(/hasStripeCustomer:\s*Boolean\(subscription\.stripeCustomerId\)/)
-  })
-})

@@ -27,6 +27,11 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Configure private dependencies
+        run: bash scripts/configure-private-deps.sh
+        env:
+          FISCAL_REPO_TOKEN: ${{ secrets.FISCAL_REPO_TOKEN }}
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 

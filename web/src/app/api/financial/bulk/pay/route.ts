@@ -4,6 +4,7 @@ import { bulkPayInstallments } from '@/db/queries/financial'
 import { bulkPaySchema } from '@/validations/financial'
 import { BusinessError } from '@/lib/errors'
 import { handleApiError } from '@/lib/api-error'
+import { processDocuments } from '@/lib/nfse/emission'
 import { sendPaymentConfirmations } from '@/lib/whatsapp-payment-confirmation'
 
 export async function POST(request: Request) {
@@ -20,10 +21,11 @@ export async function POST(request: Request) {
       )
     }
 
-    const results = await bulkPayInstallments(ctx.tenantId, ctx.userId, parsed.data)
+    const { results, nfse } = await bulkPayInstallments(ctx.tenantId, ctx.userId, parsed.data)
     after(() => sendPaymentConfirmations(ctx.tenantId, results.map((r) => r.paymentRecord)))
+    if (nfse.documentIds.length > 0) after(() => processDocuments(nfse.documentIds))
 
-    return NextResponse.json({ success: true, data: results })
+    return NextResponse.json({ success: true, data: results, nfse })
   } catch (error) {
     if (error instanceof BusinessError) {
       return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })

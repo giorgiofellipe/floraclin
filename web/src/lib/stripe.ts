@@ -24,13 +24,39 @@ export function getStripeClient(): Stripe {
   return stripeClient
 }
 
+/** Stripe refused the promotion code the clinic was shown, so checkout stops instead of charging full price. */
+export class CheckoutDiscountRejectedError extends Error {
+  constructor(cause: unknown) {
+    super('Stripe rejected the checkout promotion code', { cause })
+    this.name = 'CheckoutDiscountRejectedError'
+  }
+}
+
+/** A new Stripe customer for the tenant. The idempotency key gives racing first checkouts the same customer. */
+export async function createTenantCustomer(tenantId: string): Promise<string> {
+  const customer = await getStripeClient().customers.create(
+    { metadata: { tenantId } },
+    { idempotencyKey: `tenant-customer-${tenantId}` },
+  )
+  return customer.id
+}
+
+/** Expires a Checkout Session that is still open. One already completed, expired or missing is left alone. */
+export async function expireCheckoutSession(sessionId: string): Promise<void> {
+  try {
+    await getStripeClient().checkout.sessions.expire(sessionId)
+  } catch (err) {
+    if (!(err instanceof Stripe.errors.StripeInvalidRequestError)) throw err
+  }
+}
+
 export async function createCheckoutSession(
   tenantId: string,
   planSlug: string,
-  stripeCustomerId?: string | null,
+  stripeCustomerId: string,
   opts?: {
     promotionCodeId?: string | null
-    discountKind?: 'winback' | 'referral'
+    discountKind?: 'feedback' | 'winback' | 'referral'
     referralId?: string | null
     browser?: MetaBrowserSignals
   },
@@ -48,17 +74,9 @@ export async function createCheckoutSession(
 
   const appUrl = getAppUrl()
 
-  let customer = stripeCustomerId ?? undefined
-  if (!customer) {
-    const created = await stripe.customers.create({
-      metadata: { tenantId },
-    })
-    customer = created.id
-  }
-
   const base: Stripe.Checkout.SessionCreateParams = {
     mode: 'subscription',
-    customer,
+    customer: stripeCustomerId,
     line_items: [{ price: plan.stripePriceId, quantity: 1 }],
     metadata: {
       tenantId,
@@ -74,22 +92,27 @@ export async function createCheckoutSession(
   let session: Stripe.Checkout.Session
   if (opts?.promotionCodeId) {
     try {
-      // Win-back or referral welcome: the promotion code is applied for the clinic, never typed
+      // Feedback reward, win-back or referral welcome: the promotion code is applied for the clinic, never typed
       // by them. Stripe rejects `discounts` together with
       // `allow_promotion_codes`, which this session does not set.
+      // Keep it that way: FEEDBACK50 and VOLTA30 are guessable codes, guarded
+      // only by the server choosing who gets them. Enabling
+      // `allow_promotion_codes` here, or promotion codes in the billing
+      // portal, would let any clinic type them in.
       session = await stripe.checkout.sessions.create({
         ...base,
         metadata: { ...base.metadata, [kind]: 'true' },
         discounts: [{ promotion_code: opts.promotionCodeId }],
       })
     } catch (err) {
-      // An expired, exhausted or mistyped promotion code must never stop a
-      // clinic from paying: report it and fall back to full price.
-      // Only for errors about the discount itself: anything else (a bad
-      // customer, a bad price) would fail the same way without it.
+      // Only errors about the discount itself: anything else (a bad customer,
+      // a bad price) would fail the same way without it.
       if (!isPromotionCodeError(err)) throw err
       reportSideEffectFailure(err, { area: 'billing', step: `${kind}_discount`, extra: { tenantId, planSlug } })
-      session = await stripe.checkout.sessions.create(base)
+      // The next offer lookup asks Stripe again instead of showing the cached discount.
+      promoCheckCache.delete(opts.promotionCodeId)
+      priorPurchaseCache.delete(stripeCustomerId)
+      throw new CheckoutDiscountRejectedError(err)
     }
   } else {
     session = await stripe.checkout.sessions.create(base)
@@ -130,6 +153,11 @@ export async function resumeStripeSubscription(stripeSubscriptionId: string) {
   return stripe.subscriptions.update(stripeSubscriptionId, {
     cancel_at_period_end: false,
   })
+}
+
+/** Ends a subscription now, not at the period end: for a duplicate checkout that must not keep billing. */
+export async function cancelStripeSubscriptionNow(stripeSubscriptionId: string) {
+  return getStripeClient().subscriptions.cancel(stripeSubscriptionId)
 }
 
 export async function cancelStripeSubscription(stripeSubscriptionId: string) {
@@ -453,8 +481,8 @@ export async function referrerCouponsMatchTerms(ids: Readonly<Record<20 | 40 | 6
 /**
  * Before a referral code is attached: whether the clinic already has a Stripe subscription (paid, or a payment
  * whose webhook has not landed yet), and if not, expires its open Checkout sessions so none of them can still be
- * paid at full price. Checkout never stores the customer locally, so customers are also found by metadata
- * (Stripe search lags writes by about a minute).
+ * paid at full price. Checkouts from before the customer was stored locally left customers known only by
+ * metadata, so those are searched too (Stripe search lags writes by about a minute).
  */
 export async function prepareReferralAttach(
   tenantId: string,
@@ -684,7 +712,7 @@ export async function customerHasPriorPurchase(customerId: string, now: Date = n
       charges.data.some((charge) => charge.status === 'succeeded') ||
       invoices.data.length > 0
   } catch (err) {
-    reportSideEffectFailure(err, { area: 'billing', step: 'winback_prior_purchase', extra: { customerId } })
+    reportSideEffectFailure(err, { area: 'billing', step: 'promo_prior_purchase', extra: { customerId } })
     ttl = PROMO_CHECK_ERROR_TTL_MS
   }
   priorPurchaseCache.set(customerId, { prior, until: now.getTime() + ttl })

@@ -10,16 +10,18 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { toast } from 'sonner'
 import { renderWithProviders as render } from '@/tests/test-utils'
+import { useReferralDashboard } from '@/hooks/queries/use-referral-dashboard'
 import { BillingSettings } from '../billing-settings'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
 
 const mockUpdate = vi.fn()
 const mockReplace = vi.fn()
+const mockRefresh = vi.fn()
 let searchParamsValue = new URLSearchParams()
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: mockReplace, push: vi.fn() }),
+  useRouter: () => ({ replace: mockReplace, push: vi.fn(), refresh: mockRefresh }),
   usePathname: () => '/configuracoes',
   useSearchParams: () => searchParamsValue,
 }))
@@ -30,6 +32,12 @@ vi.mock('next-auth/react', () => ({
   useSession: () => ({ data: null, status: 'authenticated', update: mockUpdate }),
 }))
 
+function ReferralProbe() {
+  const { data } = useReferralDashboard()
+  if (!data) return null
+  return <p data-testid="referral-probe">{data.subscribeToUnlock ? 'locked' : 'sharing'}</p>
+}
+
 // ─── Fixtures ──────────────────────────────────────────────────────
 
 const USAGE_RESPONSE = {
@@ -39,7 +47,7 @@ const USAGE_RESPONSE = {
     // would silently become "past" and change what the component renders.
     currentPeriodEnd: '2999-01-01T00:00:00.000Z',
     stripeSubscriptionId: 'sub_123',
-    hasStripeCustomer: true,
+    hasPaid: true,
     source: 'stripe',
   },
   plan: { name: 'Pro', slug: 'pro', priceCents: 9900, features: {} },
@@ -124,6 +132,30 @@ describe('BillingSettings payment race', () => {
     })
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
+  })
+
+  it('refreshes the Indique e Ganhe dashboard once the payment is confirmed', async () => {
+    searchParamsValue = new URLSearchParams('session_id=cs_test_123')
+    let referralFetches = 0
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url === '/api/referral') {
+        referralFetches += 1
+        return { ok: true, status: 200, json: async () => ({ subscribeToUnlock: referralFetches === 1 }) } as Response
+      }
+      if (url === '/api/billing/usage') return { ok: true, json: async () => USAGE_RESPONSE } as Response
+      if (url === '/api/billing/plans') return { ok: true, json: async () => PLANS_RESPONSE } as Response
+      if (url === '/api/billing/confirm') return { ok: true, json: async () => ({ activated: true }) } as Response
+      throw new Error(`unexpected fetch: ${url}`)
+    }))
+
+    render(
+      <>
+        <ReferralProbe />
+        <BillingSettings />
+      </>,
+    )
+
+    await waitFor(() => expect(screen.getByTestId('referral-probe')).toHaveTextContent('sharing'))
   })
 
   it('removes session_id from the URL after confirming', async () => {
@@ -409,7 +441,7 @@ describe('BillingSettings: referral program', () => {
   }
   const TRIAL_USAGE = {
     ...USAGE_RESPONSE,
-    subscription: { ...USAGE_RESPONSE.subscription, status: 'trialing', stripeSubscriptionId: null, hasStripeCustomer: false },
+    subscription: { ...USAGE_RESPONSE.subscription, status: 'trialing', stripeSubscriptionId: null, hasPaid: false },
     plan: { name: 'Starter', slug: 'starter', priceCents: 9900, features: {} },
   }
   const PLANS = { data: [{ id: 'p1', slug: 'starter', name: 'Starter', priceCents: 9900, features: {}, limits: {} }] }
@@ -443,12 +475,50 @@ describe('BillingSettings: referral program', () => {
   })
 
   it('shows the offer banner and the struck plan price', async () => {
-    setup([{ ...TRIAL_USAGE, referral: { offer: OFFER, canEnterCode: false } }])
-    expect(await screen.findByTestId('referral-offer-banner')).toHaveTextContent(OFFER.headline)
+    setup([{ ...TRIAL_USAGE, offer: OFFER, referral: { canEnterCode: false } }])
+    expect(await screen.findByTestId('referral-offer-banner')).toHaveTextContent(
+      `${OFFER.headline} Aplicado automaticamente no pagamento.`,
+    )
     const price = await screen.findByTestId('referral-plan-price')
     expect(price).toHaveTextContent('R$ 99,00')
     expect(price).toHaveTextContent('R$ 79,20/mês')
     expect(price).toHaveTextContent('nos 2 primeiros meses')
+  })
+
+  // Regression: when Stripe refused the shown discount, checkout opened at full price; now it answers 409 and the
+  // page reloads the offer so the clinic sees the real price.
+  it('shows the 409 message and reloads the offers when the discount is no longer available', async () => {
+    const message = 'O desconto não está mais disponível. Confira o novo valor e tente de novo.'
+    const fetchMock = setup([{ ...TRIAL_USAGE, subscription: { ...TRIAL_USAGE.subscription, status: 'expired' }, offer: OFFER, referral: { canEnterCode: false } }])
+    const checkout = vi.fn(async () => new Response(JSON.stringify({ error: message, code: 'discount_unavailable' }), { status: 409 }))
+    const base = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) =>
+      url === '/api/billing/checkout' ? checkout() : base(url, init),
+    )
+    fireEvent.click(await screen.findByRole('button', { name: 'Assinar' }))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
+    expect(mockRefresh).toHaveBeenCalled()
+    await waitFor(() => expect(usageCalls(fetchMock)).toBe(2))
+  })
+
+  it('shows the feedback offer banner and its struck plan price (what checkout charges)', async () => {
+    const feedback = {
+      kind: 'feedback',
+      label: '50% de desconto nos 3 primeiros meses',
+      percentOff: 50,
+      amountOffCents: null,
+      duration: 'repeating',
+      durationInMonths: 3,
+      planSlugs: ['starter'],
+      headline: 'Obrigado pelo feedback: 50% de desconto nos 3 primeiros meses.',
+    }
+    setup([{ ...TRIAL_USAGE, offer: feedback, referral: { canEnterCode: false } }])
+    expect(await screen.findByTestId('feedback-offer-banner')).toHaveTextContent(feedback.headline)
+    const price = await screen.findByTestId('referral-plan-price')
+    expect(price).toHaveTextContent('R$ 99,00')
+    expect(price).toHaveTextContent('R$ 49,50/mês')
+    expect(price).toHaveTextContent('nos 3 primeiros meses')
   })
 
   it('renders the referral discount line', async () => {
@@ -467,8 +537,8 @@ describe('BillingSettings: referral program', () => {
   it('posts the code to attach, refetches usage and drops the card', async () => {
     const m = setup(
       [
-        { ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } },
-        { ...TRIAL_USAGE, referral: { offer: OFFER, canEnterCode: false } },
+        { ...TRIAL_USAGE, referral: { canEnterCode: true } },
+        { ...TRIAL_USAGE, offer: OFFER, referral: { canEnterCode: false } },
       ],
       () => ({ ok: true, status: 200, json: async () => ({ status: 'trial' }) }) as Response,
     )
@@ -485,7 +555,7 @@ describe('BillingSettings: referral program', () => {
   })
 
   it('pre-fills the code field from the link cookie, still editable', async () => {
-    setup([{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true, linkCode: 'MECA7K' } }])
+    setup([{ ...TRIAL_USAGE, referral: { canEnterCode: true, linkCode: 'MECA7K' } }])
     const input = await screen.findByLabelText('Código de indicação')
     expect(input).toHaveValue('MECA7K')
     fireEvent.change(input, { target: { value: '' } })
@@ -495,7 +565,7 @@ describe('BillingSettings: referral program', () => {
 
   it('explains an ineligible referral', async () => {
     setup(
-      [{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } }],
+      [{ ...TRIAL_USAGE, referral: { canEnterCode: true } }],
       () => ({ ok: true, status: 200, json: async () => ({ status: 'ineligible' }) }) as Response,
     )
     fireEvent.change(await screen.findByLabelText('Código de indicação'), { target: { value: 'MECA7K' } })
@@ -507,7 +577,7 @@ describe('BillingSettings: referral program', () => {
 
   it('shows the server message on a 400', async () => {
     setup(
-      [{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: true } }],
+      [{ ...TRIAL_USAGE, referral: { canEnterCode: true } }],
       () => ({ ok: false, status: 400, json: async () => ({ error: 'Código inválido' }) }) as Response,
     )
     fireEvent.change(await screen.findByLabelText('Código de indicação'), { target: { value: 'XXXX' } })
@@ -516,7 +586,7 @@ describe('BillingSettings: referral program', () => {
   })
 
   it('hides the code card when the program is off', async () => {
-    setup([{ ...TRIAL_USAGE, referral: { offer: null, canEnterCode: false } }])
+    setup([{ ...TRIAL_USAGE, referral: { canEnterCode: false } }])
     await screen.findByText('Plano atual')
     expect(screen.queryByText('Tem um código de indicação?')).toBeNull()
   })

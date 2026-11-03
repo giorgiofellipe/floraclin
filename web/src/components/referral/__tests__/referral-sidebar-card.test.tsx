@@ -60,7 +60,7 @@ describe('ReferralSidebarCard', () => {
 
   it.each([
     ['the program is off for the clinic', 404, {}],
-    ['a gifted clinic, which can neither share nor subscribe', 200, { ...TRIAL, subscribeToUnlock: false }],
+    ['a clinic that can neither share nor subscribe, such as one fixing a failed payment', 200, { ...TRIAL, subscribeToUnlock: false }],
     ['enrollment closed (only the dashboard stays)', 200, { ...PAYING, enrollmentOpen: false, link: null }],
   ])('renders nothing when %s', async (_n, status, body) => {
     respond(status, body)

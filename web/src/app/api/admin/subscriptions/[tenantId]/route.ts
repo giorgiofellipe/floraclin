@@ -3,6 +3,7 @@ import { requirePlatformAdmin } from '@/lib/auth'
 import {
   getSubscription,
   getPlanBySlug,
+  getUserFullName,
   updateSubscriptionPeriod,
   updateSubscriptionPlan,
   updateSubscriptionStatus,
@@ -14,6 +15,7 @@ import { STRIPE_UNAVAILABLE_MESSAGE, stripeStateFor } from '@/lib/admin-stripe-s
 import { getCreditUsage } from '@/db/queries/whatsapp-credits'
 import { createAuditLog } from '@/lib/audit'
 import { handleApiError } from '@/lib/api-error'
+import type { AdminFeedbackDiscount } from '@/lib/feedback-eligibility'
 
 export async function GET(
   req: Request,
@@ -28,10 +30,18 @@ export async function GET(
       return NextResponse.json({ error: 'Subscription not found' }, { status: 404 })
     }
 
-    const [creditUsage, state] = await Promise.all([getCreditUsage(tenantId), stripeStateFor(subscription)])
+    const grantedBy = subscription.feedbackDiscountGrantedBy
+    const [creditUsage, state, grantedByName] = await Promise.all([
+      getCreditUsage(tenantId),
+      stripeStateFor(subscription),
+      grantedBy ? getUserFullName(grantedBy) : Promise.resolve(null),
+    ])
     const stripeState = state === 'unavailable' ? null : state
+    const feedbackDiscount: AdminFeedbackDiscount | null = subscription.feedbackDiscountGrantedAt
+      ? { grantedAt: subscription.feedbackDiscountGrantedAt.toISOString(), grantedBy, grantedByName }
+      : null
 
-    return NextResponse.json({ data: { ...subscription, creditUsage, stripeState } })
+    return NextResponse.json({ data: { ...subscription, creditUsage, stripeState, feedbackDiscount } })
   } catch (error) {
     return handleApiError(error, req)
   }

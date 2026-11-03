@@ -1,3 +1,5 @@
+import { isStripeDriven, isSubscriptionRowActive } from '@/lib/subscription-access'
+
 type Env = Record<string, string | undefined>
 export type ReferrerCouponIds = Readonly<Record<20 | 40 | 60 | 80 | 100, string>>
 
@@ -71,7 +73,17 @@ export function isReferrerCoupon(
   return ids !== null && Object.values(ids).includes(coupon.id)
 }
 
-/** Whether a tenant may hold an active link: paying through Stripe with an active local status. */
-export function canRefer(row: { source?: string | null; status: string } | null | undefined): boolean {
-  return row?.source === 'stripe' && row.status === 'active'
+type ReferrerRow = { source?: string | null; status: string; currentPeriodEnd?: Date | string | null }
+
+/** Whether a tenant may hold an active link: paying through Stripe, or on a running gift or admin grant. */
+export function canRefer(row: ReferrerRow | null | undefined, now: Date = new Date()): boolean {
+  if (row?.status !== 'active') return false
+  if (isStripeDriven(row)) return true
+  return (row.source === 'gift' || row.source === 'admin') && isSubscriptionRowActive({ ...row, currentPeriodEnd: row.currentPeriodEnd ?? null }, now)
+}
+
+/** Subscribing would unlock the link. A live Stripe row (failed payment, Stripe trial) has nothing to subscribe to. */
+export function subscribingUnlocksReferral(row: ReferrerRow | null | undefined): boolean {
+  if (!row || canRefer(row)) return false
+  return !(isStripeDriven(row) && (row.status === 'past_due' || row.status === 'trialing'))
 }

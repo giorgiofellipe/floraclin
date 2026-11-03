@@ -177,18 +177,3 @@ export function publicReferralOffer(o: ValidatedReferralOffer | null): PublicRef
     planSlugs: o.planSlugs,
   }
 }
-
-export type CheckoutDiscountChoice =
-  | { kind: 'winback'; promotionCodeId: string }
-  | { kind: 'referral'; promotionCodeId: string }
-  | { kind: null; promotionCodeId: null }
-
-/** Exactly one coupon; VOLTA30 wins. */
-export function chooseCheckoutDiscount(
-  winback: { promotionCodeId: string } | null,
-  referral: { promotionCodeId: string } | null,
-): CheckoutDiscountChoice {
-  if (winback) return { kind: 'winback', promotionCodeId: winback.promotionCodeId }
-  if (referral) return { kind: 'referral', promotionCodeId: referral.promotionCodeId }
-  return { kind: null, promotionCodeId: null }
-}

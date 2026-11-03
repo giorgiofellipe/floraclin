@@ -16,6 +16,13 @@ export const queryKeys = {
     practitioners: ['appointments', 'practitioners'] as const,
     procedureTypes: ['appointments', 'procedureTypes'] as const,
   },
+  nfse: {
+    all: ['nfse'] as const,
+    certificate: ['nfse', 'certificate'] as const,
+    settings: ['nfse', 'settings'] as const,
+    status: ['nfse', 'status'] as const,
+    preview: (paymentRecordIds: string[]) => ['nfse', 'preview', paymentRecordIds] as const,
+  },
   financial: {
     all: ['financial'] as const,
     entries: (filters?: Record<string, unknown>) => ['financial', 'entries', filters] as const,

@@ -68,6 +68,7 @@ beforeEach(() => {
     financialEntryId: 'fe-1',
     firstInstallmentId: 'inst-1',
   })
+  vi.mocked(recordPayment).mockResolvedValue({ nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } } as never)
 })
 
 describe('POST /api/encounters/[id]/finalize card payment', () => {

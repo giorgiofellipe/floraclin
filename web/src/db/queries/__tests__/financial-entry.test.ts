@@ -27,6 +27,10 @@ function chain(result: unknown) {
 
 const dbMock = { select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
+vi.mock('@/db/queries/nfse', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/db/queries/nfse')>()),
+  listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
+}))
 
 const sumCardFeesForPeriodMock = vi.fn()
 const getCardPaymentSummariesMock = vi.fn()

@@ -51,13 +51,14 @@ function pageState(data: ReferralDashboardResponse): ReferralPageState {
   return data.link ? 'sharing' : 'inactive'
 }
 
-function useTrackPageView(data: ReferralDashboardResponse | null | undefined) {
+function useTrackPageView(data: ReferralDashboardResponse | null | undefined, isFetching: boolean) {
   const tracked = useRef(false)
   useEffect(() => {
-    if (!data || tracked.current) return
+    // The cached state shows while the mount refetch runs; record the one it settles on.
+    if (!data || isFetching || tracked.current) return
     tracked.current = true
     track('referral_page_viewed', { source: takePageSource(), state: pageState(data), counting: data.progress.counting })
-  }, [data])
+  }, [data, isFetching])
 }
 
 async function copy(text: string, message: string) {
@@ -166,8 +167,8 @@ const HOW_IT_WORKS = [
 ]
 
 export function ReferralSettings() {
-  const { data, isLoading, isError } = useReferralDashboard()
-  useTrackPageView(data)
+  const { data, isLoading, isError, isFetching } = useReferralDashboard()
+  useTrackPageView(data, isFetching)
 
   if (isLoading) return <Skeleton className="h-64 w-full" />
   if (isError || !data) {
