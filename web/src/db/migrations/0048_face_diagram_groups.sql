@@ -121,5 +121,29 @@ DO $$ BEGIN
   WHERE fd."group_id" IS NULL
     AND fd."procedure_session_id" IS NOT NULL
     AND g."procedure_session_id" = fd."procedure_session_id";
+
+  -- Legacy planning rows had no per-view unique index, so a group can hold several
+  -- rows per view. Keep the newest and move the older rows' points onto it.
+  WITH ranked AS (
+    SELECT fd."id", first_value(fd."id") OVER (
+      PARTITION BY fd."group_id", fd."view_type"
+      ORDER BY fd."updated_at" DESC, fd."created_at" DESC, fd."id" DESC
+    ) AS keep_id
+    FROM "floraclin"."face_diagrams" fd
+    WHERE fd."group_id" IS NOT NULL
+  )
+  UPDATE "floraclin"."diagram_points" dp
+  SET "face_diagram_id" = r.keep_id
+  FROM ranked r
+  WHERE dp."face_diagram_id" = r."id" AND r."id" <> r.keep_id;
+
+  DELETE FROM "floraclin"."face_diagrams" fd
+  WHERE fd."group_id" IS NOT NULL
+    AND EXISTS (
+      SELECT 1 FROM "floraclin"."face_diagrams" newer
+      WHERE newer."group_id" = fd."group_id"
+        AND newer."view_type" = fd."view_type"
+        AND (newer."updated_at", newer."created_at", newer."id") > (fd."updated_at", fd."created_at", fd."id")
+    );
   END IF;
 END $$;

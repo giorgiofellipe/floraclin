@@ -292,7 +292,6 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
           )
         ),
 
-      // Quotation PDFs generated from face diagrams
       db
         .select({
           id: faceDiagramQuotes.id,

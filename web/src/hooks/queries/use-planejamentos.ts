@@ -7,10 +7,6 @@ import type {
   FollowupOutcome,
 } from '@/validations/followup'
 
-/**
- * Row shape returned by GET /api/planejamentos. Mirrors
- * `OpenPlanejamentoRow` from `web/src/db/queries/followups.ts`.
- */
 export type PlanejamentoKind = 'procedure' | 'diagram_quote'
 
 const followupsUrl = (kind: PlanejamentoKind, id: string) =>
@@ -23,6 +19,10 @@ const snoozeUrl = (kind: PlanejamentoKind, id: string) =>
     ? `/api/face-diagram-groups/${id}/snooze`
     : `/api/procedures/${id}/snooze`
 
+/**
+ * Row shape returned by GET /api/planejamentos. Mirrors
+ * `OpenPlanejamentoRow` from `web/src/db/queries/followups.ts`.
+ */
 export interface OpenPlanejamento {
   kind: PlanejamentoKind
   href: string

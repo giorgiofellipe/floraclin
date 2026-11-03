@@ -307,6 +307,7 @@ export const faceDiagrams = floraclinSchema.table('face_diagrams', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_face_diagrams_group').on(table.groupId),
+  uniqueIndex('uq_face_diagrams_group_view').on(table.groupId, table.viewType),
 ])
 
 export const diagramPoints = floraclinSchema.table('diagram_points', {

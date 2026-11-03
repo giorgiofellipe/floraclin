@@ -36,6 +36,7 @@ export function useUpdateProcedure() {
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.procedures.detail(variables.id) })
+      queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
     },
   })
 }

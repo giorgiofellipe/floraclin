@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { brToday, parseBrDate } from '@/lib/dates'
+import { brToday, formatBrDate, parseBrDate } from '@/lib/dates'
 import type { OpenPlanejamento } from '@/hooks/queries/use-planejamentos'
 
 import { FollowupModal } from './followup-modal'
@@ -149,7 +149,7 @@ export function PlanejamentosTable({
                       {showSnoozeBadge && isSnoozed && row.snoozedUntil && (
                         <span className="ml-2 inline-flex items-center gap-1 text-amber-mid">
                           <PauseCircle className="h-3 w-3" />
-                          até {new Date(row.snoozedUntil).toLocaleDateString('pt-BR')}
+                          até {formatBrDate(parseBrDate(row.snoozedUntil))}
                         </span>
                       )}
                     </div>

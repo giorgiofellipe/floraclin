@@ -19,7 +19,6 @@ const point = (id: string, diagramId: string) => ({ id, faceDiagramId: diagramId
 
 describe('getFaceDiagram', () => {
   it('reads through the groups of the record, planning and session alike', async () => {
-    // Regression: diagrams migrated into groups must still show in detail, approval and prontuario.
     const capture: Capture = {}
     selectMock
       .mockReturnValueOnce(
@@ -47,8 +46,7 @@ describe('getFaceDiagram', () => {
 })
 
 describe('getPreviousDiagramPoints', () => {
-  it('lets standalone groups through while excluding the current procedure', async () => {
-    // Regression: `ne` alone drops groups with a null procedure, hiding standalone diagrams from the ghost overlay.
+  it('only considers applied groups and excludes the current procedure', async () => {
     const capture: Capture = {}
     subquery()
     selectMock.mockReturnValueOnce(chainCapturing([], capture))
@@ -56,12 +54,12 @@ describe('getPreviousDiagramPoints', () => {
     await getPreviousDiagramPoints('tenant-1', 'patient-1', 'rec-1')
 
     const { sql, params } = new PgDialect().sqlToQuery(capture.where as SQL)
-    expect(params).toEqual(expect.arrayContaining(['tenant-1', 'patient-1', 'rec-1']))
-    expect(sql).toMatch(/"procedure_record_id" is null or .*"procedure_record_id" <> \$/)
+    expect(params).toEqual(expect.arrayContaining(['tenant-1', 'patient-1', 'completed', 'rec-1']))
+    expect(sql).toMatch(/"procedure_session_id" is not null or "floraclin"."procedure_records"."status" = \$/)
+    expect(sql).toMatch(/"face_diagram_groups"."procedure_record_id" <> \$/)
   })
 
   it('returns every view of the latest group with its view type', async () => {
-    // Regression: profile points were collapsed into the front view.
     subquery()
     selectMock
       .mockReturnValueOnce(chain([{ id: 'g1' }]))

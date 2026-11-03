@@ -13,7 +13,7 @@ import {
 const dbMock = vi.hoisted(() => ({}) as Record<string, unknown>)
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
-import { faceDiagramGroups, patients, procedureRecords, procedureTypes } from '@/db/schema'
+import { faceDiagramGroups, faceDiagrams, patients, procedureRecords, procedureTypes } from '@/db/schema'
 import {
   DiagramGroupLockedError,
   DiagramGroupNotFoundError,
@@ -24,6 +24,7 @@ import {
   linkGroupToProcedure,
   releaseStandaloneGroups,
   updateStandaloneGroup,
+  writeGroupView,
 } from '../face-diagram-groups'
 import { cancelProcedure } from '../procedures'
 
@@ -72,7 +73,7 @@ const line = { procedureTypeId: BOTOX_ID, procedureTypeName: 'Nome do cliente', 
 
 describe('updateStandaloneGroup', () => {
   it('refuses to edit a quotation whose procedure is already approved', async () => {
-    // Regression: editing the diagram after approval would change what the patient signed.
+    // editing the diagram after approval would change what the patient signed.
     const { tx, log } = worldTx({ group: { procedureRecordId: 'rec-1' }, procedureStatus: 'approved' })
 
     await expect(
@@ -89,7 +90,7 @@ describe('updateStandaloneGroup', () => {
   })
 
   it('rejects a quotation line whose procedure type is not an active type of the tenant', async () => {
-    // Regression: the client could price a foreign or deleted procedure type.
+    // the client could price a foreign or deleted procedure type.
     const { tx, log } = worldTx({ group: { procedureRecordId: null }, procedureTypes: [] })
     await expect(
       updateStandaloneGroup(tx, { tenantId: TENANT, groupId: GROUP, views: [], quotationLines: [line] }),
@@ -136,7 +137,7 @@ describe('linkGroupToProcedure', () => {
   })
 
   it('locks the patient row before reading the other open atendimentos', async () => {
-    // Regression: two concurrent links for one patient both passed the open-procedure check.
+    // two concurrent links for one patient both passed the open-procedure check.
     const { tx, log } = worldTx({ group: { procedureRecordId: null }, patientRecords: [{ id: 'new-rec', status: 'draft' }] })
     await linkGroupToProcedure(tx, input)
 
@@ -153,7 +154,7 @@ describe('linkGroupToProcedure', () => {
   })
 
   it('refuses a group already in service', async () => {
-    // Regression: two tabs attaching the same quotation to two atendimentos.
+    // two tabs attaching the same quotation to two atendimentos.
     const { tx, log } = worldTx({ group: { procedureRecordId: 'rec-1' }, procedureStatus: 'in_progress' })
     await expect(linkGroupToProcedure(tx, input)).rejects.toBeInstanceOf(DiagramGroupLockedError)
     expect(writes(log)).toHaveLength(0)
@@ -166,7 +167,7 @@ describe('linkGroupToProcedure', () => {
   })
 
   it('refuses when the patient has another open atendimento', async () => {
-    // Regression: a crafted URL attaching a quote to a second atendimento.
+    // a crafted URL attaching a quote to a second atendimento.
     const { tx, log } = worldTx({
       group: { procedureRecordId: null },
       patientRecords: [
@@ -176,6 +177,25 @@ describe('linkGroupToProcedure', () => {
     })
     await expect(linkGroupToProcedure(tx, input)).rejects.toBeInstanceOf(DiagramGroupLockedError)
     expect(writes(log)).toHaveLength(0)
+  })
+})
+
+describe('writeGroupView', () => {
+  it('does not create an empty view row when the view has no points', async () => {
+    const { tx, log } = routedTx(() => [])
+    await writeGroupView(tx as never, TENANT, GROUP, 'left_profile', [])
+
+    expect(writes(log)).toHaveLength(0)
+  })
+
+  it('removes the stored view when all its points were cleared', async () => {
+    const { tx, log } = routedTx((q: LoggedQuery) => (q.op === 'select' ? [{ id: 'view-1' }] : []))
+    await writeGroupView(tx as never, TENANT, GROUP, 'left_profile', [])
+
+    const w = writes(log)
+    expect(w).toHaveLength(1)
+    expect(w[0].op).toBe('delete')
+    expect(tableOf(w[0])).toBe(faceDiagrams)
   })
 })
 
@@ -196,13 +216,12 @@ describe('ensurePlanningGroup', () => {
 
 describe('releaseStandaloneGroups', () => {
   it('only releases standalone planning groups of the given records', async () => {
-    // Regression: a cancelled atendimento must not detach a wizard group.
     const { tx, log } = routedTx(() => [{ id: 'g1' }])
-    const count = await releaseStandaloneGroups(tx as never, TENANT, ['rec-1'])
+    const released = await releaseStandaloneGroups(tx as never, TENANT, ['rec-1'])
 
     const update = log.find((q) => q.op === 'update')!
     const { sql, params } = new PgDialect().sqlToQuery(update.capture.where as SQL)
-    expect(count).toBe(1)
+    expect(released).toEqual(['g1'])
     expect(params).toEqual(expect.arrayContaining([TENANT, 'rec-1', 'standalone']))
     expect(sql).toContain('"procedure_session_id" is null')
     expect(update.capture.value).toMatchObject({ procedureRecordId: null })
@@ -239,7 +258,7 @@ describe('getDiagramGroup', () => {
   }
 
   it('hides groups of a deleted patient', async () => {
-    // Regression: a deleted patient's diagrams stayed reachable by direct id.
+    // a deleted patient's diagrams stayed reachable by direct id.
     const log = useDb(null)
     await getDiagramGroup(TENANT, GROUP)
 
@@ -248,7 +267,7 @@ describe('getDiagramGroup', () => {
   })
 
   it('shows no quotation total on a session group', async () => {
-    // Regression: a session showed the whole package total as if it were its own price.
+    // a session showed the whole package total as if it were its own price.
     useDb({ ...groupRow, procedureSessionId: 'session-1' })
     expect((await getDiagramGroup(TENANT, GROUP))?.quotationTotal).toBeNull()
   })

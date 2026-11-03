@@ -21,12 +21,34 @@ async function mutateJson(url: string, method: string, data: unknown) {
   return res.json()
 }
 
+async function postJson<T>(url: string, fallbackError: string): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(url, { method: 'POST' })
+  } catch {
+    throw new Error(`${fallbackError}. Verifique sua conexão e tente novamente.`)
+  }
+  const json = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(json.error || fallbackError)
+  return json.data
+}
+
 function useInvalidateGroups() {
   const queryClient = useQueryClient()
   return () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all }),
       queryClient.invalidateQueries({ queryKey: ['planejamentos'] }),
+    ])
+}
+
+function useInvalidateQuotes() {
+  const queryClient = useQueryClient()
+  const invalidateGroups = useInvalidateGroups()
+  return (patientId: string) =>
+    Promise.all([
+      invalidateGroups(),
+      queryClient.invalidateQueries({ queryKey: queryKeys.patients.timeline(patientId) }),
     ])
 }
 
@@ -50,5 +72,29 @@ export function useUpdateDiagramGroup() {
     mutationFn: ({ id, ...body }: { id: string } & z.input<typeof updateDiagramGroupSchema>) =>
       mutateJson(`/api/face-diagram-groups/${id}`, 'PUT', body),
     onSuccess: invalidate,
+  })
+}
+
+export function useGenerateDiagramQuote() {
+  const invalidate = useInvalidateQuotes()
+  return useMutation({
+    mutationFn: ({ groupId }: { groupId: string; patientId: string }) =>
+      postJson<{ id: string; url: string }>(
+        `/api/face-diagram-groups/${groupId}/quotes`,
+        'Falha ao gerar orçamento',
+      ),
+    onSuccess: (_data, { patientId }) => invalidate(patientId),
+  })
+}
+
+export function useSendDiagramQuoteWhatsapp() {
+  const invalidate = useInvalidateQuotes()
+  return useMutation({
+    mutationFn: ({ quoteId }: { quoteId: string; patientId: string }) =>
+      postJson<{ queued?: boolean } | undefined>(
+        `/api/face-diagram-quotes/${quoteId}/send-whatsapp`,
+        'Falha ao enviar via WhatsApp',
+      ),
+    onSuccess: (_data, { patientId }) => invalidate(patientId),
   })
 }

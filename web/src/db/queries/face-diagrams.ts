@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { faceDiagrams, faceDiagramGroups, diagramPoints } from '@/db/schema'
-import { and, desc, eq, exists, isNull, ne, or, sql } from 'drizzle-orm'
+import { faceDiagrams, faceDiagramGroups, diagramPoints, procedureRecords } from '@/db/schema'
+import { and, desc, eq, exists, isNotNull, isNull, ne, or, sql } from 'drizzle-orm'
 import type { DiagramViewType } from '@/types'
 import {
   ensureSessionGroup,
@@ -45,17 +45,13 @@ export interface DiagramPointInput {
 
 // ─── Queries ────────────────────────────────────────────────────────
 
-/**
- * Upserts one view of a group and replaces its points. The group row is
- * locked first because there is no unique index on (group_id, view_type).
- */
 export async function saveFaceDiagram(
   tenantId: string,
   groupId: string,
   viewType: DiagramViewType,
   points: DiagramPointInput[],
   txDb: typeof db = db
-): Promise<string> {
+): Promise<string | null> {
   const group = await lockDiagramGroup(txDb, tenantId, groupId)
   if (!group) throw new Error('Diagrama não encontrado')
   return writeGroupView(txDb, tenantId, groupId, viewType, points)
@@ -72,7 +68,8 @@ export async function saveFaceDiagramForSession(
   viewType: DiagramViewType,
   points: DiagramPointInput[],
   txDb: typeof db = db
-): Promise<string> {
+): Promise<string | null> {
+  if (points.length === 0) return null
   const groupId = await ensureSessionGroup(txDb, { tenantId, ...input })
   return saveFaceDiagram(tenantId, groupId, viewType, points, txDb)
 }
@@ -117,9 +114,8 @@ export async function getFaceDiagram(
 }
 
 /**
- * Every view of the patient's latest diagram group that has points, for the
- * ghost overlay in the editor. Standalone groups count; groups linked to
- * `excludeProcedureId` do not.
+ * Every view of the patient's latest applied diagram group (a session, or the
+ * planning of a completed procedure), for the ghost overlay in the editor.
  */
 export async function getPreviousDiagramPoints(
   tenantId: string,
@@ -130,6 +126,11 @@ export async function getPreviousDiagramPoints(
     eq(faceDiagramGroups.tenantId, tenantId),
     eq(faceDiagramGroups.patientId, patientId),
     isNull(faceDiagramGroups.deletedAt),
+    isNull(procedureRecords.deletedAt),
+    or(
+      isNotNull(faceDiagramGroups.procedureSessionId),
+      eq(procedureRecords.status, 'completed'),
+    )!,
     exists(
       db
         .select({ one: sql`1` })
@@ -139,17 +140,13 @@ export async function getPreviousDiagramPoints(
     ),
   ]
   if (excludeProcedureId) {
-    conditions.push(
-      or(
-        isNull(faceDiagramGroups.procedureRecordId),
-        ne(faceDiagramGroups.procedureRecordId, excludeProcedureId)
-      )!
-    )
+    conditions.push(ne(faceDiagramGroups.procedureRecordId, excludeProcedureId))
   }
 
   const [latest] = await db
     .select({ id: faceDiagramGroups.id })
     .from(faceDiagramGroups)
+    .innerJoin(procedureRecords, eq(procedureRecords.id, faceDiagramGroups.procedureRecordId))
     .where(and(...conditions))
     .orderBy(desc(faceDiagramGroups.createdAt))
     .limit(1)

@@ -62,7 +62,29 @@ DO $$ BEGIN
     AND g."procedure_session_id" = fd."procedure_session_id";
   END IF;
 END $$;--> statement-breakpoint
+-- Same merge as 0048, for duplicate views old code wrote after 0048 ran.
+WITH ranked AS (
+  SELECT fd."id", first_value(fd."id") OVER (
+    PARTITION BY fd."group_id", fd."view_type"
+    ORDER BY fd."updated_at" DESC, fd."created_at" DESC, fd."id" DESC
+  ) AS keep_id
+  FROM "floraclin"."face_diagrams" fd
+  WHERE fd."group_id" IS NOT NULL
+)
+UPDATE "floraclin"."diagram_points" dp
+SET "face_diagram_id" = r.keep_id
+FROM ranked r
+WHERE dp."face_diagram_id" = r."id" AND r."id" <> r.keep_id;--> statement-breakpoint
+DELETE FROM "floraclin"."face_diagrams" fd
+WHERE fd."group_id" IS NOT NULL
+  AND EXISTS (
+    SELECT 1 FROM "floraclin"."face_diagrams" newer
+    WHERE newer."group_id" = fd."group_id"
+      AND newer."view_type" = fd."view_type"
+      AND (newer."updated_at", newer."created_at", newer."id") > (fd."updated_at", fd."created_at", fd."id")
+  );--> statement-breakpoint
 ALTER TABLE "floraclin"."face_diagrams" ALTER COLUMN "group_id" SET NOT NULL;--> statement-breakpoint
 DROP INDEX IF EXISTS "floraclin"."uq_face_diagrams_session_view";--> statement-breakpoint
 ALTER TABLE "floraclin"."face_diagrams" DROP COLUMN IF EXISTS "procedure_session_id";--> statement-breakpoint
-ALTER TABLE "floraclin"."face_diagrams" DROP COLUMN IF EXISTS "procedure_record_id";
+ALTER TABLE "floraclin"."face_diagrams" DROP COLUMN IF EXISTS "procedure_record_id";--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_face_diagrams_group_view" ON "floraclin"."face_diagrams" ("group_id", "view_type");

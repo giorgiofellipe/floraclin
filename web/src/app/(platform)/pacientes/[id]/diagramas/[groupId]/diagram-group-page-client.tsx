@@ -23,7 +23,7 @@ export function DiagramGroupPageClient({ patientId, groupId, role }: DiagramGrou
 
   return (
     <div className="p-4 md:p-6">
-      <DiagramGroupEditor key={group.updatedAt} patient={patient} group={group} role={role} />
+      <DiagramGroupEditor key={group.id} patient={patient} group={group} role={role} />
     </div>
   )
 }

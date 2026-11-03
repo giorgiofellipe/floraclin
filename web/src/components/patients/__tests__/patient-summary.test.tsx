@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { screen, fireEvent } from '@testing-library/react'
 import { renderWithProviders } from '@/tests/test-utils'
+import { SubscriptionAccessProvider } from '@/components/layout/subscription-access'
 import { PatientSummary } from '../patient-summary'
 
 const mocks = vi.hoisted(() => ({
@@ -8,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   finance: vi.fn(),
 }))
 
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 vi.mock('@/hooks/queries/use-face-diagram-groups', () => ({
   usePatientDiagramGroups: () => mocks.groups(),
 }))
@@ -71,5 +73,18 @@ describe('PatientSummary', () => {
     mocks.finance.mockReturnValue({ data: undefined, isLoading: false, isError: true })
     renderWithProviders(<PatientSummary patientId="p1" role="owner" onNavigate={vi.fn()} />)
     expect(screen.getByText('Não foi possível carregar o financeiro.')).toBeInTheDocument()
+  })
+
+  it('blocks Novo diagrama while the subscription is read-only', () => {
+    mocks.groups.mockReturnValue({ data: [], isLoading: false })
+    renderWithProviders(
+      <SubscriptionAccessProvider readOnly reason="trial" tenantId="t1" canSubscribe plans={[]}>
+        <PatientSummary patientId="p1" role="owner" onNavigate={vi.fn()} />
+      </SubscriptionAccessProvider>,
+    )
+    expect(screen.getAllByRole('button', { name: 'Novo diagrama' })[0]).toHaveAttribute(
+      'aria-disabled',
+      'true',
+    )
   })
 })

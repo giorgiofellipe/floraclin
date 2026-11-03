@@ -26,11 +26,12 @@ import {
 import { buildEvaluationResponseSchema } from '@/lib/validations/build-evaluation-schema'
 import { FormServerErrorBanner } from '@/components/forms/form-server-error-banner'
 import { toast } from 'sonner'
-import type { DiagramViewType, PaymentMethod, QuantityUnit } from '@/types'
+import type { PaymentMethod, QuantityUnit } from '@/types'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints, pointsToViews } from '@/components/face-diagram/points'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import type { EncounterCart } from '@/validations/encounter-cart'
@@ -155,31 +156,6 @@ function Section({
       </div>
     </Card>
   )
-}
-
-// ─── Helper: derive initial diagram points from existing diagrams ──
-
-function diagramsToPoints(existing: DiagramWithPoints[] | undefined): DiagramPointData[] {
-  if (!existing || existing.length === 0) return []
-  const allPoints: DiagramPointData[] = []
-  for (const d of existing) {
-    for (const p of d.points) {
-      allPoints.push({
-        id: p.id,
-        x: parseFloat(p.x),
-        y: parseFloat(p.y),
-        viewType: d.viewType || 'front',
-        productName: p.productName,
-        activeIngredient: p.activeIngredient ?? undefined,
-        quantity: parseFloat(p.quantity),
-        quantityUnit: p.quantityUnit as QuantityUnit,
-        technique: p.technique ?? undefined,
-        depth: p.depth ?? undefined,
-        notes: p.notes ?? undefined,
-      })
-    }
-  }
-  return allPoints
 }
 
 function evalResponsesToMap(
@@ -642,33 +618,8 @@ export function ProcedureForm({
           pendingFinalValidationRef.current = false
         }
 
-        // Build wire-format diagrams payload.
-        // NOTE: read the raw (unparsed) form state via getValues — the parsed
-        // `values.diagramPoints` has `id`/`viewType` stripped by zod, which
-        // would break point identity on subsequent renders after form.reset.
-        const rawPoints = form.getValues('diagramPoints')
-        const pointsByView = new Map<DiagramViewType, typeof rawPoints>()
-        for (const p of rawPoints) {
-          const view = (p.viewType || 'front') as DiagramViewType
-          pointsByView.set(view, [...(pointsByView.get(view) ?? []), p])
-        }
-        const diagramsPayload =
-          rawPoints.length > 0
-            ? [...pointsByView].map(([viewType, viewPoints]) => ({
-                viewType,
-                points: viewPoints.map((p) => ({
-                  x: p.x,
-                  y: p.y,
-                  productName: p.productName,
-                  activeIngredient: p.activeIngredient,
-                  quantity: p.quantity,
-                  quantityUnit: p.quantityUnit,
-                  technique: p.technique,
-                  depth: p.depth,
-                  notes: p.notes,
-                })),
-              }))
-            : undefined
+        // Read the raw form state: zod strips `viewType` from `values.diagramPoints`.
+        const diagramsPayload = pointsToViews(form.getValues('diagramPoints'))
 
         // Planning mode strips execution-phase fields from the payload
         // Planning form never writes execution-phase fields — those are owned

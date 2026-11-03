@@ -81,7 +81,7 @@ export function SnoozeModal({
     }
     try {
       await snoozeMutation.mutateAsync({ kind, procedureRecordId, until })
-      toast.success('Planejamento adiado.')
+      toast.success(kind === 'diagram_quote' ? 'Orçamento adiado.' : 'Planejamento adiado.')
       onSnoozed?.(until)
       onClose()
     } catch (err) {

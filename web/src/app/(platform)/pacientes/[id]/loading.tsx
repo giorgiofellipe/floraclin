@@ -48,6 +48,16 @@ export default function PatientDetailLoading() {
             </div>
           ))}
         </div>
+
+        {/* Section list (phone) */}
+        <div className="md:hidden overflow-hidden rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] divide-y divide-[#E8ECEF]">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <div key={i} className="flex min-h-11 items-center gap-3 px-4 py-3">
+              <Skeleton className="size-4 rounded-[3px]" />
+              <Skeleton className="h-4 w-32" />
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   )

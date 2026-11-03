@@ -30,6 +30,7 @@ import {
   type PaymentInput,
 } from '@/lib/financial/penalties'
 import { BusinessError } from '@/lib/errors'
+import { PATIENT_FINANCIAL_ENTRIES_LIMIT, summarizePatientEntries } from '@/lib/financial/patient-summary'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus } from '@/types'
 import { verifyTenantOwnership } from './helpers'
@@ -2333,38 +2334,27 @@ export async function getPatientFinancialSummary(
   tenantId: string,
   patientId: string
 ): Promise<PatientFinancialSummary> {
-  const rows = await db
-    .select({
-      amount: installments.amount,
-      amountPaid: installments.amountPaid,
-      dueDate: installments.dueDate,
-    })
-    .from(installments)
-    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(
-      and(
-        eq(installments.tenantId, tenantId),
-        eq(financialEntries.tenantId, tenantId),
-        eq(financialEntries.patientId, patientId),
-        isNull(financialEntries.deletedAt),
-        notInArray(financialEntries.status, ['cancelled', 'renegotiated']),
-        notInArray(installments.status, ['paid', 'cancelled', 'renegotiated'])
-      )
-    )
-
   const today = brToday()
-  let openCents = 0
-  let overdueCents = 0
-  let nextDueDate: string | null = null
-  for (const row of rows) {
-    const cents = Math.round((Number(row.amount) - Number(row.amountPaid)) * 100)
-    if (cents <= 0) continue
-    openCents += cents
-    if (row.dueDate < today) {
-      overdueCents += cents
-    } else if (nextDueDate === null || row.dueDate < nextDueDate) {
-      nextDueDate = row.dueDate
-    }
-  }
-  return { openAmount: openCents / 100, overdueAmount: overdueCents / 100, nextDueDate }
+  const [{ data: entries }, [next]] = await Promise.all([
+    listFinancialEntries(tenantId, { patientId, page: 1, limit: PATIENT_FINANCIAL_ENTRIES_LIMIT }),
+    db
+      .select({ dueDate: sql<string | null>`min(${installments.dueDate})` })
+      .from(installments)
+      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          eq(financialEntries.tenantId, tenantId),
+          eq(financialEntries.patientId, patientId),
+          isNull(financialEntries.deletedAt),
+          notInArray(financialEntries.status, ['cancelled', 'renegotiated']),
+          notInArray(installments.status, ['paid', 'cancelled', 'renegotiated']),
+          sql`${installments.amount}::numeric > ${installments.amountPaid}::numeric`,
+          gte(installments.dueDate, today)
+        )
+      ),
+  ])
+
+  const totals = summarizePatientEntries(entries)
+  return { openAmount: totals.pending, overdueAmount: totals.overdue, nextDueDate: next?.dueDate ?? null }
 }

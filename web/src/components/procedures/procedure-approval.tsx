@@ -22,14 +22,14 @@ import {
 } from '@/validations/encounter-cart'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
-import type { DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints } from '@/components/face-diagram/points'
+import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import type { PaymentMethod } from '@/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import { ApprovalSummaryCard } from './approval/approval-summary-card'
 import { WizardCart } from '@/components/service-wizard/wizard-cart'
 import {
   ProcedureSignaturesPanel,
-  diagramsToPoints,
   computeProductTotals,
   type PendingSignatures,
   type SignaturesFinancialPlan,
@@ -44,11 +44,6 @@ interface ProcedureType {
   name: string
   category: string
 }
-
-type PatientData = SignaturesPatient
-type TenantData = SignaturesTenant
-
-type FinancialPlan = SignaturesFinancialPlan
 
 interface ProcedureApprovalProps {
   // Legacy single-procedure props (still supported during transition).
@@ -75,8 +70,8 @@ interface ProcedureApprovalProps {
    */
   onCartChange?: (next: EncounterCart) => void
   // Shared props.
-  patient: PatientData
-  tenant: TenantData
+  patient: SignaturesPatient
+  tenant: SignaturesTenant
   wizardOverrides?: WizardOverrides
   /** Labels of the consents and contract still unsigned; empty when everything is signed. */
   onPendingSignaturesChange?: (labels: string[]) => void
@@ -132,7 +127,7 @@ export function ProcedureApproval({
     }
   }, [encounterId])
 
-  const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
+  const { data: procedureTypes } = useProcedureTypes()
   const [pending, setPending] = useState<PendingSignatures | null>(null)
 
   const [isApproving, setIsApproving] = useState(false)
@@ -149,10 +144,10 @@ export function ProcedureApproval({
   // Financial plan source: cart mode derives from cart total; legacy mode reads
   // from procedure.financialPlan. Both are surfaced via the `financialPlan`
   // memo for the summary card + contract interpolation.
-  const legacyFinancialPlan = (procedure?.financialPlan ?? null) as FinancialPlan | null
+  const legacyFinancialPlan = (procedure?.financialPlan ?? null) as SignaturesFinancialPlan | null
   const cartTotal = useMemo(() => (cart ? computeCartTotal(cart) : 0), [cart])
 
-  const financialPlan: FinancialPlan | null = useMemo(() => {
+  const financialPlan: SignaturesFinancialPlan | null = useMemo(() => {
     if (isCartMode && cart) {
       // Default the cart-driven plan to a single instalment until the planner
       // owns this state. The planner UI lives below and could be wired here in
@@ -201,29 +196,14 @@ export function ProcedureApproval({
   }, [isCartMode, cart, procedure, additionalTypeIds])
 
   const selectedTypes = useMemo(
-    () => procedureTypes.filter((t) => allTypeIds.includes(t.id)),
+    () => ((procedureTypes ?? []) as ProcedureType[]).filter((t) => allTypeIds.includes(t.id)),
     [procedureTypes, allTypeIds],
   )
 
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/procedure-types')
-      .then((res) => (res.ok ? res.json() : []))
-      .then((types: ProcedureType[]) => {
-        if (!cancelled) setProcedureTypes(types)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const onPendingSignaturesChangeRef = useRef(onPendingSignaturesChange)
-  onPendingSignaturesChangeRef.current = onPendingSignaturesChange
-  const handlePendingChange = useCallback((next: PendingSignatures) => {
+  function handlePendingChange(next: PendingSignatures) {
     setPending(next)
-    onPendingSignaturesChangeRef.current?.(next.labels)
-  }, [])
+    onPendingSignaturesChange?.(next.labels)
+  }
 
   // Propagate unsaved-changes state to the wizard.
   useEffect(() => {
@@ -576,7 +556,7 @@ function CartApprovalSummary({
   onCartChange,
 }: {
   cart: EncounterCart
-  financialPlan: FinancialPlan | null
+  financialPlan: SignaturesFinancialPlan | null
   onCartChange?: (next: EncounterCart) => void
 }) {
   const total = useMemo(() => computeCartTotal(cart), [cart])

@@ -4,7 +4,7 @@ import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
-import { getDiagramGroup } from '@/db/queries/face-diagram-groups'
+import { getDiagramGroup, lockDiagramGroup } from '@/db/queries/face-diagram-groups'
 import { createDiagramQuote, listDiagramQuotes } from '@/db/queries/face-diagram-quotes'
 import { getPatient } from '@/db/queries/patients'
 import { getTenantHeaderInfoForPdf } from '@/db/queries/tenants'
@@ -28,10 +28,19 @@ export async function POST(
     if (blocked) return blocked
 
     const { id } = await params
-    const group = await getDiagramGroup(ctx.tenantId, id)
-    if (!group) {
-      return NextResponse.json({ error: 'Diagrama não encontrado' }, { status: 404 })
+    const snapshot = await withTransaction(async (tx) => {
+      const locked = await lockDiagramGroup(tx, ctx.tenantId, id)
+      if (!locked) return { error: 'not_found' as const }
+      if (locked.status !== 'quote') return { error: 'not_quote' as const }
+      const group = await getDiagramGroup(ctx.tenantId, id, tx)
+      return group ? { group } : { error: 'not_found' as const }
+    })
+    if ('error' in snapshot) {
+      return snapshot.error === 'not_found'
+        ? NextResponse.json({ error: 'Diagrama não encontrado' }, { status: 404 })
+        : NextResponse.json({ error: 'Este diagrama não está mais como orçamento' }, { status: 409 })
     }
+    const { group } = snapshot
     if (group.quotationLines.length === 0) {
       return NextResponse.json(
         { error: 'Adicione ao menos um procedimento ao orçamento' },

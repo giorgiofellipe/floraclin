@@ -201,6 +201,18 @@ describe('PatientHeader phone Mais menu', () => {
     expect(screen.queryByRole('menuitem', { name: /Novo diagrama/ })).toBeNull()
   })
 
+  it('guards Agendar and Cobrar on the phone like their desktop buttons when read-only', async () => {
+    await openMais({}, { readOnly: true })
+    const desktop = within(screen.getByTestId('patient-header-desktop'))
+    const mobile = within(screen.getByTestId('patient-header-mobile'))
+    const guardOf = (scope: typeof mobile, name: string) =>
+      scope.getAllByRole('button', { name })[0].getAttribute('aria-disabled')
+
+    expect(guardOf(mobile, 'Agendar')).toBe('true')
+    expect(guardOf(mobile, 'Agendar')).toBe(guardOf(desktop, 'Novo Agendamento'))
+    expect(guardOf(mobile, 'Cobrar')).toBe(guardOf(desktop, 'Nova Cobrança'))
+  })
+
   it('opens the document flow from Novo documento', async () => {
     await openMais()
 

@@ -6,7 +6,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
-import { groupToPoints } from '@/components/face-diagram-groups/diagram-group-editor'
+import { diagramsToPoints } from '@/components/face-diagram/points'
+import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 import { useProcedures } from '@/hooks/queries/use-procedures'
 import { usePatientPackages } from '@/hooks/queries/use-packages'
 import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
@@ -15,7 +16,7 @@ import {
   usePatientFinancialSummary,
 } from '@/hooks/queries/use-patient-overview'
 import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
-import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
+import { PROCEDURE_STATUS_COLORS, PROCEDURE_STATUS_LABELS, canWriteClinical } from '@/lib/constants'
 import { formatBrDate } from '@/lib/dates'
 import { cn, formatCurrency } from '@/lib/utils'
 import type { Role } from '@/types'
@@ -73,7 +74,7 @@ function Empty({ children }: { children: ReactNode }) {
 function DiagramsCard({ patientId, role, onNavigate }: PatientSummaryProps) {
   const { data: groups, isLoading } = usePatientDiagramGroups(patientId)
   const latest = groups?.find((g) => !g.procedureSessionId)
-  const canCreate = role === 'owner' || role === 'practitioner'
+  const canCreate = canWriteClinical(role)
 
   function body() {
     if (isLoading) return <Skeleton className="h-32 w-full" />
@@ -82,12 +83,14 @@ function DiagramsCard({ patientId, role, onNavigate }: PatientSummaryProps) {
         <div className="space-y-3 py-2 text-center">
           <p className="text-sm text-mid">Nenhum diagrama facial</p>
           {canCreate && (
-            <Link
-              href={`/pacientes/${patientId}/diagramas/novo`}
-              className={cn(buttonVariants({ variant: 'outline' }), 'text-[13px]')}
-            >
-              Novo diagrama
-            </Link>
+            <ReadOnlyGuard label="Novo diagrama">
+              <Link
+                href={`/pacientes/${patientId}/diagramas/novo`}
+                className={cn(buttonVariants({ variant: 'outline' }), 'text-[13px]')}
+              >
+                Novo diagrama
+              </Link>
+            </ReadOnlyGuard>
           )}
         </div>
       )
@@ -102,7 +105,7 @@ function DiagramsCard({ patientId, role, onNavigate }: PatientSummaryProps) {
           )}
         </div>
         <div className="max-h-64 overflow-hidden">
-          <FaceDiagramEditor points={groupToPoints(latest)} onChange={() => {}} readOnly />
+          <FaceDiagramEditor points={diagramsToPoints(latest.views)} onChange={() => {}} readOnly />
         </div>
       </div>
     )
@@ -196,29 +199,31 @@ function FinancialCard({ patientId, onNavigate }: PatientSummaryProps) {
     if (isError) return <Empty>Não foi possível carregar o financeiro.</Empty>
     if (isLoading || !summary) return <Skeleton className="h-20 w-full" />
     return (
-      <dl className="space-y-1.5 text-sm">
-        <div className="flex justify-between gap-2">
-          <dt className="text-mid">Em aberto</dt>
-          <dd className="font-medium text-charcoal">{formatCurrency(summary.openAmount)}</dd>
-        </div>
-        <div className="flex justify-between gap-2">
-          <dt className="text-mid">Em atraso</dt>
-          <dd className={cn('font-medium', summary.overdueAmount > 0 ? 'text-amber-700' : 'text-charcoal')}>
-            {formatCurrency(summary.overdueAmount)}
-          </dd>
-        </div>
-        {summary.nextDueDate && (
+      <div className="space-y-1.5 text-sm">
+        <dl className="space-y-1.5">
           <div className="flex justify-between gap-2">
-            <dt className="text-mid">Próximo vencimento</dt>
-            <dd className="font-medium text-charcoal">{formatAppointmentDate(summary.nextDueDate)}</dd>
+            <dt className="text-mid">Em aberto</dt>
+            <dd className="font-medium text-charcoal">{formatCurrency(summary.openAmount)}</dd>
           </div>
-        )}
+          <div className="flex justify-between gap-2">
+            <dt className="text-mid">Em atraso</dt>
+            <dd className={cn('font-medium', summary.overdueAmount > 0 ? 'text-amber-700' : 'text-charcoal')}>
+              {formatCurrency(summary.overdueAmount)}
+            </dd>
+          </div>
+          {summary.nextDueDate && (
+            <div className="flex justify-between gap-2">
+              <dt className="text-mid">Próximo vencimento</dt>
+              <dd className="font-medium text-charcoal">{formatAppointmentDate(summary.nextDueDate)}</dd>
+            </div>
+          )}
+        </dl>
         {activePackage && (
           <p className="pt-1 text-xs text-mid">
             Pacote: {done} de {total} sessões
           </p>
         )}
-      </dl>
+      </div>
     )
   }
 

@@ -5,6 +5,8 @@ const mocks = vi.hoisted(() => ({
   deleteFile: vi.fn(),
   transaction: vi.fn(),
   getDiagramGroup: vi.fn(),
+  lockDiagramGroup: vi.fn(),
+  renderReactToPdf: vi.fn(),
   listDiagramQuotes: vi.fn(),
   markQuoteWhatsapp: vi.fn(),
   claimQuoteWhatsapp: vi.fn(),
@@ -22,7 +24,10 @@ vi.mock('@/lib/write-access', () => ({
 }))
 vi.mock('@/lib/auth', () => ({ getAuthContext: vi.fn().mockResolvedValue({ tenantId: 't1', userId: 'u1' }) }))
 vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
-vi.mock('@/db/queries/face-diagram-groups', () => ({ getDiagramGroup: mocks.getDiagramGroup }))
+vi.mock('@/db/queries/face-diagram-groups', () => ({
+  getDiagramGroup: mocks.getDiagramGroup,
+  lockDiagramGroup: mocks.lockDiagramGroup,
+}))
 vi.mock('@/db/queries/face-diagram-quotes', () => ({
   createDiagramQuote: mocks.createDiagramQuote,
   listDiagramQuotes: mocks.listDiagramQuotes,
@@ -41,7 +46,7 @@ vi.mock('@/db/queries/tenants', () => ({
   getTenant: vi.fn().mockResolvedValue({ name: 'Clinica Flora' }),
 }))
 vi.mock('@/lib/pdf', () => ({
-  renderReactToPdf: vi.fn().mockResolvedValue(Buffer.from('pdf')),
+  renderReactToPdf: mocks.renderReactToPdf,
   PRINT_BASE_CSS: '',
 }))
 vi.mock('@/lib/storage', () => ({
@@ -63,6 +68,7 @@ import type { NextRequest } from 'next/server'
 const line = { procedureTypeId: '11111111-1111-4111-8111-111111111111', procedureTypeName: 'Botox', sessions: 2, unitPrice: 100.5 }
 const req = new Request('http://x') as unknown as NextRequest
 const ctx = (id: string) => ({ params: Promise.resolve({ id }) })
+const TX = { tx: true }
 
 function group(lines: (typeof line)[]) {
   return { id: 'g1', patientId: 'p1', quotationLines: lines, views: [] }
@@ -70,7 +76,9 @@ function group(lines: (typeof line)[]) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  mocks.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn({}))
+  mocks.transaction.mockImplementation(async (fn: (tx: unknown) => unknown) => fn(TX))
+  mocks.lockDiagramGroup.mockResolvedValue({ id: 'g1', status: 'quote' })
+  mocks.renderReactToPdf.mockResolvedValue(Buffer.from('pdf'))
   mocks.createDiagramQuote.mockResolvedValue({})
   mocks.deleteFile.mockResolvedValue(undefined)
   mocks.claimQuoteWhatsapp.mockResolvedValue(true)
@@ -90,7 +98,24 @@ describe('POST /api/face-diagram-groups/[id]/quotes', () => {
     expect(mocks.createDiagramQuote).not.toHaveBeenCalled()
   })
 
-  // Regression: later edits to the group must not rewrite a stored quote.
+  it('refuses with 409 without rendering once the group is no longer a quote', async () => {
+    mocks.lockDiagramGroup.mockResolvedValue({ id: 'g1', status: 'in_service' })
+    mocks.getDiagramGroup.mockResolvedValue(group([line]))
+    const res = await POST(req, ctx('g1'))
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: 'Este diagrama não está mais como orçamento' })
+    expect(mocks.renderReactToPdf).not.toHaveBeenCalled()
+    expect(mocks.createDiagramQuote).not.toHaveBeenCalled()
+  })
+
+  it('reads the lines and views inside the transaction that locks the group', async () => {
+    mocks.getDiagramGroup.mockResolvedValue(group([line]))
+    await POST(req, ctx('g1'))
+    expect(mocks.lockDiagramGroup).toHaveBeenCalledWith(TX, 't1', 'g1')
+    expect(mocks.getDiagramGroup).toHaveBeenCalledWith('t1', 'g1', TX)
+  })
+
+  // Later edits to the group must not rewrite a stored quote.
   it('stores the total and a copy of the lines', async () => {
     const g = group([{ ...line }]) as ReturnType<typeof group> & { quotationLines: (typeof line)[] }
     mocks.getDiagramGroup.mockResolvedValue(g)
@@ -105,9 +130,9 @@ describe('POST /api/face-diagram-groups/[id]/quotes', () => {
     expect(input.lines[0].unitPrice).toBe(100.5)
   })
 
-  // Regression: a failed upload or insert must not leave an untracked patient PDF in storage.
+  // A failed upload or insert must not leave an untracked patient PDF in storage.
   it.each([
-    ['the insert fails', () => mocks.transaction.mockRejectedValue(new Error('boom'))],
+    ['the insert fails', () => mocks.createDiagramQuote.mockRejectedValue(new Error('boom'))],
     ['signing the uploaded file fails', () => mocks.uploadPdfBuffer.mockRejectedValue(new Error('boom'))],
   ])('deletes the uploaded file when %s', async (_name, fail) => {
     mocks.getDiagramGroup.mockResolvedValue(group([line]))
@@ -119,7 +144,7 @@ describe('POST /api/face-diagram-groups/[id]/quotes', () => {
 })
 
 describe('GET /api/face-diagram-groups/[id]/quotes', () => {
-  // Regression: quotes of a deleted patient's group stayed listable by group id.
+  // quotes of a deleted patient's group stayed listable by group id.
   it('returns 404 without listing when the group is not visible', async () => {
     mocks.getDiagramGroup.mockResolvedValue(null)
     const res = await GET(req, ctx('g1'))
@@ -139,7 +164,7 @@ describe('POST /api/face-diagram-quotes/[id]/send-whatsapp', () => {
     })
   })
 
-  // Regression: a double click sent the same quote to the patient twice.
+  // a double click sent the same quote to the patient twice.
   it('refuses with 409 without sending when the quote is already claimed', async () => {
     mocks.claimQuoteWhatsapp.mockResolvedValue(false)
     const res = await SEND(req, ctx('q1'))

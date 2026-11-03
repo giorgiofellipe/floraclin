@@ -81,7 +81,7 @@ const input = {
 function queueReads(signedTypes: string[]) {
   state.executeResponses.push(
     { rows: [{ id: draftId, status: 'draft' }] },
-    { rows: [{ categories: ['toxina_botulinica'], has_contract: true }] },
+    { rows: [{ categories: ['toxina_botulinica'], has_contract: true, valid_type_count: 1, template_valid: true }] },
     { rows: [] },
     { rows: signedTypes.map((type) => ({ type })) },
   )
@@ -111,7 +111,6 @@ describe('finalizeEncounter required consents', () => {
   })
 
   it('only counts signatures on templates of the same tenant', async () => {
-    // Regression: an acceptance pointing at another clinic's template satisfied the requirement.
     queueReads([])
 
     await finalizeEncounter(input)

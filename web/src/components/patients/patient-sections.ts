@@ -62,17 +62,6 @@ export const PATIENT_SECTIONS: {
   { key: 'historico', label: 'Histórico', group: 'paciente', icon: Clock },
 ]
 
-export const MOBILE_NAV_ENTRIES: {
-  key: 'resumo' | 'clinico' | 'administrativo' | 'outros'
-  label: string
-  groups: PatientSectionGroup[]
-}[] = [
-  { key: 'resumo', label: 'Resumo', groups: [] },
-  { key: 'clinico', label: 'Clínico', groups: ['clinico'] },
-  { key: 'administrativo', label: 'Administrativo', groups: ['administrativo'] },
-  { key: 'outros', label: 'Outros', groups: ['documentos', 'paciente'] },
-]
-
 export function visibleSections(role: Role): typeof PATIENT_SECTIONS {
   return PATIENT_SECTIONS.filter((s) => !s.requiredRoles || s.requiredRoles.includes(role))
 }

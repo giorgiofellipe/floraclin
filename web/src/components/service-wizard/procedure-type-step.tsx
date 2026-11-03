@@ -61,7 +61,6 @@ interface TemplateApi {
 
 // ─── Component ──────────────────────────────────────────────────────
 
-
 export function ProcedureTypeStep({
   patientId,
   quoteSelection,
@@ -97,10 +96,7 @@ export function ProcedureTypeStep({
 
   useEffect(() => {
     if (quoteAppliedRef.current || !selectedGroupId || cart.lines.length > 0) return
-    const group = quotes.find((g) => g.id === selectedGroupId)
-    if (!group) return
-    quoteAppliedRef.current = true
-    onCartChange(buildCartFromQuote(group.quotationLines))
+    applyQuote(selectedGroupId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, selectedGroupId])
 

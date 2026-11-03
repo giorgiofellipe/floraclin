@@ -128,7 +128,6 @@ export function ProcedurePageClient({ patientId, procedureId, action }: Procedur
     )
   }
 
-  // Collect signatures left pending at approval, also after execution
   if (
     action === 'sign' &&
     (procedure.status === 'approved' ||

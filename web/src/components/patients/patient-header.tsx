@@ -31,7 +31,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ReadOnlyGuard, useReadOnly, useWriteGuard } from '@/components/layout/subscription-access'
 import { cn, maskCPF } from '@/lib/utils'
-import { GENDER_LABELS } from '@/lib/constants'
+import { GENDER_LABELS, canWriteClinical } from '@/lib/constants'
 import { parseLocalDate } from '@/lib/dates'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import type { Patient } from '@/db/queries/patients'
@@ -67,6 +67,9 @@ const ICON_BUTTON =
 const START_BUTTON =
   'bg-forest text-cream hover:bg-sage transition-all duration-200 rounded-xl px-5 py-2.5 text-[13px] font-semibold gap-2 min-h-[42px] shadow-sm hover:shadow-md'
 
+const APPOINTMENT_GUARD = { disableWhenReadOnly: true }
+const CHARGE_GUARD = { disableWhenReadOnly: false }
+
 interface PatientHeaderProps {
   patient: Patient
   role: Role
@@ -100,7 +103,7 @@ export function PatientHeader({
     : `tel:${patient.phone.replace(/\D/g, '')}`
   const waHref = toWaMeUrl(patient.phone)
   const canUseInAppWhatsapp = Boolean(whatsappApiEnabled && normalizedPhone.ok)
-  const canWriteDiagrams = role === 'owner' || role === 'practitioner'
+  const canWriteDiagrams = canWriteClinical(role)
   const startLabel = hasActiveService ? 'Continuar Atendimento' : 'Iniciar Atendimento'
   const newDiagramHref = `/pacientes/${patient.id}/diagramas/novo`
 
@@ -199,7 +202,7 @@ export function PatientHeader({
     label: string,
     icon: React.ReactNode,
     onClick: () => void,
-    { disableWhenReadOnly = false } = {},
+    { disableWhenReadOnly = false, tooltip = true } = {},
   ) {
     if (readOnly && disableWhenReadOnly) {
       return (
@@ -210,21 +213,21 @@ export function PatientHeader({
         </ReadOnlyGuard>
       )
     }
+    const button = (
+      <Button
+        variant="outline"
+        size="icon-sm"
+        aria-label={label}
+        className={ICON_BUTTON}
+        onClick={guardWrite(onClick)}
+      >
+        {icon}
+      </Button>
+    )
+    if (!tooltip) return button
     return (
       <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="icon-sm"
-              aria-label={label}
-              className={ICON_BUTTON}
-              onClick={guardWrite(onClick)}
-            >
-              {icon}
-            </Button>
-          }
-        />
+        <TooltipTrigger render={button} />
         <TooltipContent side="bottom">
           <p>{label}</p>
         </TooltipContent>
@@ -345,10 +348,8 @@ export function PatientHeader({
             <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
               <TooltipProvider delay={300}>
                 {desktopWhatsapp}
-                {iconAction('Novo Agendamento', <CalendarPlus className="size-4" />, onNewAppointment, {
-                  disableWhenReadOnly: true,
-                })}
-                {iconAction('Nova Cobrança', <Receipt className="size-4" />, onNewCharge)}
+                {iconAction('Novo Agendamento', <CalendarPlus className="size-4" />, onNewAppointment, APPOINTMENT_GUARD)}
+                {iconAction('Nova Cobrança', <Receipt className="size-4" />, onNewCharge, CHARGE_GUARD)}
                 {iconAction('Novo Documento', <FileText className="size-4" />, onNewDocument)}
               </TooltipProvider>
               {newDiagramButton}
@@ -388,27 +389,17 @@ export function PatientHeader({
               </div>
             )}
             <div className="flex flex-1 flex-col items-center gap-1 text-[11px] text-mid">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Agendar"
-                className={ICON_BUTTON}
-                onClick={guardWrite(onNewAppointment)}
-              >
-                <CalendarPlus className="size-4" />
-              </Button>
+              {iconAction('Agendar', <CalendarPlus className="size-4" />, onNewAppointment, {
+                ...APPOINTMENT_GUARD,
+                tooltip: false,
+              })}
               <span aria-hidden>Agendar</span>
             </div>
             <div className="flex flex-1 flex-col items-center gap-1 text-[11px] text-mid">
-              <Button
-                variant="outline"
-                size="icon-sm"
-                aria-label="Cobrar"
-                className={ICON_BUTTON}
-                onClick={guardWrite(onNewCharge)}
-              >
-                <Receipt className="size-4" />
-              </Button>
+              {iconAction('Cobrar', <Receipt className="size-4" />, onNewCharge, {
+                ...CHARGE_GUARD,
+                tooltip: false,
+              })}
               <span aria-hidden>Cobrar</span>
             </div>
             <div className="flex flex-1 flex-col items-center gap-1 text-[11px] text-mid">

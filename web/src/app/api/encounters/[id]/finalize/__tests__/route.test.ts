@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/write-access', () => ({ requireWrite: vi.fn() }))
-vi.mock('@/lib/encounter-finalize', () => ({ finalizeEncounter: vi.fn() }))
+vi.mock('@/lib/encounter-finalize', () => ({
+  finalizeEncounter: vi.fn(),
+  InvalidEncounterProcedureError: class extends Error {
+    constructor() {
+      super('Procedimento inválido')
+    }
+  },
+}))
 vi.mock('@/db/queries/financial', () => ({ recordPayment: vi.fn() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/tenant-settings', () => ({ getDefaultPackageValidityMonths: () => null }))
@@ -11,7 +18,7 @@ vi.mock('@/db/client', () => ({
 }))
 
 import { requireWrite } from '@/lib/write-access'
-import { finalizeEncounter } from '@/lib/encounter-finalize'
+import { InvalidEncounterProcedureError, finalizeEncounter } from '@/lib/encounter-finalize'
 import { recordPayment } from '@/db/queries/financial'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { BusinessError } from '@/lib/errors'
@@ -146,5 +153,12 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
     expect(res.status).toBe(400)
     expect(finalizeEncounter).not.toHaveBeenCalled()
     expect(recordPayment).not.toHaveBeenCalled()
+  })
+
+  it('answers 400 when a cart line or the template is outside the tenant catalog', async () => {
+    vi.mocked(finalizeEncounter).mockRejectedValue(new InvalidEncounterProcedureError())
+    const res = await call({})
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ success: false, error: 'Procedimento inválido' })
   })
 })

@@ -138,6 +138,12 @@ export async function updateConsentTemplate(
   )
 }
 
+export class ConsentProcedureMismatchError extends Error {
+  constructor() {
+    super('Procedimento inválido')
+  }
+}
+
 export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
@@ -155,12 +161,22 @@ export async function acceptConsent(
 ) {
   const target = tx ?? db
 
-  await Promise.all([
-    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
-    ...(data.procedureRecordId
-      ? [verifyTenantOwnership(tenantId, procedureRecords, data.procedureRecordId, 'Procedure record')]
-      : []),
-  ])
+  await verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient')
+  if (data.procedureRecordId) {
+    const [procedure] = await target
+      .select({ id: procedureRecords.id })
+      .from(procedureRecords)
+      .where(
+        and(
+          eq(procedureRecords.id, data.procedureRecordId),
+          eq(procedureRecords.tenantId, tenantId),
+          eq(procedureRecords.patientId, data.patientId),
+          isNull(procedureRecords.deletedAt)
+        )
+      )
+      .limit(1)
+    if (!procedure) throw new ConsentProcedureMismatchError()
+  }
 
   const [template] = await target
     .select()

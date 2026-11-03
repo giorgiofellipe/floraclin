@@ -164,6 +164,7 @@ export async function listOpenDiagramQuotes(
     isNull(faceDiagramGroups.procedureSessionId),
     isNull(faceDiagramGroups.procedureRecordId),
     isNull(faceDiagramGroups.declinedAt),
+    isNull(patients.deletedAt),
   ]
 
   if (args.practitionerId) {

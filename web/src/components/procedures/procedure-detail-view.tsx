@@ -29,7 +29,7 @@ import { ptBR } from 'date-fns/locale'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
-import type { DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints } from '@/components/face-diagram/points'
 import type { PaymentMethod } from '@/types'
 import { ListAnswerTable } from '@/components/forms/list-answer-table'
 import type { FormSection, FormResponses, FormQuestion, FormListResponse } from '@/lib/forms/types'
@@ -83,28 +83,6 @@ function formatLongDate(date: Date | string): string {
 
 function formatShortDate(date: Date | string): string {
   return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR })
-}
-
-function diagramsToPoints(diagrams: DiagramWithPoints[]): DiagramPointData[] {
-  const points: DiagramPointData[] = []
-  for (const d of diagrams) {
-    for (const p of d.points) {
-      points.push({
-        id: p.id,
-        viewType: d.viewType,
-        x: parseFloat(p.x),
-        y: parseFloat(p.y),
-        productName: p.productName,
-        activeIngredient: p.activeIngredient ?? undefined,
-        quantity: parseFloat(p.quantity),
-        quantityUnit: p.quantityUnit as DiagramPointData['quantityUnit'],
-        technique: p.technique ?? undefined,
-        depth: p.depth ?? undefined,
-        notes: p.notes ?? undefined,
-      })
-    }
-  }
-  return points
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────

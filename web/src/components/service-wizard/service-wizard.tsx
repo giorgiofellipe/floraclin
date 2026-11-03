@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -20,6 +20,7 @@ import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
 import { ProcedureTypeStep } from './procedure-type-step'
 import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { SaveStatusIndicator } from './save-status-indicator'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
@@ -125,12 +126,13 @@ export function ServiceWizard({
   initialDiagramGroupId,
 }: ServiceWizardProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
   const [sourceDiagramGroupId, setSourceDiagramGroupId] = useState<string | null>(
     initialDiagramGroupId ?? null,
   )
   const { data: diagramGroups } = usePatientDiagramGroups(patient.id)
   const sourceDiagramGroup = sourceDiagramGroupId
-    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId)
+    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId && g.status === 'quote')
     : undefined
 
   // Derive initial selected type IDs from existing procedure
@@ -576,6 +578,7 @@ export function ServiceWizard({
         throw new Error(err.error || `Erro ao finalizar (HTTP ${res.status})`)
       }
       const payload = await res.json()
+      queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
       const recordIds: string[] = Array.isArray(payload?.data?.procedureRecordIds)
         ? payload.data.procedureRecordIds
         : Array.isArray(payload?.procedureRecordIds)
@@ -613,6 +616,7 @@ export function ServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     nextStep,
+    queryClient,
   ])
 
   // ─── Next handler ──────────────────────────────────────────────

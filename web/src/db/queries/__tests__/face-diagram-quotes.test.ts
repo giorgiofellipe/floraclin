@@ -9,7 +9,7 @@ vi.mock('@/db/client', () => ({ db: dbMock }))
 import { claimQuoteWhatsapp } from '../face-diagram-quotes'
 
 describe('claimQuoteWhatsapp', () => {
-  // Regression: two rapid sends both reached the WhatsApp sender.
+  // two rapid sends both reached the WhatsApp sender.
   it('claims only an unsent quote with no live claim, in one conditional update', async () => {
     const { tx, log } = routedTx(() => [])
     Object.assign(dbMock, tx)

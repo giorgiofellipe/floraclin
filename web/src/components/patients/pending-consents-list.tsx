@@ -1,5 +1,6 @@
 'use client'
 
+import { useId } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { usePendingConsents } from '@/hooks/queries/use-consent'
@@ -8,15 +9,18 @@ import { formatBrDate } from '@/lib/dates'
 
 export function PendingConsentsList({ patientId }: { patientId: string }) {
   const { data: items } = usePendingConsents(patientId)
+  const titleId = useId()
 
   if (!items || items.length === 0) return null
 
   return (
     <section
-      aria-label="Assinaturas pendentes"
+      aria-labelledby={titleId}
       className="space-y-2 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
     >
-      <h3 className="text-sm font-medium text-charcoal">Assinaturas pendentes</h3>
+      <h3 id={titleId} className="text-sm font-medium text-charcoal">
+        Assinaturas pendentes
+      </h3>
       <ul className="space-y-3">
         {items.map((item) => (
           <li

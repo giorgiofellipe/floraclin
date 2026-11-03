@@ -12,6 +12,7 @@ vi.mock('@/lib/tenant', () => ({
 }))
 
 import { requireWrite } from '@/lib/write-access'
+import { createAuditLog } from '@/lib/audit'
 import { getProcedure, cancelProcedure } from '@/db/queries/procedures'
 import { cancelLinkedFinancials } from '@/db/queries/financial'
 import { POST } from '../route'
@@ -22,7 +23,7 @@ beforeEach(() => {
     ctx: { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' },
     blocked: null,
   } as never)
-  vi.mocked(cancelProcedure).mockResolvedValue({ id: 'proc-1' } as never)
+  vi.mocked(cancelProcedure).mockResolvedValue({ procedure: { id: 'proc-1' }, releasedDiagramGroupIds: [] } as never)
 })
 
 describe('POST /api/procedures/[id]/cancel', () => {
@@ -39,5 +40,26 @@ describe('POST /api/procedures/[id]/cancel', () => {
 
     expect(res.status).toBe(200)
     expect(cancelLinkedFinancials).toHaveBeenCalledWith(tx, 'tenant-1', 'user-1', 'proc-1', 'Paciente desistiu')
+  })
+
+  it('audits the standalone quotations the cancellation sent back to Orçamento', async () => {
+    vi.mocked(getProcedure).mockResolvedValue({ id: 'proc-1', status: 'planned' } as never)
+    vi.mocked(cancelProcedure).mockResolvedValue({ procedure: { id: 'proc-1' }, releasedDiagramGroupIds: ['g1'] } as never)
+
+    const res = await POST(
+      new Request('http://localhost/api/procedures/proc-1/cancel', {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Paciente desistiu' }),
+      }),
+      { params: Promise.resolve({ id: 'proc-1' }) },
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true, data: { id: 'proc-1' } })
+    expect(createAuditLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: expect.objectContaining({ releasedDiagramGroupIds: { old: null, new: ['g1'] } }),
+      }),
+    )
   })
 })

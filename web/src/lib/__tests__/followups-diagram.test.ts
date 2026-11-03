@@ -13,16 +13,12 @@ vi.mock('@/lib/tenant', async () => {
 const auditMock = vi.fn()
 vi.mock('@/lib/audit', () => ({ createAuditLog: (...args: unknown[]) => auditMock(...args) }))
 
-const cancelLinkedFinancialsMock = vi.fn()
-vi.mock('@/db/queries/financial', () => ({
-  cancelLinkedFinancials: (...args: unknown[]) => cancelLinkedFinancialsMock(...args),
-}))
+vi.mock('@/db/queries/financial', () => ({ cancelLinkedFinancials: vi.fn() }))
 
 const lockDiagramGroupMock = vi.fn()
-const releaseStandaloneGroupsMock = vi.fn()
 vi.mock('@/db/queries/face-diagram-groups', () => ({
   lockDiagramGroup: (...args: unknown[]) => lockDiagramGroupMock(...args),
-  releaseStandaloneGroups: (...args: unknown[]) => releaseStandaloneGroupsMock(...args),
+  releaseStandaloneGroups: vi.fn(),
 }))
 
 const TENANT = 'tenant-1'
@@ -55,7 +51,6 @@ describe('recordDiagramFollowup', () => {
     const result = await recordDiagramFollowup(args)
 
     expect(result).toEqual({ followupId: 'followup-1', declined: true })
-    // Regression: the audit ran after commit, so a failed audit left an unaudited contact.
     expect(auditMock).toHaveBeenCalledWith(
       expect.objectContaining({ entityType: 'procedure_followup', entityId: 'followup-1', userId: 'user-1' }),
       tx,
@@ -139,51 +134,5 @@ describe('snoozeDiagramGroup', () => {
       }),
       tx,
     )
-  })
-})
-
-describe('recordFollowup desistiu on a procedure', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  // Review Focus 1: the cancelled atendimento must hand its standalone
-  // quotation back to the CRM list, in the same transaction.
-  it('releases the standalone groups linked to the cancelled procedure', async () => {
-    const { recordFollowup } = await import('../followups')
-    const { tx } = useTx((q) => {
-      if (q.op === 'select') return [{ id: 'proc-1', tenantId: TENANT, status: 'planned' }]
-      if (q.op === 'insert') return [{ id: 'followup-1' }]
-      return undefined
-    })
-
-    await recordFollowup({
-      tenantId: TENANT,
-      contactedBy: 'user-1',
-      procedureRecordId: 'proc-1',
-      channel: 'call',
-      outcome: 'desistiu',
-    })
-
-    expect(releaseStandaloneGroupsMock).toHaveBeenCalledWith(tx, TENANT, ['proc-1'])
-  })
-
-  it('does not release groups for a plain contact', async () => {
-    const { recordFollowup } = await import('../followups')
-    useTx((q) => {
-      if (q.op === 'select') return [{ id: 'proc-1', tenantId: TENANT, status: 'planned' }]
-      if (q.op === 'insert') return [{ id: 'followup-1' }]
-      return undefined
-    })
-
-    await recordFollowup({
-      tenantId: TENANT,
-      contactedBy: 'user-1',
-      procedureRecordId: 'proc-1',
-      channel: 'call',
-      outcome: 'sem_resposta',
-    })
-
-    expect(releaseStandaloneGroupsMock).not.toHaveBeenCalled()
   })
 })

@@ -1,5 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { toast } from 'sonner'
 import { renderWithProviders } from '@/tests/test-utils'
 import type { DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import type { Patient } from '@/db/queries/patients'
@@ -18,7 +19,8 @@ let procedures: { status: string }[] | undefined = []
 vi.mock('@/hooks/queries/use-procedures', () => ({
   useProcedures: () => ({ data: procedures, isLoading: procedures === undefined }),
 }))
-vi.mock('@/hooks/mutations/use-face-diagram-group-mutations', () => ({
+vi.mock('@/hooks/mutations/use-face-diagram-group-mutations', async (importOriginal) => ({
+  ...(await importOriginal<object>()),
   useCreateDiagramGroup: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useUpdateDiagramGroup: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }))
@@ -48,7 +50,10 @@ function makeGroup(overrides: Partial<DiagramGroupJson> = {}): DiagramGroupJson 
 
 beforeEach(() => {
   procedures = []
+  vi.clearAllMocks()
 })
+
+afterEach(() => vi.unstubAllGlobals())
 
 describe('DiagramGroupEditor', () => {
   it('is read-only without write actions once the diagram is in an atendimento', () => {
@@ -109,5 +114,40 @@ describe('DiagramGroupEditor', () => {
     expect(
       (screen.getByRole('button', { name: /Gerar PDF/ }) as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  it('closes the PDF tab and explains the failure when the network is down', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
+    const tab = { close: vi.fn(), location: {} }
+    vi.spyOn(window, 'open').mockReturnValue(tab as unknown as Window)
+    renderWithProviders(<DiagramGroupEditor patient={patient} group={makeGroup()} role="owner" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Gerar PDF/ }))
+
+    await waitFor(() => expect(tab.close).toHaveBeenCalled())
+    expect(toast.error).toHaveBeenCalledWith(
+      'Falha ao gerar orçamento. Verifique sua conexão e tente novamente.',
+    )
+    expect(screen.getByRole('button', { name: /Gerar PDF/ })).toBeEnabled()
+  })
+
+  it('explains a WhatsApp send that fails on the network', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('send-whatsapp')) throw new TypeError('Failed to fetch')
+        return new Response(JSON.stringify({ data: { id: 'q1', url: '/q1.pdf' } }), { status: 200 })
+      }),
+    )
+    renderWithProviders(<DiagramGroupEditor patient={patient} group={makeGroup()} role="owner" />)
+
+    fireEvent.click(screen.getByRole('button', { name: /Enviar por WhatsApp/ }))
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(
+        'Falha ao enviar via WhatsApp. Verifique sua conexão e tente novamente.',
+      ),
+    )
+    expect(screen.getByRole('button', { name: /Enviar por WhatsApp/ })).toBeEnabled()
   })
 })

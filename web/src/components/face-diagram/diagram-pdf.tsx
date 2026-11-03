@@ -28,9 +28,9 @@ export const DIAGRAM_PDF_CSS = `
 // Mirrors `getPointColor` in diagram-point.tsx. Not imported: that module is
 // 'use client' and must not run inside the server-only PDF render.
 const POINT_COLOR_RULES: Array<{ match: RegExp; color: string }> = [
-  { match: /botox|toxina|dysport|xeomin|botul[íi]nic/i, color: '#3b82f6' }, // neurotoxins
-  { match: /filler|preenchedor|hialur[ôo]nic|juvederm|restylane|\bah\b/i, color: '#ec4899' }, // fillers
-  { match: /bioestimulador|biostimulator|sculptra|radiesse|ellans[ée]/i, color: '#22c55e' }, // biostimulators
+  { match: /botox|toxina|dysport|xeomin|botul[íi]nic/i, color: '#3b82f6' },
+  { match: /filler|preenchedor|hialur[ôo]nic|juvederm|restylane|\bah\b/i, color: '#ec4899' },
+  { match: /bioestimulador|biostimulator|sculptra|radiesse|ellans[ée]/i, color: '#22c55e' },
 ]
 
 export function getPointColor(productName: string): string {
@@ -55,60 +55,61 @@ export function FaceDiagramPdfSection({
 }) {
   return (
     <div className="diagram-pdf-list">
-      {diagrams.map((diagram) => (
-        <div key={diagram.id}>
-          <div className="diagram-pdf-title">
-            Diagrama facial ({VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType})
-          </div>
-          {diagram.points.length === 0 ? (
-            <div className="diagram-pdf-empty">Nenhum ponto marcado neste diagrama.</div>
-          ) : (
-            <div className="diagram-pdf-body">
-              <div className="diagram-pdf-canvas">
-                <img
-                  src={faceTemplateUrl(diagram.viewType as DiagramViewType, gender)}
-                  alt={VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType}
-                  className="diagram-pdf-image"
-                />
-                {diagram.points.map((point, index) => (
-                  <span
-                    key={point.id}
-                    className="diagram-pdf-marker"
-                    style={{ left: `${point.x}%`, top: `${point.y}%`, backgroundColor: getPointColor(point.productName) }}
-                  >
-                    {index + 1}
-                  </span>
-                ))}
-              </div>
-              <table className="diagram-pdf-table diagram-pdf-legend">
-                <thead>
-                  <tr>
-                    <th>#</th>
-                    <th>Produto</th>
-                    <th>Dose</th>
-                  </tr>
-                </thead>
-                <tbody>
+      {diagrams.map((diagram) => {
+        const viewLabel = VIEW_LABELS[diagram.viewType as keyof typeof VIEW_LABELS] ?? diagram.viewType
+        return (
+          <div key={diagram.id}>
+            <div className="diagram-pdf-title">Diagrama facial ({viewLabel})</div>
+            {diagram.points.length === 0 ? (
+              <div className="diagram-pdf-empty">Nenhum ponto marcado neste diagrama.</div>
+            ) : (
+              <div className="diagram-pdf-body">
+                <div className="diagram-pdf-canvas">
+                  <img
+                    src={faceTemplateUrl(diagram.viewType as DiagramViewType, gender)}
+                    alt={viewLabel}
+                    className="diagram-pdf-image"
+                  />
                   {diagram.points.map((point, index) => (
-                    <tr key={point.id}>
-                      <td>
-                        <span
-                          className="diagram-pdf-legend-dot"
-                          style={{ backgroundColor: getPointColor(point.productName) }}
-                        >
-                          {index + 1}
-                        </span>
-                      </td>
-                      <td>{point.productName}</td>
-                      <td>{point.quantity} {point.quantityUnit}</td>
-                    </tr>
+                    <span
+                      key={point.id}
+                      className="diagram-pdf-marker"
+                      style={{ left: `${point.x}%`, top: `${point.y}%`, backgroundColor: getPointColor(point.productName) }}
+                    >
+                      {index + 1}
+                    </span>
                   ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      ))}
+                </div>
+                <table className="diagram-pdf-table diagram-pdf-legend">
+                  <thead>
+                    <tr>
+                      <th>#</th>
+                      <th>Produto</th>
+                      <th>Dose</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {diagram.points.map((point, index) => (
+                      <tr key={point.id}>
+                        <td>
+                          <span
+                            className="diagram-pdf-legend-dot"
+                            style={{ backgroundColor: getPointColor(point.productName) }}
+                          >
+                            {index + 1}
+                          </span>
+                        </td>
+                        <td>{point.productName}</td>
+                        <td>{point.quantity} {point.quantityUnit}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
 }

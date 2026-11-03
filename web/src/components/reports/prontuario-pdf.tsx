@@ -8,10 +8,6 @@ import { FloraclinBrandHeader } from '@/lib/pdf-branding'
 import { ClinicHeader, toClinicHeaderTenant } from '@/components/print/clinic-header'
 import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import { timelineStageValues, timelineStageLabels } from '@/validations/photo'
-// Imported from `face-template-data`, never from `face-template` itself:
-// that module is `'use client'`, and this one renders on the server inside
-// the `/api/reports/prontuario` route handler. See the header comment in
-// `face-template-data.ts` for why the distinction is load-bearing.
 import { FaceDiagramPdfSection, DIAGRAM_PDF_CSS } from '@/components/face-diagram/diagram-pdf'
 import type { ProntuarioDossier } from '@/db/queries/reports/prontuario'
 import { isQuestionAnswered } from '@/lib/forms/answers'

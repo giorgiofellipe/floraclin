@@ -1,6 +1,4 @@
 import { NextResponse } from 'next/server'
-import { and, desc, eq, isNull } from 'drizzle-orm'
-import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import {
   DIAGRAM_NOT_AWAITING,
@@ -8,59 +6,7 @@ import {
   recordDiagramFollowup,
 } from '@/lib/followups'
 import { recordFollowupSchema } from '@/validations/followup'
-import { db } from '@/db/client'
-import { faceDiagramGroups, procedureFollowups, users } from '@/db/schema'
 import { handleApiError } from '@/lib/api-error'
-
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
-  try {
-    const ctx = await getAuthContext()
-    const { id: groupId } = await params
-
-    const [owner] = await db
-      .select({ id: faceDiagramGroups.id })
-      .from(faceDiagramGroups)
-      .where(
-        and(
-          eq(faceDiagramGroups.id, groupId),
-          eq(faceDiagramGroups.tenantId, ctx.tenantId),
-          isNull(faceDiagramGroups.deletedAt),
-        ),
-      )
-      .limit(1)
-
-    if (!owner) {
-      return NextResponse.json({ error: 'Orçamento não encontrado' }, { status: 404 })
-    }
-
-    const rows = await db
-      .select({
-        id: procedureFollowups.id,
-        contactedAt: procedureFollowups.contactedAt,
-        contactedById: procedureFollowups.contactedBy,
-        contactedByName: users.fullName,
-        channel: procedureFollowups.channel,
-        outcome: procedureFollowups.outcome,
-        notes: procedureFollowups.notes,
-      })
-      .from(procedureFollowups)
-      .innerJoin(users, eq(procedureFollowups.contactedBy, users.id))
-      .where(
-        and(
-          eq(procedureFollowups.faceDiagramGroupId, groupId),
-          eq(procedureFollowups.tenantId, ctx.tenantId),
-        ),
-      )
-      .orderBy(desc(procedureFollowups.contactedAt))
-
-    return NextResponse.json({ data: rows })
-  } catch (error) {
-    return handleApiError(error, request)
-  }
-}
 
 export async function POST(
   request: Request,

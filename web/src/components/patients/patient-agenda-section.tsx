@@ -1,10 +1,9 @@
 'use client'
 
-import { formatInTimeZone } from 'date-fns-tz'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
-import { BR_TZ, formatBrDate, parseBrDate, toBrYmd } from '@/lib/dates'
+import { formatBrDate, formatBrTime, parseBrDate, toBrYmd } from '@/lib/dates'
 import { cn } from '@/lib/utils'
 import {
   usePatientAppointments,
@@ -27,7 +26,7 @@ export function isUpcomingAppointment(
 ): boolean {
   const today = toBrYmd(now)
   if (a.date !== today) return a.date > today
-  return a.startTime.slice(0, 5) >= formatInTimeZone(now, BR_TZ, 'HH:mm')
+  return a.startTime.slice(0, 5) >= formatBrTime(now)
 }
 
 export function formatAppointmentDate(ymd: string): string {

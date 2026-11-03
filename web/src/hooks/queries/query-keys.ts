@@ -51,6 +51,7 @@ export const queryKeys = {
     all: ['diagram-groups'] as const,
     byPatient: (patientId: string) => ['diagram-groups', 'patient', patientId] as const,
     detail: (id: string) => ['diagram-groups', 'detail', id] as const,
+    quotes: (id: string) => ['diagram-groups', 'quotes', id] as const,
   },
   procedures: {
     all: ['procedures'] as const,

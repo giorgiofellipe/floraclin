@@ -6,7 +6,7 @@ import type { ProcedureStatus } from '@/types'
 const base = { isSessionGroup: false, declinedAt: null }
 
 describe('deriveDiagramStatus', () => {
-  it('shows a standalone group as quote when it has no procedure (cancel releases the link)', () => {
+  it('shows a standalone group as quote when it has no procedure', () => {
     expect(deriveDiagramStatus({ ...base, procedureStatus: null })).toBe('quote')
   })
 

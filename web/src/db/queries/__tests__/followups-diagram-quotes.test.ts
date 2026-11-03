@@ -26,10 +26,10 @@ describe('listOpenDiagramQuotes', () => {
     vi.clearAllMocks()
   })
 
-  // Review Focus 1: a wizard group whose procedure was cancelled keeps its
+  // A wizard group whose procedure was cancelled keeps its
   // procedure_record_id, so it must stay out of the list; a standalone group
   // released by releaseStandaloneGroups has it nulled and must come back.
-  it('only selects standalone groups with no atendimento, no session and not declined', async () => {
+  it('only selects standalone groups of live patients with no atendimento, no session and not declined', async () => {
     const { listOpenDiagramQuotes } = await import('../followups')
     const { capture, fields } = stubSelect([])
 
@@ -41,6 +41,7 @@ describe('listOpenDiagramQuotes', () => {
     expect(sqlText).toContain('"procedure_session_id" is null')
     expect(sqlText).toContain('"procedure_record_id" is null')
     expect(sqlText).toContain('"declined_at" is null')
+    expect(sqlText).toContain('"patients"."deleted_at" is null')
     expect(whereParams(capture)).toContain('standalone')
     expect(whereParams(capture)).toContain(TENANT)
   })

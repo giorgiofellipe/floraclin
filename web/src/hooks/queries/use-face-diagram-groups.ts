@@ -2,6 +2,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import type { DiagramGroupDetail } from '@/db/queries/face-diagram-groups'
+import type { DiagramQuote } from '@/db/queries/face-diagram-quotes'
 import { queryKeys } from './query-keys'
 
 export type DiagramGroupJson = Omit<
@@ -11,6 +12,12 @@ export type DiagramGroupJson = Omit<
   createdAt: string
   updatedAt: string
   procedurePerformedAt: string | null
+}
+
+export type DiagramQuoteJson = Omit<DiagramQuote, 'createdAt' | 'whatsappRequestedAt'> & {
+  createdAt: string
+  whatsappRequestedAt: string | null
+  url: string | null
 }
 
 async function fetchData<T>(url: string): Promise<T> {
@@ -33,5 +40,12 @@ export function useDiagramGroup(id: string | undefined) {
     queryKey: queryKeys.diagramGroups.detail(id ?? ''),
     queryFn: () => fetchData<DiagramGroupJson>(`/api/face-diagram-groups/${id}`),
     enabled: !!id,
+  })
+}
+
+export function useDiagramQuotes(groupId: string) {
+  return useQuery({
+    queryKey: queryKeys.diagramGroups.quotes(groupId),
+    queryFn: () => fetchData<DiagramQuoteJson[]>(`/api/face-diagram-groups/${groupId}/quotes`),
   })
 }

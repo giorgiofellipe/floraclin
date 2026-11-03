@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
-import { groupToPoints } from '@/components/face-diagram-groups/diagram-group-editor'
+import { diagramsToPoints } from '@/components/face-diagram/points'
 import { Badge } from '@/components/ui/badge'
 import { buttonVariants } from '@/components/ui/button'
 import { ReadOnlyGuard } from '@/components/layout/subscription-access'
@@ -11,6 +11,7 @@ import { usePatientDiagramGroups, type DiagramGroupJson } from '@/hooks/queries/
 import { formatBrDate } from '@/lib/dates'
 import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
 import { cn, formatCurrency } from '@/lib/utils'
+import { canWriteClinical } from '@/lib/constants'
 import type { Role } from '@/types'
 
 const CARD = 'rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
@@ -45,7 +46,7 @@ function buildEntries(groups: DiagramGroupJson[]): Entry[] {
       heading: null,
       planning: g,
       sessions: (g.procedureRecordId ? sessionsByProcedure.get(g.procedureRecordId) : null)?.sort(byOrdinal) ?? [],
-      sortDate: String(g.createdAt),
+      sortDate: g.createdAt,
     })
   }
   for (const [procedureId, sessions] of sessionsByProcedure) {
@@ -57,7 +58,7 @@ function buildEntries(groups: DiagramGroupJson[]): Entry[] {
       heading: `Atendimento ${formatBrDate(when)} · ${first.procedureTypeName ?? 'Procedimento'}`,
       planning: null,
       sessions: sessions.sort(byOrdinal),
-      sortDate: String(when),
+      sortDate: when,
     })
   }
   return entries.sort((a, b) => b.sortDate.localeCompare(a.sortDate))
@@ -75,7 +76,7 @@ function Thumbnail({ group }: { group: DiagramGroupJson }) {
   return (
     <div aria-hidden className="pointer-events-none h-20 w-16 shrink-0 overflow-hidden rounded-[3px] bg-cream">
       <div className="w-[256px] origin-top-left scale-[0.25]">
-        <FaceDiagramEditor points={groupToPoints(group)} onChange={() => {}} readOnly />
+        <FaceDiagramEditor points={diagramsToPoints(group.views)} onChange={() => {}} readOnly />
       </div>
     </div>
   )
@@ -118,8 +119,36 @@ function GroupRow({
 
 export function PatientDiagramsSection({ patientId, role }: { patientId: string; role: Role }) {
   const { data: groups, isLoading } = usePatientDiagramGroups(patientId)
-  const canCreate = role === 'owner' || role === 'practitioner'
+  const canCreate = canWriteClinical(role)
   const entries = buildEntries(groups ?? [])
+
+  function body() {
+    if (isLoading) return <p className="py-8 text-center text-sm text-mid">Carregando...</p>
+    if (entries.length === 0) {
+      return <p className="py-8 text-center text-sm text-mid">Nenhum diagrama facial ainda</p>
+    }
+    return (
+      <ul className="space-y-3">
+        {entries.map((entry) => (
+          <li key={entry.key} className={cn(CARD, 'divide-y divide-sage/10 overflow-hidden')}>
+            {entry.heading && (
+              <p className="p-3 text-sm font-medium text-charcoal">{entry.heading}</p>
+            )}
+            {entry.planning && <GroupRow patientId={patientId} group={entry.planning} />}
+            {entry.sessions.map((session) => (
+              <div key={session.id} className={entry.heading ? '' : 'pl-4 sm:pl-8'}>
+                <GroupRow
+                  patientId={patientId}
+                  group={session}
+                  label={`Sessão ${session.sessionOrdinal ?? ''}`.trim()}
+                />
+              </div>
+            ))}
+          </li>
+        ))}
+      </ul>
+    )
+  }
 
   return (
     <div className="space-y-4">
@@ -138,31 +167,7 @@ export function PatientDiagramsSection({ patientId, role }: { patientId: string;
         )}
       </div>
 
-      {isLoading ? (
-        <p className="py-8 text-center text-sm text-mid">Carregando...</p>
-      ) : entries.length === 0 ? (
-        <p className="py-8 text-center text-sm text-mid">Nenhum diagrama facial ainda</p>
-      ) : (
-        <ul className="space-y-3">
-          {entries.map((entry) => (
-            <li key={entry.key} className={cn(CARD, 'divide-y divide-sage/10 overflow-hidden')}>
-              {entry.heading && (
-                <p className="p-3 text-sm font-medium text-charcoal">{entry.heading}</p>
-              )}
-              {entry.planning && <GroupRow patientId={patientId} group={entry.planning} />}
-              {entry.sessions.map((session) => (
-                <div key={session.id} className={entry.heading ? '' : 'pl-4 sm:pl-8'}>
-                  <GroupRow
-                    patientId={patientId}
-                    group={session}
-                    label={`Sessão ${session.sessionOrdinal ?? ''}`.trim()}
-                  />
-                </div>
-              ))}
-            </li>
-          ))}
-        </ul>
-      )}
+      {body()}
     </div>
   )
 }

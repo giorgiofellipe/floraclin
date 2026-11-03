@@ -1,14 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { screen, fireEvent } from '@testing-library/react'
+import { screen, fireEvent, within } from '@testing-library/react'
 import { renderWithProviders } from '@/tests/test-utils'
 import type { Patient } from '@/db/queries/patients'
 import { PatientDetailContent } from '../patient-detail-content'
 
 const replace = vi.fn()
+const push = vi.fn()
+let searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), replace }),
+  useRouter: () => ({ push, replace }),
   usePathname: () => '/pacientes/p1',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
 }))
 vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 vi.mock('@/hooks/queries/use-appointments', () => ({
@@ -40,10 +42,13 @@ const patient = {
   gender: null,
 } as unknown as Patient
 
-function renderContent(activeTab?: string) {
-  return renderWithProviders(
-    <PatientDetailContent patient={patient} activeTab={activeTab} role="practitioner" />,
-  )
+function renderContent(tab?: string, role: 'practitioner' | 'receptionist' = 'practitioner') {
+  searchParams = new URLSearchParams(tab ? { tab } : {})
+  return renderWithProviders(<PatientDetailContent patient={patient} role={role} />)
+}
+
+function phoneSectionList() {
+  return screen.getByTestId('patient-section-list')
 }
 
 describe('PatientDetailContent', () => {
@@ -71,12 +76,39 @@ describe('PatientDetailContent', () => {
     renderContent()
     fireEvent.click(screen.getByTestId('patient-section-financeiro'))
     expect(replace).toHaveBeenCalledWith('/pacientes/p1?tab=financeiro', { scroll: false })
+  })
+
+  it('follows ?tab= changes from back/forward and in-page links', () => {
+    const { rerender } = renderContent('atendimentos')
+    searchParams = new URLSearchParams({ tab: 'financeiro' })
+    rerender(<PatientDetailContent patient={patient} role="practitioner" />)
     expect(screen.getByText('financial-tab')).toBeInTheDocument()
   })
 
   it('goes to Financeiro after a charge is saved', () => {
     renderContent()
     paymentOnSuccess!()
-    expect(replace).toHaveBeenCalledWith('/pacientes/p1?tab=financeiro', { scroll: false })
+    expect(push).toHaveBeenCalledWith('/pacientes/p1?tab=financeiro')
+  })
+
+  it('pushes a history entry when a section is opened from the phone hub list', () => {
+    renderContent()
+    fireEvent.click(within(phoneSectionList()).getByRole('button', { name: 'Atendimentos' }))
+    expect(push).toHaveBeenCalledWith('/pacientes/p1?tab=atendimentos')
+    expect(replace).not.toHaveBeenCalled()
+  })
+
+  it('shows a back link to the hub and the section title inside a section', () => {
+    renderContent('financeiro')
+    const back = screen.getByRole('link', { name: 'Maria' })
+    expect(back).toHaveAttribute('href', '/pacientes/p1')
+    expect(screen.getByRole('heading', { name: 'Financeiro' })).toBeInTheDocument()
+    expect(screen.queryByTestId('patient-section-list')).toBeNull()
+  })
+
+  it('hides Evoluções from the receptionist hub list', () => {
+    renderContent(undefined, 'receptionist')
+    expect(within(phoneSectionList()).queryByRole('button', { name: 'Evoluções' })).toBeNull()
+    expect(within(phoneSectionList()).getByRole('button', { name: 'Atendimentos' })).toBeInTheDocument()
   })
 })

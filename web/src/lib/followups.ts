@@ -20,6 +20,7 @@ export interface RecordFollowupResult {
   followupId: string
   cancelledProcedure: boolean
   previousStatus: string | null
+  releasedDiagramGroupIds: string[]
 }
 
 // Statuses from which a followup of outcome === 'desistiu' may flip the
@@ -62,12 +63,14 @@ export async function recordFollowup(
       .where(
         and(
           eq(procedureRecords.id, args.procedureRecordId),
+          eq(procedureRecords.tenantId, args.tenantId),
           isNull(procedureRecords.deletedAt),
         ),
       )
+      .for('update')
       .limit(1)
 
-    if (!proc || proc.tenantId !== args.tenantId) {
+    if (!proc) {
       throw new Error('Procedure not found')
     }
 
@@ -107,7 +110,7 @@ export async function recordFollowup(
         })
         .where(eq(procedureRecords.id, args.procedureRecordId))
 
-      await releaseStandaloneGroups(tx, args.tenantId, [args.procedureRecordId])
+      const releasedDiagramGroupIds = await releaseStandaloneGroups(tx, args.tenantId, [args.procedureRecordId])
 
       // Mirror the dedicated /cancel route: approved procedures have live
       // financial entries that must also be cancelled.
@@ -125,6 +128,7 @@ export async function recordFollowup(
         followupId: followup.id,
         cancelledProcedure: true,
         previousStatus: proc.status,
+        releasedDiagramGroupIds,
       }
     }
 
@@ -137,6 +141,7 @@ export async function recordFollowup(
       followupId: followup.id,
       cancelledProcedure: false,
       previousStatus: proc.status,
+      releasedDiagramGroupIds: [],
     }
   })
 }

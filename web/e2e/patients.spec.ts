@@ -70,7 +70,6 @@ test.describe('Patient CRUD', () => {
       await page.getByTestId('patient-row-0').getByRole('link').first().click()
       await page.waitForURL(/\/pacientes\//, { timeout: 10000 })
 
-      // Verify the section menu is visible
       await expect(page.getByTestId('patient-section-resumo')).toBeVisible({ timeout: 10000 })
       await expect(page.getByTestId('patient-section-anamnese')).toBeVisible()
       await expect(page.getByTestId('patient-section-atendimentos')).toBeVisible()

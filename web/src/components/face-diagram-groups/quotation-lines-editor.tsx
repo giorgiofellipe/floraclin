@@ -17,7 +17,6 @@ interface ProcedureTypeOption {
   isActive: boolean
 }
 
-
 interface QuotationLinesEditorProps {
   value: QuotationLine[]
   onChange: (lines: QuotationLine[]) => void

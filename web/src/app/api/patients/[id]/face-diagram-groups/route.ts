@@ -3,8 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
-import { verifyTenantOwnership } from '@/db/queries/helpers'
-import { patients } from '@/db/schema'
+import { getPatient } from '@/db/queries/patients'
 import {
   InvalidQuotationLineError,
   createStandaloneGroup,
@@ -13,15 +12,6 @@ import {
 import { createDiagramGroupSchema } from '@/validations/face-diagram-group'
 import { handleApiError } from '@/lib/api-error'
 
-async function patientExists(tenantId: string, patientId: string) {
-  try {
-    await verifyTenantOwnership(tenantId, patients, patientId, 'Patient')
-    return true
-  } catch {
-    return false
-  }
-}
-
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -29,7 +19,7 @@ export async function GET(
   try {
     const ctx = await getAuthContext()
     const { id } = await params
-    if (!(await patientExists(ctx.tenantId, id))) {
+    if (!(await getPatient(ctx.tenantId, id))) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
     const data = await listPatientDiagramGroups(ctx.tenantId, id)
@@ -55,7 +45,7 @@ export async function POST(
         { status: 400 }
       )
     }
-    if (!(await patientExists(ctx.tenantId, id))) {
+    if (!(await getPatient(ctx.tenantId, id))) {
       return NextResponse.json({ error: 'Paciente não encontrado' }, { status: 404 })
     }
 

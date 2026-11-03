@@ -14,6 +14,8 @@ import type { EncounterCart } from '@/validations/encounter-cart'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints } from '@/components/face-diagram/points'
+import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import type { PaymentMethod } from '@/types'
 import { ConsentStatusList } from './approval/consent-status-list'
 import { ServiceContractSection } from './approval/service-contract-section'
@@ -66,23 +68,6 @@ export interface PendingSignatures {
   labels: string[]
 }
 
-export function diagramsToPoints(diagrams: DiagramWithPoints[]): DiagramPointData[] {
-  return diagrams.flatMap((diagram) =>
-    diagram.points.map((p) => ({
-      id: p.id,
-      x: parseFloat(p.x),
-      y: parseFloat(p.y),
-      productName: p.productName,
-      activeIngredient: p.activeIngredient ?? undefined,
-      quantity: parseFloat(p.quantity),
-      quantityUnit: p.quantityUnit as DiagramPointData['quantityUnit'],
-      technique: p.technique ?? undefined,
-      depth: p.depth ?? undefined,
-      notes: p.notes ?? undefined,
-    })),
-  )
-}
-
 export function computeProductTotals(points: DiagramPointData[]) {
   const totals = new Map<string, { quantity: number; unit: string }>()
   for (const p of points) {
@@ -122,6 +107,7 @@ export function ProcedureSignaturesPanel({
   onDirtyChange,
 }: ProcedureSignaturesPanelProps) {
   const acceptConsent = useAcceptConsent()
+  const { data: procedureTypes, isPending: loadingProcedureTypes } = useProcedureTypes()
   const isCartMode = !!cart
 
   const financialPlan = useMemo(
@@ -194,15 +180,13 @@ export function ProcedureSignaturesPanel({
   const loadedTypeIdsRef = useRef<string>('')
 
   useEffect(() => {
+    if (loadingProcedureTypes) return
     const key = allTypeIds.slice().sort().join(',')
     if (key === loadedTypeIdsRef.current) return
     loadedTypeIdsRef.current = key
 
     async function initAll() {
-      const typesRes = await fetch('/api/procedure-types')
-      const allProcTypes: ProcedureType[] = typesRes.ok ? await typesRes.json() : []
-
-      const selected = allProcTypes.filter((t) => allTypeIds.includes(t.id))
+      const selected = ((procedureTypes ?? []) as ProcedureType[]).filter((t) => allTypeIds.includes(t.id))
       const consentTypes = new Set<string>(['general'])
       for (const pt of selected) {
         const ct = CATEGORY_TO_CONSENT[pt.category.toLowerCase()]
@@ -263,7 +247,7 @@ export function ProcedureSignaturesPanel({
     }
 
     initAll()
-  }, [allTypeIds, patient, primaryRecordId, tenant.name, financialPlan, productTotals, isCartMode, cart, procedure])
+  }, [allTypeIds, patient, primaryRecordId, tenant.name, financialPlan, productTotals, isCartMode, cart, procedure, loadingProcedureTypes, procedureTypes])
 
   const refreshConsentStatuses = useCallback(async () => {
     const [updated, contractHistRes] = await Promise.all([

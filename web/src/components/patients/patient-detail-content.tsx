@@ -1,10 +1,13 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { ChevronLeft } from 'lucide-react'
 import { PatientHeader } from './patient-header'
 import { PatientSectionNav } from './patient-section-nav'
-import { resolveSection, type PatientSectionKey } from './patient-sections'
+import { PatientSectionList } from './patient-section-list'
+import { PATIENT_SECTIONS, resolveSection, type PatientSectionKey } from './patient-sections'
 import { PatientSummary } from './patient-summary'
 import { PatientAgendaSection } from './patient-agenda-section'
 import { PatientDiagramsSection } from './patient-diagrams-section'
@@ -25,10 +28,10 @@ import { AppointmentForm } from '@/components/scheduling/appointment-form'
 import { usePractitioners, useAppointmentProcedureTypes } from '@/hooks/queries/use-appointments'
 import type { Patient } from '@/db/queries/patients'
 import type { Role } from '@/types'
+import { canWriteClinical } from '@/lib/constants'
 
 interface PatientDetailContentProps {
   patient: Patient
-  activeTab?: string
   hasActiveService?: boolean
   whatsappApiEnabled?: boolean
   role: Role
@@ -36,7 +39,6 @@ interface PatientDetailContentProps {
 
 export function PatientDetailContent({
   patient,
-  activeTab,
   hasActiveService = false,
   whatsappApiEnabled,
   role,
@@ -52,13 +54,10 @@ export function PatientDetailContent({
   const { data: practitioners = [] } = usePractitioners()
   const { data: procedureTypes = [] } = useAppointmentProcedureTypes()
 
-  const [section, setSectionState] = useState<PatientSectionKey>(() =>
-    resolveSection(activeTab, role),
-  )
+  const section = resolveSection(searchParams.get('tab'), role)
 
-  const setSection = useCallback(
+  const sectionHref = useCallback(
     (next: PatientSectionKey) => {
-      setSectionState(next)
       const params = new URLSearchParams(searchParams.toString())
       if (next === 'resumo') {
         params.delete('tab')
@@ -66,10 +65,25 @@ export function PatientDetailContent({
         params.set('tab', next)
       }
       const qs = params.toString()
-      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+      return `${pathname}${qs ? `?${qs}` : ''}`
     },
-    [router, pathname, searchParams],
+    [pathname, searchParams],
   )
+
+  const selectSection = useCallback(
+    (next: PatientSectionKey) => router.replace(sectionHref(next), { scroll: false }),
+    [router, sectionHref],
+  )
+
+  // Phone hub navigation pushes so the iOS back gesture returns to the section list.
+  const openSection = useCallback(
+    (next: PatientSectionKey) => router.push(sectionHref(next)),
+    [router, sectionHref],
+  )
+
+  const isHub = section === 'resumo'
+  const sectionLabel = PATIENT_SECTIONS.find((s) => s.key === section)?.label
+  const firstName = patient.fullName.trim().split(/\s+/)[0] || patient.fullName
 
   const patientRef = {
     id: patient.id,
@@ -80,31 +94,47 @@ export function PatientDetailContent({
   }
 
   return (
-    <div className="space-y-5 pb-20 md:pb-0">
-      <PatientHeader
-        patient={patient}
-        role={role}
-        hasActiveService={hasActiveService}
-        whatsappApiEnabled={whatsappApiEnabled}
-        onNewAppointment={() => setShowAppointmentForm(true)}
-        onNewCharge={() => setShowPaymentForm(true)}
-        onNewDocument={() => setShowIssueDocument(true)}
-        onRequestDocuments={() => setShowRequestDocuments(true)}
-      />
+    <div className="space-y-5">
+      {!isHub && (
+        <div className="space-y-1 md:hidden">
+          <Link
+            href={`/pacientes/${patient.id}`}
+            replace
+            className="-ml-1 inline-flex min-h-11 items-center gap-1 text-sm font-medium text-sage"
+          >
+            <ChevronLeft className="size-4" aria-hidden />
+            {firstName}
+          </Link>
+          <h1 className="text-xl font-semibold text-charcoal">{sectionLabel}</h1>
+        </div>
+      )}
+
+      <div className={isHub ? undefined : 'hidden md:block'}>
+        <PatientHeader
+          patient={patient}
+          role={role}
+          hasActiveService={hasActiveService}
+          whatsappApiEnabled={whatsappApiEnabled}
+          onNewAppointment={() => setShowAppointmentForm(true)}
+          onNewCharge={() => setShowPaymentForm(true)}
+          onNewDocument={() => setShowIssueDocument(true)}
+          onRequestDocuments={() => setShowRequestDocuments(true)}
+        />
+      </div>
 
       <div className="space-y-5 md:grid md:grid-cols-[200px_1fr] md:items-start md:gap-5 md:space-y-0">
-        <PatientSectionNav active={section} role={role} onChange={setSection} />
+        <PatientSectionNav active={section} role={role} onChange={selectSection} />
 
         <div className="min-h-[400px] min-w-0 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] md:p-6">
           {section === 'resumo' && (
-            <PatientSummary patientId={patient.id} role={role} onNavigate={setSection} />
+            <PatientSummary patientId={patient.id} role={role} onNavigate={openSection} />
           )}
           {section === 'atendimentos' && <PatientProceduresTab patientId={patient.id} />}
           {section === 'diagramas' && <PatientDiagramsSection patientId={patient.id} role={role} />}
           {section === 'evolucoes' && (
             <PatientEvolutionsTab
               patientId={patient.id}
-              canEdit={role === 'owner' || role === 'practitioner'}
+              canEdit={canWriteClinical(role)}
             />
           )}
           {section === 'fotos' && <PatientPhotosTab patientId={patient.id} />}
@@ -136,6 +166,8 @@ export function PatientDetailContent({
           {section === 'dados' && <PatientDataTab patient={patient} />}
           {section === 'historico' && <PatientTimelineTab patientId={patient.id} />}
         </div>
+
+        {isHub && <PatientSectionList role={role} onOpen={openSection} />}
       </div>
 
       <PaymentForm
@@ -144,7 +176,7 @@ export function PatientDetailContent({
         defaultPatient={patient}
         onSuccess={() => {
           setShowPaymentForm(false)
-          setSection('financeiro')
+          openSection('financeiro')
         }}
       />
 

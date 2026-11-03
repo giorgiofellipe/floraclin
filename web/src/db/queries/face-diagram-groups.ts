@@ -56,9 +56,8 @@ export interface DiagramGroupDetail {
   views: DiagramWithPoints[]
 }
 
-// ─── Shared view helpers (also used by face-diagrams.ts) ────────────
+// ─── Shared view helpers ────────────────────────────────────────────
 
-/** Loads the views and points of the given diagrams, keyed by diagram id. */
 export async function loadDiagramsWithPoints(
   txDb: typeof db,
   diagramRows: { id: string; viewType: string }[],
@@ -84,7 +83,7 @@ export async function writeGroupView(
   groupId: string,
   viewType: DiagramViewType,
   points: DiagramPointInput[],
-): Promise<string> {
+): Promise<string | null> {
   const [existing] = await txDb
     .select({ id: faceDiagrams.id })
     .from(faceDiagrams)
@@ -96,6 +95,11 @@ export async function writeGroupView(
       ),
     )
     .limit(1)
+
+  if (points.length === 0) {
+    if (existing) await txDb.delete(faceDiagrams).where(eq(faceDiagrams.id, existing.id))
+    return null
+  }
 
   let diagramId: string
   if (existing) {
@@ -133,25 +137,31 @@ export async function writeGroupView(
 
 // ─── Group lifecycle ────────────────────────────────────────────────
 
+export async function findPlanningGroupId(
+  tx: typeof db,
+  tenantId: string,
+  procedureRecordId: string,
+): Promise<string | undefined> {
+  const [row] = await tx
+    .select({ id: faceDiagramGroups.id })
+    .from(faceDiagramGroups)
+    .where(
+      and(
+        eq(faceDiagramGroups.tenantId, tenantId),
+        eq(faceDiagramGroups.procedureRecordId, procedureRecordId),
+        isNull(faceDiagramGroups.procedureSessionId),
+        isNull(faceDiagramGroups.deletedAt),
+      ),
+    )
+    .limit(1)
+  return row?.id
+}
+
 export async function ensurePlanningGroup(
   tx: typeof db,
   input: { tenantId: string; patientId: string; practitionerId: string; procedureRecordId: string },
 ): Promise<string> {
-  const findExisting = async () => {
-    const [row] = await tx
-      .select({ id: faceDiagramGroups.id })
-      .from(faceDiagramGroups)
-      .where(
-        and(
-          eq(faceDiagramGroups.tenantId, input.tenantId),
-          eq(faceDiagramGroups.procedureRecordId, input.procedureRecordId),
-          isNull(faceDiagramGroups.procedureSessionId),
-          isNull(faceDiagramGroups.deletedAt),
-        ),
-      )
-      .limit(1)
-    return row?.id
-  }
+  const findExisting = () => findPlanningGroupId(tx, input.tenantId, input.procedureRecordId)
 
   const existing = await findExisting()
   if (existing) return existing
@@ -410,8 +420,8 @@ export async function releaseStandaloneGroups(
   tx: typeof db,
   tenantId: string,
   procedureRecordIds: string[],
-): Promise<number> {
-  if (procedureRecordIds.length === 0) return 0
+): Promise<string[]> {
+  if (procedureRecordIds.length === 0) return []
   const released = await tx
     .update(faceDiagramGroups)
     .set({ procedureRecordId: null, updatedAt: new Date() })
@@ -424,7 +434,7 @@ export async function releaseStandaloneGroups(
       ),
     )
     .returning({ id: faceDiagramGroups.id })
-  return released.length
+  return released.map((g) => g.id)
 }
 
 // ─── Reads ──────────────────────────────────────────────────────────
@@ -442,8 +452,12 @@ function groupQuotationTotal(
   return Number.isFinite(parsed) ? parsed : null
 }
 
-async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and>): Promise<DiagramGroupDetail[]> {
-  const rows = await db
+async function selectGroupDetails(
+  txDb: typeof db,
+  tenantId: string,
+  where: ReturnType<typeof and>,
+): Promise<DiagramGroupDetail[]> {
+  const rows = await txDb
     .select({
       id: faceDiagramGroups.id,
       patientId: faceDiagramGroups.patientId,
@@ -474,7 +488,7 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
 
   if (rows.length === 0) return []
 
-  const diagramRows = await db
+  const diagramRows = await txDb
     .select({ id: faceDiagrams.id, viewType: faceDiagrams.viewType, groupId: faceDiagrams.groupId })
     .from(faceDiagrams)
     .where(
@@ -483,7 +497,7 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
         inArray(faceDiagrams.groupId, rows.map((r) => r.id)),
       ),
     )
-  const views = await loadDiagramsWithPoints(db, diagramRows)
+  const views = await loadDiagramsWithPoints(txDb, diagramRows)
   const groupOf = new Map(diagramRows.map((d) => [d.id, d.groupId]))
 
   return rows.map((r) => {
@@ -516,8 +530,10 @@ async function selectGroupDetails(tenantId: string, where: ReturnType<typeof and
 export async function getDiagramGroup(
   tenantId: string,
   groupId: string,
+  txDb: typeof db = db,
 ): Promise<DiagramGroupDetail | null> {
   const [group] = await selectGroupDetails(
+    txDb,
     tenantId,
     and(
       eq(faceDiagramGroups.id, groupId),
@@ -533,6 +549,7 @@ export async function listPatientDiagramGroups(
   patientId: string,
 ): Promise<DiagramGroupDetail[]> {
   return selectGroupDetails(
+    db,
     tenantId,
     and(
       eq(faceDiagramGroups.tenantId, tenantId),

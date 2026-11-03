@@ -5,9 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, FileText, MessageCircle, Play } from 'lucide-react'
 import { toast } from 'sonner'
-import { useQueryClient } from '@tanstack/react-query'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints, pointsToViews } from '@/components/face-diagram/points'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useReadOnly } from '@/components/layout/subscription-access'
@@ -15,61 +15,23 @@ import { useDiagramProducts } from '@/hooks/queries/use-products'
 import { useProcedures } from '@/hooks/queries/use-procedures'
 import {
   useCreateDiagramGroup,
+  useGenerateDiagramQuote,
+  useSendDiagramQuoteWhatsapp,
   useUpdateDiagramGroup,
 } from '@/hooks/mutations/use-face-diagram-group-mutations'
-import { queryKeys } from '@/hooks/queries/query-keys'
 import type { DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isOpenStatus } from '@/lib/procedure-status'
 import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
 import { cn } from '@/lib/utils'
+import { canWriteClinical } from '@/lib/constants'
 import type { Patient } from '@/db/queries/patients'
-import type { DiagramViewType, ProcedureStatus, Role } from '@/types'
+import type { ProcedureStatus, Role } from '@/types'
 import type { QuotationLine } from '@/validations/face-diagram-group'
 import { QuotationLinesEditor } from './quotation-lines-editor'
 import { QuoteHistory } from './quote-history'
 
 const CARD = 'rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]'
-const VIEW_TYPES: DiagramViewType[] = ['front', 'left_profile', 'right_profile']
-
-export function groupToPoints(group: DiagramGroupJson | null): DiagramPointData[] {
-  if (!group) return []
-  return group.views.flatMap((view) =>
-    view.points.map((p) => ({
-      id: p.id,
-      x: Number(p.x),
-      y: Number(p.y),
-      viewType: view.viewType,
-      productName: p.productName,
-      activeIngredient: p.activeIngredient ?? undefined,
-      quantity: Number(p.quantity),
-      quantityUnit: p.quantityUnit as DiagramPointData['quantityUnit'],
-      technique: p.technique ?? undefined,
-      depth: p.depth ?? undefined,
-      notes: p.notes ?? undefined,
-    })),
-  )
-}
-
-function pointsToViews(points: DiagramPointData[]) {
-  const views = VIEW_TYPES.map((viewType) => ({
-    viewType,
-    points: points
-      .filter((p) => (p.viewType || 'front') === viewType)
-      .map((p) => ({
-        x: p.x,
-        y: p.y,
-        productName: p.productName,
-        activeIngredient: p.activeIngredient,
-        quantity: p.quantity,
-        quantityUnit: p.quantityUnit,
-        technique: p.technique,
-        depth: p.depth,
-        notes: p.notes,
-      })),
-  })).filter((v) => v.points.length > 0)
-  return views.length > 0 ? views : [{ viewType: 'front' as const, points: [] }]
-}
 
 interface DiagramGroupEditorProps {
   patient: Patient
@@ -79,22 +41,29 @@ interface DiagramGroupEditorProps {
 
 export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorProps) {
   const router = useRouter()
-  const queryClient = useQueryClient()
   const subscriptionReadOnly = useReadOnly()
-  const [points, setPoints] = useState<DiagramPointData[]>(() => groupToPoints(group))
+  const [points, setPoints] = useState<DiagramPointData[]>(() => diagramsToPoints(group?.views))
   const [lines, setLines] = useState<QuotationLine[]>(() => group?.quotationLines ?? [])
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState<'pdf' | 'whatsapp' | null>(null)
+  const [syncedUpdatedAt, setSyncedUpdatedAt] = useState(group?.updatedAt)
+
+  if (group && group.updatedAt !== syncedUpdatedAt && !busy && !dirty) {
+    setSyncedUpdatedAt(group.updatedAt)
+    setPoints(diagramsToPoints(group.views))
+    setLines(group.quotationLines)
+  }
 
   const createGroup = useCreateDiagramGroup()
   const updateGroup = useUpdateDiagramGroup()
+  const generateQuoteMutation = useGenerateDiagramQuote()
+  const sendWhatsapp = useSendDiagramQuoteWhatsapp()
   const { data: productsData } = useDiagramProducts()
   const { data: procedures, isLoading: loadingProcedures } = useProcedures(patient.id)
 
   const products = (productsData ?? []) as CatalogProduct[]
   const status = group?.status ?? 'quote'
-  const canWrite = role === 'owner' || role === 'practitioner'
-  const readOnly = status !== 'quote' || !canWrite || subscriptionReadOnly
+  const readOnly = status !== 'quote' || !canWriteClinical(role) || subscriptionReadOnly
   const saving = createGroup.isPending || updateGroup.isPending
 
   const hasActiveService = useMemo(
@@ -107,7 +76,7 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
     hasActiveService
       ? { href: atendimentoHref, label: 'Continuar atendimento' }
       : { href: `${atendimentoHref}?new=1&diagram=${groupId}`, label: 'Iniciar atendimento com este diagrama' }
-  const phoneOk = !!patient.phone && tryNormalizeBrPhoneForWhatsApp(patient.phone).ok
+  const phoneOk = tryNormalizeBrPhoneForWhatsApp(patient.phone).ok
   const hasLines = lines.length > 0
 
   async function save(): Promise<string | null> {
@@ -132,14 +101,12 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
   }
 
   async function generateQuote(groupId: string): Promise<{ id: string; url: string } | null> {
-    const res = await fetch(`/api/face-diagram-groups/${groupId}/quotes`, { method: 'POST' })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      toast.error(json.error || 'Falha ao gerar orçamento')
+    try {
+      return await generateQuoteMutation.mutateAsync({ groupId, patientId: patient.id })
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao gerar orçamento')
       return null
     }
-    await queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.detail(groupId) })
-    return json.data
   }
 
   async function handlePdf() {
@@ -148,9 +115,11 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
     const tab = window.open('', '_blank')
     setBusy('pdf')
     try {
-      if ((await save()) === null) return tab?.close()
-      const quote = await generateQuote(group.id)
-      if (!quote) return tab?.close()
+      const quote = (await save()) === null ? null : await generateQuote(group.id)
+      if (!quote) {
+        tab?.close()
+        return
+      }
       if (tab) tab.location.href = quote.url
       else window.open(quote.url, '_blank')
     } finally {
@@ -162,19 +131,12 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
     if (!group) return
     setBusy('whatsapp')
     try {
-      if ((await save()) === null) return
-      const quote = await generateQuote(group.id)
+      const quote = (await save()) === null ? null : await generateQuote(group.id)
       if (!quote) return
-      const res = await fetch(`/api/face-diagram-quotes/${quote.id}/send-whatsapp`, {
-        method: 'POST',
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        toast.error(json.error || 'Falha ao enviar via WhatsApp')
-        return
-      }
-      toast.success(json.data?.queued ? 'Orçamento na fila do WhatsApp' : 'Orçamento enviado')
-      await queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.detail(group.id) })
+      const result = await sendWhatsapp.mutateAsync({ quoteId: quote.id, patientId: patient.id })
+      toast.success(result?.queued ? 'Orçamento na fila do WhatsApp' : 'Orçamento enviado')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Falha ao enviar via WhatsApp')
     } finally {
       setBusy(null)
     }

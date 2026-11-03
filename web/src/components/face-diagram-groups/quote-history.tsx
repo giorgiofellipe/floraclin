@@ -1,32 +1,13 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { useId } from 'react'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { formatBrDate } from '@/lib/dates'
 import { formatCurrency } from '@/lib/utils'
-import { queryKeys } from '@/hooks/queries/query-keys'
-import type { DiagramQuote } from '@/db/queries/face-diagram-quotes'
+import { useDiagramQuotes, type DiagramQuoteJson } from '@/hooks/queries/use-face-diagram-groups'
 
-type QuoteWithUrl = Omit<DiagramQuote, 'createdAt' | 'whatsappRequestedAt'> & {
-  createdAt: string
-  whatsappRequestedAt: string | null
-  url: string | null
-}
-
-
-export function useDiagramQuotes(groupId: string) {
-  return useQuery({
-    queryKey: [...queryKeys.diagramGroups.detail(groupId), 'quotes'],
-    queryFn: async () => {
-      const res = await fetch(`/api/face-diagram-groups/${groupId}/quotes`)
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      return (await res.json()).data as QuoteWithUrl[]
-    },
-  })
-}
-
-function whatsappNote(quote: QuoteWithUrl): string | null {
+function whatsappNote(quote: DiagramQuoteJson): string | null {
   if (!quote.whatsappRequestedAt) return null
   const date = formatBrDate(quote.whatsappRequestedAt)
   if (quote.whatsappStatus === 'sent') return `Enviado por WhatsApp em ${date}`
@@ -36,15 +17,18 @@ function whatsappNote(quote: QuoteWithUrl): string | null {
 
 export function QuoteHistory({ groupId }: { groupId: string }) {
   const { data: quotes } = useDiagramQuotes(groupId)
+  const titleId = useId()
 
   if (!quotes || quotes.length === 0) return null
 
   return (
     <section
-      aria-label="Orçamentos gerados"
+      aria-labelledby={titleId}
       className="space-y-3 rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
     >
-      <h3 className="text-sm font-medium text-charcoal">Orçamentos gerados</h3>
+      <h3 id={titleId} className="text-sm font-medium text-charcoal">
+        Orçamentos gerados
+      </h3>
       <ul className="divide-y divide-sage/10">
         {quotes.map((quote) => {
           const note = whatsappNote(quote)

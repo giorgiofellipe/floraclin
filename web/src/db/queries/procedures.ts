@@ -436,9 +436,9 @@ export async function cancelProcedure(
     )
     .returning()
 
-  if (updated) await releaseStandaloneGroups(txDb, tenantId, [procedureId])
-
-  return updated
+  if (!updated) return undefined
+  const releasedDiagramGroupIds = await releaseStandaloneGroups(txDb, tenantId, [procedureId])
+  return { procedure: updated, releasedDiagramGroupIds }
 }
 
 export async function getLatestOpenProcedure(

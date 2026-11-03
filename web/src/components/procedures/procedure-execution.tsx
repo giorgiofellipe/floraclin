@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from '@/hooks/queries/query-keys'
 
 import { Button } from '@/components/ui/button'
 import { formatDate } from '@/lib/utils'
@@ -202,7 +203,10 @@ export function ProcedureExecution({
   })
 
   const invalidate = () =>
-    qc.invalidateQueries({ queryKey: ['encounter-view', encounterId] })
+    Promise.all([
+      qc.invalidateQueries({ queryKey: ['encounter-view', encounterId] }),
+      qc.invalidateQueries({ queryKey: queryKeys.diagramGroups.all }),
+    ])
 
   if (mode.kind === 'execute') {
     // Derive prefill from the highest-ordinal already-executed session of the

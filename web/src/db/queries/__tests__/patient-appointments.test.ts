@@ -12,7 +12,7 @@ beforeEach(() => selectMock.mockReset())
 
 describe('listPatientAppointments', () => {
   it('scopes the query to the tenant and the patient and skips soft-deleted rows', async () => {
-    // Regression: dropping either id filter would leak another tenant's or patient's agenda.
+    // dropping either id filter would leak another tenant's or patient's agenda.
     const capture: Capture = {}
     selectMock.mockReturnValueOnce(chainCapturing([{ id: 'a1' }], capture))
 

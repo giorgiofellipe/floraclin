@@ -5,6 +5,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { usePatient } from '@/hooks/queries/use-patients'
 import { DiagramGroupEditor } from '@/components/face-diagram-groups/diagram-group-editor'
+import { canWriteClinical } from '@/lib/constants'
 import type { Role } from '@/types'
 
 export function NewDiagramPageClient({ patientId, role }: { patientId: string; role: Role }) {
@@ -15,7 +16,7 @@ export function NewDiagramPageClient({ patientId, role }: { patientId: string; r
   }
   if (!patient) return notFound()
 
-  if (role !== 'owner' && role !== 'practitioner') {
+  if (!canWriteClinical(role)) {
     return (
       <div className="mx-auto max-w-xl p-6 text-center">
         <p className="text-sm text-mid">Você não tem permissão para criar diagramas.</p>

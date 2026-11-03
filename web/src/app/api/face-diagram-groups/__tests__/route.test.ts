@@ -18,7 +18,7 @@ const tx = vi.hoisted(() => ({ name: 'tx' }))
 vi.mock('@/lib/tenant', () => ({
   withTransaction: vi.fn((fn: (t: unknown) => unknown) => fn(tx)),
 }))
-vi.mock('@/db/queries/helpers', () => ({ verifyTenantOwnership: vi.fn() }))
+vi.mock('@/db/queries/patients', () => ({ getPatient: vi.fn() }))
 vi.mock('@/db/client', () => ({ db: {} }))
 vi.mock('@/db/queries/face-diagram-groups', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/db/queries/face-diagram-groups')>()
@@ -34,6 +34,7 @@ vi.mock('@/db/queries/face-diagram-groups', async (importOriginal) => {
 })
 
 import { getAuthContext } from '@/lib/auth'
+import { getPatient } from '@/db/queries/patients'
 import { createAuditLog } from '@/lib/audit'
 import {
   DiagramGroupLockedError,
@@ -62,6 +63,7 @@ function as(role: string) {
 beforeEach(() => {
   vi.clearAllMocks()
   as('owner')
+  vi.mocked(getPatient).mockResolvedValue({ id: 'p1' } as never)
 })
 
 describe('diagram group routes', () => {
@@ -87,8 +89,21 @@ describe('diagram group routes', () => {
       expect.anything(),
       expect.objectContaining({ tenantId: 'tenant-1', patientId: 'p1', practitionerId: 'user-1' })
     )
-    // Regression: an audit written after commit could be lost while the group persisted.
     expect(createAuditLog).toHaveBeenCalledWith(expect.objectContaining({ entityId: 'g1' }), tx)
+  })
+
+  it('returns 404 on create for a patient outside the tenant', async () => {
+    vi.mocked(getPatient).mockResolvedValue(null)
+    const res = await POST(json(validBody), params('p1'))
+    expect(res.status).toBe(404)
+    expect(createStandaloneGroup).not.toHaveBeenCalled()
+  })
+
+  it('surfaces a failed patient lookup as an error, not as a missing patient', async () => {
+    vi.mocked(getPatient).mockRejectedValue(new Error('connection reset'))
+    const res = await POST(json(validBody), params('p1'))
+    expect(res.status).toBe(500)
+    expect(createStandaloneGroup).not.toHaveBeenCalled()
   })
 
   it('rejects create with a procedure outside the tenant catalog with 400', async () => {

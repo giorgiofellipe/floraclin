@@ -39,6 +39,7 @@ import {
 } from '@/db/schema'
 import { and, eq, sql } from 'drizzle-orm'
 import { createFinancialEntry } from '@/db/queries/financial'
+import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
 import {
   autoPackageName,
   computeCartTotal,
@@ -51,6 +52,12 @@ import { createAuditLog } from '@/lib/audit'
 import { requiredConsentTypes, pendingConsentTypes } from '@/lib/consent-requirements'
 import type { PaymentMethod } from '@/types'
 import { isCardMethod } from '@/lib/financial/card-repasses'
+
+export class InvalidEncounterProcedureError extends Error {
+  constructor() {
+    super('Procedimento inválido')
+  }
+}
 
 export interface FinalizeEncounterInput {
   tenantId: string
@@ -168,6 +175,52 @@ export async function finalizeEncounter(
       }
     }
 
+    // Cart lines and template must be live in the tenant catalog. Required consents are
+    // stored on the primary record so unsigned ones can be collected later.
+    const typeIds = [...new Set(input.cart.lines.map((l) => l.procedureTypeId))]
+    const [requirementRow] = rowsFromExecuteResult<Record<string, unknown>>(
+      await tx.execute(sql`
+        SELECT
+          COALESCE(
+            (SELECT json_agg(DISTINCT category)
+             FROM floraclin.procedure_types
+             WHERE tenant_id = ${input.tenantId}
+               AND id IN (${sql.join(typeIds.map((id) => sql`${id}`), sql`, `)})),
+            '[]'::json
+          ) AS categories,
+          EXISTS (
+            SELECT 1 FROM floraclin.consent_templates
+            WHERE tenant_id = ${input.tenantId}
+              AND type = 'service_contract'
+              AND is_active = true
+          ) AS has_contract,
+          (SELECT count(*)::int
+           FROM floraclin.procedure_types
+           WHERE tenant_id = ${input.tenantId}
+             AND id IN (${sql.join(typeIds.map((id) => sql`${id}`), sql`, `)})
+             AND is_active = true
+             AND deleted_at IS NULL) AS valid_type_count,
+          ${input.cart.templateId
+            ? sql`EXISTS (
+                SELECT 1 FROM floraclin.package_templates
+                WHERE id = ${input.cart.templateId}
+                  AND tenant_id = ${input.tenantId}
+                  AND deleted_at IS NULL
+              )`
+            : sql`true`} AS template_valid
+      `),
+    )
+    if (
+      Number(requirementRow?.valid_type_count) !== typeIds.length ||
+      requirementRow?.template_valid !== true
+    ) {
+      throw new InvalidEncounterProcedureError()
+    }
+    const required = requiredConsentTypes({
+      categories: (requirementRow.categories as string[] | undefined) ?? [],
+      hasActiveContractTemplate: requirementRow.has_contract === true,
+    })
+
     // 2. Optional package row. Created BEFORE the financial entry so we
     //    have a name to use in the entry description, but we still need the
     //    financial_entry id to satisfy the NOT NULL FK on patient_packages.
@@ -230,39 +283,6 @@ export async function finalizeEncounter(
         .returning({ id: patientPackages.id })
       patientPackageId = pkgRow.id
     }
-
-    // Required consents for the whole cart, stored on the primary record so unsigned
-    // ones can be collected later.
-    const rowsOf = (result: unknown) =>
-      (Array.isArray(result)
-        ? result
-        : (result as { rows?: Record<string, unknown>[] }).rows ?? []) as Record<string, unknown>[]
-
-    const [requirementRow] = rowsOf(
-      await tx.execute(sql`
-        SELECT
-          COALESCE(
-            (SELECT json_agg(DISTINCT category)
-             FROM floraclin.procedure_types
-             WHERE tenant_id = ${input.tenantId}
-               AND id IN (${sql.join(
-                 input.cart.lines.map((l) => sql`${l.procedureTypeId}`),
-                 sql`, `,
-               )})),
-            '[]'::json
-          ) AS categories,
-          EXISTS (
-            SELECT 1 FROM floraclin.consent_templates
-            WHERE tenant_id = ${input.tenantId}
-              AND type = 'service_contract'
-              AND is_active = true
-          ) AS has_contract
-      `),
-    )
-    const required = requiredConsentTypes({
-      categories: (requirementRow?.categories as string[] | undefined) ?? [],
-      hasActiveContractTemplate: requirementRow?.has_contract === true,
-    })
 
     // 5. Finalize drafts in place. We do one UPDATE per record because each
     //    line carries a distinct `sessionsTotal`. `plannedSnapshot` is
@@ -354,7 +374,7 @@ export async function finalizeEncounter(
 
     // 7. Pending consents: required types minus what was just signed.
     const primaryRecordId = finalRecordIds[0]
-    const signedRows = rowsOf(
+    const signedRows = rowsFromExecuteResult<Record<string, unknown>>(
       await tx.execute(sql`
         SELECT DISTINCT t.type
         FROM floraclin.consent_acceptances a
