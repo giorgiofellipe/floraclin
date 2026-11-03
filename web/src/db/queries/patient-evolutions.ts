@@ -462,16 +462,19 @@ async function listSessionsForPatient(
         WHERE dp.face_diagram_id = fd.id
       ) AS pt_count
       FROM floraclin.face_diagrams fd
+      JOIN floraclin.face_diagram_groups g ON g.id = fd.group_id
       WHERE fd.tenant_id = ${tenantId}
+        AND g.deleted_at IS NULL
         AND (
-          fd.procedure_session_id = ${procedureSessions.id}
+          g.procedure_session_id = ${procedureSessions.id}
           OR (
             NOT EXISTS (
-              SELECT 1 FROM floraclin.face_diagrams fd2
-              WHERE fd2.procedure_session_id = ${procedureSessions.id}
+              SELECT 1 FROM floraclin.face_diagram_groups g2
+              WHERE g2.procedure_session_id = ${procedureSessions.id}
+                AND g2.deleted_at IS NULL
             )
-            AND fd.procedure_record_id = ${procedureRecords.id}
-            AND fd.procedure_session_id IS NULL
+            AND g.procedure_record_id = ${procedureRecords.id}
+            AND g.procedure_session_id IS NULL
           )
         )
     ) sub

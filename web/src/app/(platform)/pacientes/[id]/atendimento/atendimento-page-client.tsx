@@ -28,6 +28,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const deepLinkProcedureId = searchParams.get('procedure')
   const deepLinkAction = searchParams.get('action')
   const autoStartNext = deepLinkAction === 'executeNext'
+  const diagramGroupId = searchParams.get('diagram')
   const hasDeepLink = !!deepLinkProcedureId && autoStartNext
 
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
@@ -146,6 +147,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       stepTimestamps={stepTimestamps}
       deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
       autoStartNext={hasDeepLink ? autoStartNext : false}
+      initialDiagramGroupId={diagramGroupId}
     />
   )
 }

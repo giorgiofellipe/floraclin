@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowLeft,
@@ -22,13 +23,13 @@ import {
 import { Button } from '@/components/ui/button'
 import { FaceDiagramEditor } from '@/components/face-diagram/face-diagram-editor'
 import { cn } from '@/lib/utils'
-import { PROCEDURE_STATUS_LABELS } from '@/lib/constants'
+import { CONSENT_TYPE_LABELS, PROCEDURE_STATUS_LABELS } from '@/lib/constants'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
-import type { DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints } from '@/components/face-diagram/points'
 import type { PaymentMethod } from '@/types'
 import { ListAnswerTable } from '@/components/forms/list-answer-table'
 import type { FormSection, FormResponses, FormQuestion, FormListResponse } from '@/lib/forms/types'
@@ -39,6 +40,7 @@ import {
 import { FollowupModal } from '@/components/planejamentos/followup-modal'
 import { SnoozeModal } from '@/components/planejamentos/snooze-modal'
 import { useFollowupsForProcedure } from '@/hooks/queries/use-planejamentos'
+import { usePendingConsents } from '@/hooks/queries/use-consent'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -81,27 +83,6 @@ function formatLongDate(date: Date | string): string {
 
 function formatShortDate(date: Date | string): string {
   return format(new Date(date), 'dd/MM/yyyy', { locale: ptBR })
-}
-
-function diagramsToPoints(diagrams: DiagramWithPoints[]): DiagramPointData[] {
-  const points: DiagramPointData[] = []
-  for (const d of diagrams) {
-    for (const p of d.points) {
-      points.push({
-        id: p.id,
-        x: parseFloat(p.x),
-        y: parseFloat(p.y),
-        productName: p.productName,
-        activeIngredient: p.activeIngredient ?? undefined,
-        quantity: parseFloat(p.quantity),
-        quantityUnit: p.quantityUnit as DiagramPointData['quantityUnit'],
-        technique: p.technique ?? undefined,
-        depth: p.depth ?? undefined,
-        notes: p.notes ?? undefined,
-      })
-    }
-  }
-  return points
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────
@@ -214,6 +195,8 @@ export function ProcedureDetailView({
   const statusLabel = PROCEDURE_STATUS_LABELS[procedure.status] ?? procedure.status
   const financialPlan = procedure.financialPlan as FinancialPlan | null
   const diagramPoints = useMemo(() => diagramsToPoints(diagrams), [diagrams])
+  const { data: pendingConsents } = usePendingConsents(patientId)
+  const pendingTypes = pendingConsents?.find((c) => c.procedureRecordId === procedure.id)?.pendingTypes ?? []
 
   const isCancelled = procedure.status === 'cancelled'
   // Treatment delivered: any session executed (in_progress) OR fully done (completed).
@@ -282,7 +265,7 @@ export function ProcedureDetailView({
           the previous window.print() shortcut here. */}
       <div className="flex items-center justify-between mb-6" data-print-hide>
         <button
-          onClick={() => router.push(`/pacientes/${patientId}?tab=procedimentos`)}
+          onClick={() => router.push(`/pacientes/${patientId}?tab=atendimentos`)}
           className="inline-flex items-center gap-1.5 text-[13px] text-mid hover:text-forest transition-colors"
         >
           <ArrowLeft className="size-3.5" />
@@ -371,6 +354,24 @@ export function ProcedureDetailView({
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {pendingTypes.length > 0 && (
+          <div
+            data-print-hide
+            className="mx-8 mb-6 flex flex-col gap-2 rounded-lg border border-sage/20 bg-sage/5 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p className="text-[13px] text-forest">
+              Assinaturas pendentes: {pendingTypes.map((t) => CONSENT_TYPE_LABELS[t] ?? t).join(', ')}
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/pacientes/${patientId}/procedimentos/${procedure.id}?action=sign`} />}
+            >
+              Coletar assinaturas
+            </Button>
           </div>
         )}
 

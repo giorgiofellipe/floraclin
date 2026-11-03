@@ -297,15 +297,14 @@ vi.mock('@/db/queries/face-diagrams', () => ({
   saveFaceDiagramForSession: vi.fn(
     async (
       tenantId: string,
-      procedureRecordId: string,
-      procedureSessionId: string,
+      group: { procedureRecordId: string; procedureSessionId: string },
       viewType: string,
       points: unknown,
     ) => {
       txState.diagramCalls.push({
         tenantId,
-        procedureRecordId,
-        procedureSessionId,
+        procedureRecordId: group.procedureRecordId,
+        procedureSessionId: group.procedureSessionId,
         viewType,
         points,
       })

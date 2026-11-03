@@ -1,7 +1,9 @@
 import { db } from '@/db/client'
-import { procedureFollowups, procedureRecords } from '@/db/schema'
+import { faceDiagramGroups, procedureFollowups, procedureRecords } from '@/db/schema'
+import { lockDiagramGroup, releaseStandaloneGroups } from '@/db/queries/face-diagram-groups'
 import { cancelLinkedFinancials } from '@/db/queries/financial'
 import { withTransaction } from '@/lib/tenant'
+import { createAuditLog } from '@/lib/audit'
 import { and, eq, isNull } from 'drizzle-orm'
 import type { FollowupChannel, FollowupOutcome } from '@/validations/followup'
 
@@ -18,6 +20,7 @@ export interface RecordFollowupResult {
   followupId: string
   cancelledProcedure: boolean
   previousStatus: string | null
+  releasedDiagramGroupIds: string[]
 }
 
 // Statuses from which a followup of outcome === 'desistiu' may flip the
@@ -60,12 +63,14 @@ export async function recordFollowup(
       .where(
         and(
           eq(procedureRecords.id, args.procedureRecordId),
+          eq(procedureRecords.tenantId, args.tenantId),
           isNull(procedureRecords.deletedAt),
         ),
       )
+      .for('update')
       .limit(1)
 
-    if (!proc || proc.tenantId !== args.tenantId) {
+    if (!proc) {
       throw new Error('Procedure not found')
     }
 
@@ -105,6 +110,8 @@ export async function recordFollowup(
         })
         .where(eq(procedureRecords.id, args.procedureRecordId))
 
+      const releasedDiagramGroupIds = await releaseStandaloneGroups(tx, args.tenantId, [args.procedureRecordId])
+
       // Mirror the dedicated /cancel route: approved procedures have live
       // financial entries that must also be cancelled.
       if (proc.status === 'approved') {
@@ -121,6 +128,7 @@ export async function recordFollowup(
         followupId: followup.id,
         cancelledProcedure: true,
         previousStatus: proc.status,
+        releasedDiagramGroupIds,
       }
     }
 
@@ -133,6 +141,7 @@ export async function recordFollowup(
       followupId: followup.id,
       cancelledProcedure: false,
       previousStatus: proc.status,
+      releasedDiagramGroupIds: [],
     }
   })
 }
@@ -162,4 +171,116 @@ export async function snoozeProcedure(args: SnoozeProcedureArgs): Promise<boolea
     .returning({ id: procedureRecords.id })
 
   return result.length > 0
+}
+
+export interface RecordDiagramFollowupArgs {
+  tenantId: string
+  groupId: string
+  userId: string
+  channel: FollowupChannel
+  outcome: FollowupOutcome
+  notes?: string | null
+}
+
+export interface RecordDiagramFollowupResult {
+  followupId: string
+  declined: boolean
+}
+
+export const DIAGRAM_NOT_FOUND = 'Diagram group not found'
+export const DIAGRAM_NOT_AWAITING = 'Diagram quote is not awaiting an answer'
+
+/**
+ * Records a contact attempt on a standalone quotation. Outcome 'desistiu'
+ * marks the quotation as declined.
+ */
+export async function recordDiagramFollowup(
+  args: RecordDiagramFollowupArgs,
+): Promise<RecordDiagramFollowupResult> {
+  return withTransaction(async (tx) => {
+    const group = await lockDiagramGroup(tx, args.tenantId, args.groupId)
+    if (!group) throw new Error(DIAGRAM_NOT_FOUND)
+    if (group.status !== 'quote') throw new Error(DIAGRAM_NOT_AWAITING)
+
+    const now = new Date()
+    const [followup] = await tx
+      .insert(procedureFollowups)
+      .values({
+        tenantId: args.tenantId,
+        faceDiagramGroupId: args.groupId,
+        contactedBy: args.userId,
+        contactedAt: now,
+        channel: args.channel,
+        outcome: args.outcome,
+        notes: args.notes ?? null,
+      })
+      .returning({ id: procedureFollowups.id })
+
+    const declined = args.outcome === 'desistiu'
+    await tx
+      .update(faceDiagramGroups)
+      .set({
+        lastContactedAt: now,
+        updatedAt: now,
+        ...(declined ? { declinedAt: now } : {}),
+      })
+      .where(eq(faceDiagramGroups.id, args.groupId))
+
+    await createAuditLog(
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        action: 'create',
+        entityType: 'procedure_followup',
+        entityId: followup.id,
+        changes: {
+          followup: {
+            old: null,
+            new: {
+              faceDiagramGroupId: args.groupId,
+              channel: args.channel,
+              outcome: args.outcome,
+              notes: args.notes ?? null,
+            },
+          },
+          ...(declined ? { declinedAt: { old: null, new: now.toISOString() } } : {}),
+        },
+      },
+      tx,
+    )
+
+    return { followupId: followup.id, declined }
+  })
+}
+
+export interface SnoozeDiagramGroupArgs {
+  tenantId: string
+  groupId: string
+  userId: string
+  until: string | null
+}
+
+export async function snoozeDiagramGroup(args: SnoozeDiagramGroupArgs): Promise<void> {
+  await withTransaction(async (tx) => {
+    const group = await lockDiagramGroup(tx, args.tenantId, args.groupId)
+    if (!group) throw new Error(DIAGRAM_NOT_FOUND)
+    if (group.status !== 'quote') throw new Error(DIAGRAM_NOT_AWAITING)
+
+    await tx
+      .update(faceDiagramGroups)
+      .set({ followupSnoozedUntil: args.until, updatedAt: new Date() })
+      .where(eq(faceDiagramGroups.id, args.groupId))
+
+    await createAuditLog(
+      {
+        tenantId: args.tenantId,
+        userId: args.userId,
+        action: 'update',
+        entityType: 'face_diagram_group',
+        entityId: args.groupId,
+        changes: { followupSnoozedUntil: { old: null, new: args.until } },
+      },
+      tx,
+    )
+  })
 }

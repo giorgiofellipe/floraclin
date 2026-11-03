@@ -15,10 +15,13 @@ import {
   anamneses,
   patientPackages,
   clinicalDocuments,
+  faceDiagramQuotes,
 } from '@/db/schema'
 import { eq, and, isNull, inArray } from 'drizzle-orm'
 import type { TimelineEntry, TimelineGroup, PatientTimeline } from '@/types/timeline'
 import { handleApiError } from '@/lib/api-error'
+import { formatBrDate } from '@/lib/dates'
+import { formatCurrency } from '@/lib/utils'
 
 // ─── Label maps ─────────────────────────────────────────────────────
 
@@ -84,6 +87,7 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
       paymentsData,
       packagesData,
       documentsData,
+      quotesData,
     ] = await Promise.all([
       // Patient record
       db
@@ -285,6 +289,24 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
           and(
             eq(clinicalDocuments.tenantId, tenantId),
             eq(clinicalDocuments.patientId, patientId)
+          )
+        ),
+
+      db
+        .select({
+          id: faceDiagramQuotes.id,
+          total: faceDiagramQuotes.total,
+          createdAt: faceDiagramQuotes.createdAt,
+          whatsappStatus: faceDiagramQuotes.whatsappStatus,
+          whatsappRequestedAt: faceDiagramQuotes.whatsappRequestedAt,
+          createdByName: users.fullName,
+        })
+        .from(faceDiagramQuotes)
+        .leftJoin(users, eq(users.id, faceDiagramQuotes.createdBy))
+        .where(
+          and(
+            eq(faceDiagramQuotes.tenantId, tenantId),
+            eq(faceDiagramQuotes.patientId, patientId)
           )
         ),
     ])
@@ -556,6 +578,30 @@ async function buildPatientTimeline(tenantId: string, patientId: string): Promis
           date: new Date(new Date(docu.issuedAt).getTime() + 1000).toISOString(),
           title: `${kindLabel} enviado por WhatsApp`,
           meta: docu.title,
+        })
+      }
+    }
+
+    for (const quote of quotesData) {
+      const byLabel = quote.createdByName ? ` por ${quote.createdByName}` : ''
+      ungrouped.push({
+        id: `quote-${quote.id}`,
+        type: 'quote_generated',
+        date: new Date(quote.createdAt).toISOString(),
+        title: `Orçamento gerado${byLabel}`,
+        meta: formatCurrency(Number(quote.total)),
+      })
+      if (quote.whatsappStatus && quote.whatsappRequestedAt) {
+        const requestedAt = new Date(quote.whatsappRequestedAt)
+        ungrouped.push({
+          id: `quote-wa-${quote.id}`,
+          type: 'quote_sent_whatsapp',
+          date: requestedAt.toISOString(),
+          title:
+            quote.whatsappStatus === 'sent'
+              ? 'Orçamento enviado por WhatsApp'
+              : 'Orçamento na fila do WhatsApp',
+          meta: formatBrDate(requestedAt),
         })
       }
     }

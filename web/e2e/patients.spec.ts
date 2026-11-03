@@ -70,10 +70,9 @@ test.describe('Patient CRUD', () => {
       await page.getByTestId('patient-row-0').getByRole('link').first().click()
       await page.waitForURL(/\/pacientes\//, { timeout: 10000 })
 
-      // Verify tabs are visible
-      await expect(page.getByTestId('patient-tab-dados')).toBeVisible({ timeout: 10000 })
-      await expect(page.getByTestId('patient-tab-anamnese')).toBeVisible()
-      await expect(page.getByTestId('patient-tab-procedimentos')).toBeVisible()
+      await expect(page.getByTestId('patient-section-resumo')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByTestId('patient-section-anamnese')).toBeVisible()
+      await expect(page.getByTestId('patient-section-atendimentos')).toBeVisible()
     } else {
       // If no patients, verify the empty state is shown
       await expect(page.getByTestId('patient-empty-state')).toBeVisible()
@@ -102,9 +101,9 @@ test.describe('Patient CRUD', () => {
     await page.waitForURL(/\/pacientes\//, { timeout: 10000 })
 
     // Click through tabs and verify each is clickable
-    const tabs = ['anamnese', 'procedimentos', 'fotos', 'termos', 'financeiro', 'timeline']
+    const tabs = ['diagramas', 'anamnese', 'atendimentos', 'fotos', 'termos', 'financeiro', 'historico']
     for (const tab of tabs) {
-      const tabButton = page.getByTestId(`patient-tab-${tab}`)
+      const tabButton = page.getByTestId(`patient-section-${tab}`)
       await expect(tabButton).toBeVisible({ timeout: 5000 })
       await tabButton.click()
       await page.waitForTimeout(300)

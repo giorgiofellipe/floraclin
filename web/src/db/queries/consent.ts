@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
-import { consentTemplates, consentAcceptances, patients, procedureRecords, tenants } from '@/db/schema'
-import { eq, and, desc, max, sql } from 'drizzle-orm'
+import { consentTemplates, consentAcceptances, patients, procedureRecords, procedureTypes, tenants } from '@/db/schema'
+import { pendingConsentTypes } from '@/lib/consent-requirements'
+import { eq, and, desc, max, sql, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
@@ -137,6 +138,12 @@ export async function updateConsentTemplate(
   )
 }
 
+export class ConsentProcedureMismatchError extends Error {
+  constructor() {
+    super('Procedimento inválido')
+  }
+}
+
 export async function acceptConsent(
   tenantId: string,
   data: ConsentAcceptanceInput,
@@ -154,12 +161,22 @@ export async function acceptConsent(
 ) {
   const target = tx ?? db
 
-  await Promise.all([
-    verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient'),
-    ...(data.procedureRecordId
-      ? [verifyTenantOwnership(tenantId, procedureRecords, data.procedureRecordId, 'Procedure record')]
-      : []),
-  ])
+  await verifyTenantOwnership(tenantId, patients, data.patientId, 'Patient')
+  if (data.procedureRecordId) {
+    const [procedure] = await target
+      .select({ id: procedureRecords.id })
+      .from(procedureRecords)
+      .where(
+        and(
+          eq(procedureRecords.id, data.procedureRecordId),
+          eq(procedureRecords.tenantId, tenantId),
+          eq(procedureRecords.patientId, data.patientId),
+          isNull(procedureRecords.deletedAt)
+        )
+      )
+      .limit(1)
+    if (!procedure) throw new ConsentProcedureMismatchError()
+  }
 
   const [template] = await target
     .select()
@@ -387,4 +404,69 @@ export async function getConsentAcceptanceWithContext(tenantId: string, acceptan
   // `tenants.logo_url` holds a storage path; the termo print page and PDF
   // route both render this straight into an <img>.
   return { ...row, tenantLogoUrl: await signLogoPath(row.tenantLogoUrl) }
+}
+
+export interface PendingConsentItem {
+  procedureRecordId: string
+  procedureTypeName: string
+  approvedAt: Date | null
+  pendingTypes: string[]
+}
+
+export async function listPendingConsents(
+  tenantId: string,
+  patientId: string,
+): Promise<PendingConsentItem[]> {
+  const records = await db
+    .select({
+      id: procedureRecords.id,
+      procedureTypeName: procedureTypes.name,
+      approvedAt: procedureRecords.approvedAt,
+      requiredConsentTypes: procedureRecords.requiredConsentTypes,
+    })
+    .from(procedureRecords)
+    .innerJoin(procedureTypes, eq(procedureRecords.procedureTypeId, procedureTypes.id))
+    .where(
+      and(
+        eq(procedureRecords.tenantId, tenantId),
+        eq(procedureRecords.patientId, patientId),
+        inArray(procedureRecords.status, ['approved', 'in_progress', 'completed']),
+        isNotNull(procedureRecords.requiredConsentTypes),
+        isNull(procedureRecords.deletedAt),
+      ),
+    )
+    .orderBy(desc(procedureRecords.approvedAt))
+
+  if (records.length === 0) return []
+
+  const signed = await db
+    .selectDistinct({
+      procedureRecordId: consentAcceptances.procedureRecordId,
+      type: consentTemplates.type,
+    })
+    .from(consentAcceptances)
+    .innerJoin(consentTemplates, eq(consentAcceptances.consentTemplateId, consentTemplates.id))
+    .where(
+      and(
+        eq(consentAcceptances.tenantId, tenantId),
+        inArray(consentAcceptances.procedureRecordId, records.map((r) => r.id)),
+      ),
+    )
+
+  const items: PendingConsentItem[] = []
+  for (const record of records) {
+    const signedTypes = signed
+      .filter((s) => s.procedureRecordId === record.id)
+      .map((s) => s.type)
+    const pendingTypes = pendingConsentTypes(record.requiredConsentTypes ?? [], signedTypes)
+    if (pendingTypes.length > 0) {
+      items.push({
+        procedureRecordId: record.id,
+        procedureTypeName: record.procedureTypeName,
+        approvedAt: record.approvedAt,
+        pendingTypes,
+      })
+    }
+  }
+  return items
 }

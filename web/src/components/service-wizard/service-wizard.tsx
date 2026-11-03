@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
@@ -19,6 +19,8 @@ import {
 import { WizardStepper } from './wizard-stepper'
 import { WizardStep as WizardStepWrapper } from './wizard-step'
 import { ProcedureTypeStep } from './procedure-type-step'
+import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { SaveStatusIndicator } from './save-status-indicator'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
@@ -35,6 +37,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
+import { isOpenDiagram } from '@/lib/face-diagram-status'
 import {
   countPendingSessions,
   encounterViewQueryOptions,
@@ -87,6 +90,8 @@ interface ServiceWizardProps {
    */
   deepLinkProcedureId?: string | null
   autoStartNext?: boolean
+  /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
+  initialDiagramGroupId?: string | null
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -119,8 +124,17 @@ export function ServiceWizard({
   stepTimestamps,
   deepLinkProcedureId,
   autoStartNext,
+  initialDiagramGroupId,
 }: ServiceWizardProps) {
   const router = useRouter()
+  const queryClient = useQueryClient()
+  const [sourceDiagramGroupId, setSourceDiagramGroupId] = useState<string | null>(
+    initialDiagramGroupId ?? null,
+  )
+  const { data: diagramGroups } = usePatientDiagramGroups(patient.id)
+  const sourceDiagramGroup = sourceDiagramGroupId
+    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId && isOpenDiagram(g.status))
+    : undefined
 
   // Derive initial selected type IDs from existing procedure
   const initialSelectedTypeIds = (() => {
@@ -173,6 +187,7 @@ export function ServiceWizard({
   // ─── Lift procedure data into client state (CRITICAL 1 fix) ────
   const [localProcedure, setLocalProcedure] = useState<ProcedureWithDetails | null>(procedure ?? null)
   const [localDiagrams, setLocalDiagrams] = useState<DiagramWithPoints[] | null>(diagrams ?? null)
+  const [pendingSignatureLabels, setPendingSignatureLabels] = useState<string[]>([])
   const [localApplications, setLocalApplications] = useState<ProductApplicationRecord[] | null>(existingApplications ?? null)
 
   // Per-step dirty tracking + stable handlers
@@ -564,6 +579,7 @@ export function ServiceWizard({
         throw new Error(err.error || `Erro ao finalizar (HTTP ${res.status})`)
       }
       const payload = await res.json()
+      queryClient.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
       const recordIds: string[] = Array.isArray(payload?.data?.procedureRecordIds)
         ? payload.data.procedureRecordIds
         : Array.isArray(payload?.procedureRecordIds)
@@ -601,6 +617,7 @@ export function ServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     nextStep,
+    queryClient,
   ])
 
   // ─── Next handler ──────────────────────────────────────────────
@@ -758,7 +775,10 @@ export function ServiceWizard({
   // ─── Render ────────────────────────────────────────────────────
 
   const skipLabel = getSkipLabel(state.currentStep)
-  const nextLabel = getNextLabel(state.currentStep)
+  const nextLabel =
+    state.currentStep === 4 && pendingSignatureLabels.length > 0
+      ? 'Aprovar e assinar depois'
+      : getNextLabel(state.currentStep)
   const showBack = state.currentStep > 1
   const showSkip = canSkip(state.currentStep)
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
@@ -887,6 +907,11 @@ export function ServiceWizard({
               )}
               <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
                 <ProcedureTypeStep
+                  patientId={patient.id}
+                  quoteSelection={{
+                    selectedGroupId: sourceDiagramGroupId,
+                    onSelect: setSourceDiagramGroupId,
+                  }}
                   cart={state.cart}
                   onCartChange={setCart}
                   selectedTypeIds={state.selectedTypeIds}
@@ -909,6 +934,11 @@ export function ServiceWizard({
                 patientGender={patient.gender}
                 procedure={localProcedure ?? undefined}
                 diagrams={localDiagrams ?? undefined}
+                sourceDiagram={
+                  sourceDiagramGroup
+                    ? { groupId: sourceDiagramGroup.id, views: sourceDiagramGroup.views }
+                    : null
+                }
                 existingApplications={localApplications ?? undefined}
                 initialTypeIds={state.selectedTypeIds}
                 cart={state.cart.lines.length > 0 ? state.cart : undefined}
@@ -964,6 +994,7 @@ export function ServiceWizard({
                   }
                   encounterId={state.encounterId}
                   wizardOverrides={getOverridesForStep(4)}
+                  onPendingSignaturesChange={setPendingSignatureLabels}
                 />
               ) : (
                 <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">

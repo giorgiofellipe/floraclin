@@ -8,7 +8,6 @@ import {
   Loader2,
   ShieldCheck,
   ArrowLeft,
-  RefreshCw,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -16,79 +15,34 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { CardPaymentFields } from '@/components/financial/card-payment-fields'
 import { brToday } from '@/lib/dates'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { useAcceptConsent } from '@/hooks/mutations/use-consent-mutations'
-import {
-  interpolateContract,
-  buildContractData,
-} from '@/lib/contract-interpolation'
 import { cn, formatCurrency } from '@/lib/utils'
-import { CONSENT_TYPE_LABELS } from '@/lib/constants'
 import {
   type EncounterCart,
   computeCartTotal,
 } from '@/validations/encounter-cart'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
-import type { DiagramPointData } from '@/components/face-diagram/types'
+import { diagramsToPoints } from '@/components/face-diagram/points'
+import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
 import type { PaymentMethod } from '@/types'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import { ApprovalSummaryCard } from './approval/approval-summary-card'
 import { WizardCart } from '@/components/service-wizard/wizard-cart'
-import { ConsentStatusList } from './approval/consent-status-list'
-import { ServiceContractSection } from './approval/service-contract-section'
-import { SendConsentSigningLink } from './approval/send-consent-signing-link'
+import {
+  ProcedureSignaturesPanel,
+  computeProductTotals,
+  type PendingSignatures,
+  type SignaturesFinancialPlan,
+  type SignaturesPatient,
+  type SignaturesTenant,
+} from './procedure-signatures-panel'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { ClipboardCheck } from 'lucide-react'
-
-const CATEGORY_TO_CONSENT: Record<string, string> = {
-  toxina_botulinica: 'botox',
-  botox: 'botox',
-  preenchimento: 'filler',
-  filler: 'filler',
-  bioestimulador: 'biostimulator',
-  biostimulator: 'biostimulator',
-}
-
-interface ConsentStatus {
-  type: string
-  label: string
-  signed: boolean
-  loading: boolean
-}
-
-interface ConsentTemplate {
-  id: string
-  type: string
-  title: string
-  content: string
-  version: number
-}
 
 interface ProcedureType {
   id: string
   name: string
   category: string
-}
-
-interface PatientData {
-  id: string
-  fullName: string
-  cpf?: string | null
-  gender?: string | null
-  phone?: string | null
-}
-
-interface TenantData {
-  id: string
-  name: string
-  whatsappApiEnabled?: boolean
-}
-
-interface FinancialPlan {
-  totalAmount: number
-  installmentCount: number
-  paymentMethod?: PaymentMethod
-  notes?: string
 }
 
 interface ProcedureApprovalProps {
@@ -116,36 +70,11 @@ interface ProcedureApprovalProps {
    */
   onCartChange?: (next: EncounterCart) => void
   // Shared props.
-  patient: PatientData
-  tenant: TenantData
+  patient: SignaturesPatient
+  tenant: SignaturesTenant
   wizardOverrides?: WizardOverrides
-}
-
-function diagramsToPoints(diagrams: DiagramWithPoints[]): DiagramPointData[] {
-  return diagrams.flatMap((diagram) =>
-    diagram.points.map((p) => ({
-      id: p.id,
-      x: parseFloat(p.x),
-      y: parseFloat(p.y),
-      productName: p.productName,
-      activeIngredient: p.activeIngredient ?? undefined,
-      quantity: parseFloat(p.quantity),
-      quantityUnit: p.quantityUnit as DiagramPointData['quantityUnit'],
-      technique: p.technique ?? undefined,
-      depth: p.depth ?? undefined,
-      notes: p.notes ?? undefined,
-    })),
-  )
-}
-
-function computeProductTotals(points: DiagramPointData[]) {
-  const totals = new Map<string, { quantity: number; unit: string }>()
-  for (const p of points) {
-    const existing = totals.get(p.productName)
-    if (existing) existing.quantity += p.quantity
-    else totals.set(p.productName, { quantity: p.quantity, unit: p.quantityUnit })
-  }
-  return Array.from(totals.entries()).map(([name, { quantity, unit }]) => ({ name, quantity, unit }))
+  /** Labels of the consents and contract still unsigned; empty when everything is signed. */
+  onPendingSignaturesChange?: (labels: string[]) => void
 }
 
 export function ProcedureApproval({
@@ -161,9 +90,9 @@ export function ProcedureApproval({
   onApproved,
   onCartChange,
   wizardOverrides,
+  onPendingSignaturesChange,
 }: ProcedureApprovalProps) {
   const router = useRouter()
-  const acceptConsent = useAcceptConsent()
 
   // ── Mode discrimination ───────────────────────────────────────────
   // Cart mode: F5 multi-line flow. We POST to /finalize with cart + drafts.
@@ -198,20 +127,8 @@ export function ProcedureApproval({
     }
   }, [encounterId])
 
-  const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
-  const [consentStatuses, setConsentStatuses] = useState<ConsentStatus[]>([])
-  const [activeConsentType, setActiveConsentType] = useState<string | null>(null)
-  const [activeConsentTemplate, setActiveConsentTemplate] = useState<ConsentTemplate | null>(null)
-  const [loadingConsentTemplate, setLoadingConsentTemplate] = useState(false)
-
-  const [contractTemplate, setContractTemplate] = useState<ConsentTemplate | null>(null)
-  const [contractText, setContractText] = useState<string>('')
-  const [contractChecked, setContractChecked] = useState(false)
-  const [contractSignature, setContractSignature] = useState<string | null>(null)
-  const [contractSigned, setContractSigned] = useState(false)
-  const [contractSigning, setContractSigning] = useState(false)
-  const [contractError, setContractError] = useState<string | null>(null)
-  const [loadingContract, setLoadingContract] = useState(true)
+  const { data: procedureTypes } = useProcedureTypes()
+  const [pending, setPending] = useState<PendingSignatures | null>(null)
 
   const [isApproving, setIsApproving] = useState(false)
   const [approveError, setApproveError] = useState<string | null>(null)
@@ -222,16 +139,15 @@ export function ProcedureApproval({
 
   // Explicit dirty tracking — approval is not a form, so we manage this manually.
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
-  const markDirty = useCallback(() => setHasUnsavedChanges(true), [])
   const markClean = useCallback(() => setHasUnsavedChanges(false), [])
 
   // Financial plan source: cart mode derives from cart total; legacy mode reads
   // from procedure.financialPlan. Both are surfaced via the `financialPlan`
   // memo for the summary card + contract interpolation.
-  const legacyFinancialPlan = (procedure?.financialPlan ?? null) as FinancialPlan | null
+  const legacyFinancialPlan = (procedure?.financialPlan ?? null) as SignaturesFinancialPlan | null
   const cartTotal = useMemo(() => (cart ? computeCartTotal(cart) : 0), [cart])
 
-  const financialPlan: FinancialPlan | null = useMemo(() => {
+  const financialPlan: SignaturesFinancialPlan | null = useMemo(() => {
     if (isCartMode && cart) {
       // Default the cart-driven plan to a single instalment until the planner
       // owns this state. The planner UI lives below and could be wired here in
@@ -245,6 +161,10 @@ export function ProcedureApproval({
     }
     return legacyFinancialPlan
   }, [isCartMode, cart, cartTotal, legacyFinancialPlan])
+
+  const hasPending = (pending?.labels.length ?? 0) > 0
+  const consentsDone = pending !== null && !pending.types.some((t) => t !== 'service_contract')
+  const contractDone = pending !== null && !pending.types.includes('service_contract')
 
   const cardMethod = isCardMethod(financialPlan?.paymentMethod)
     ? financialPlan.paymentMethod
@@ -276,106 +196,14 @@ export function ProcedureApproval({
   }, [isCartMode, cart, procedure, additionalTypeIds])
 
   const selectedTypes = useMemo(
-    () => procedureTypes.filter((t) => allTypeIds.includes(t.id)),
+    () => ((procedureTypes ?? []) as ProcedureType[]).filter((t) => allTypeIds.includes(t.id)),
     [procedureTypes, allTypeIds],
   )
 
-  const allConsentsSigned = useMemo(() => {
-    if (consentStatuses.length === 0) return false
-    return consentStatuses.every((c) => c.signed)
-  }, [consentStatuses])
-
-  const canApprove = allConsentsSigned && contractSigned
-
-  const allUnsignedTypes = useMemo(() => {
-    const unsigned = consentStatuses
-      .filter((c) => !c.signed && !c.loading)
-      .map((c) => c.type)
-    if (!contractSigned && contractTemplate) unsigned.push('service_contract')
-    return unsigned
-  }, [consentStatuses, contractSigned, contractTemplate])
-
-  const signingRenderedContents = useMemo(() => {
-    if (!contractText || contractSigned) return undefined
-    return { service_contract: contractText }
-  }, [contractText, contractSigned])
-
-  const loadedTypeIdsRef = useRef<string>('')
-
-  useEffect(() => {
-    const key = allTypeIds.slice().sort().join(',')
-    if (key === loadedTypeIdsRef.current) return
-    loadedTypeIdsRef.current = key
-
-    async function initAll() {
-      const typesRes = await fetch('/api/procedure-types')
-      const allProcTypes: ProcedureType[] = typesRes.ok ? await typesRes.json() : []
-      setProcedureTypes(allProcTypes)
-
-      const selected = allProcTypes.filter((t) => allTypeIds.includes(t.id))
-      const consentTypes = new Set<string>(['general'])
-      for (const pt of selected) {
-        const ct = CATEGORY_TO_CONSENT[pt.category.toLowerCase()]
-        if (ct) consentTypes.add(ct)
-      }
-      const requiredTypes = Array.from(consentTypes)
-
-      const [consentResults, contractTplRes, contractHistRes] = await Promise.all([
-        Promise.all(
-          requiredTypes.map(async (type) => {
-            const checkRes = await fetch(
-              `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${type}`,
-            )
-            const result = checkRes.ok ? await checkRes.json() : { data: null }
-            return {
-              type,
-              label: CONSENT_TYPE_LABELS[type] ?? type,
-              signed: !!result.data,
-              loading: false,
-            } as ConsentStatus
-          }),
-        ),
-        fetch('/api/consent/templates?type=service_contract&active=true').catch(() => null),
-        fetch(
-          `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=service_contract`,
-        ).catch(() => null),
-      ])
-
-      setConsentStatuses(consentResults)
-
-      const contractTpl = contractTplRes?.ok ? await contractTplRes.json() : null
-      if (contractTpl) {
-        setContractTemplate(contractTpl as unknown as ConsentTemplate)
-        if (financialPlan) {
-          // Procedure list for the contract: prefer cart lines (with sessions)
-          // when in cart mode; fall back to selected types in legacy mode.
-          const procedureItems = isCartMode && cart
-            ? cart.lines.map((l) => ({ name: `${l.procedureTypeName} (${l.sessions}× sessões)` }))
-            : selected.map((t) => ({ name: t.name }))
-
-          const practitionerName = procedure?.practitionerName ?? ''
-
-          const contractData = buildContractData(
-            procedureItems,
-            productTotals.map((p) => ({ name: p.name, quantity: p.quantity, unit: p.unit })),
-            financialPlan,
-            { fullName: patient.fullName, cpf: patient.cpf },
-            practitionerName,
-            tenant.name,
-          )
-          setContractText(interpolateContract(contractTpl.content, contractData))
-        } else {
-          setContractText(contractTpl.content)
-        }
-      }
-
-      const contractHist = contractHistRes?.ok ? await contractHistRes.json() : { data: null }
-      if (contractHist.data) setContractSigned(true)
-      setLoadingContract(false)
-    }
-
-    initAll()
-  }, [allTypeIds, patient, primaryRecordId, tenant.name, financialPlan, productTotals, isCartMode, cart, procedure])
+  function handlePendingChange(next: PendingSignatures) {
+    setPending(next)
+    onPendingSignaturesChange?.(next.labels)
+  }
 
   // Propagate unsaved-changes state to the wizard.
   useEffect(() => {
@@ -383,114 +211,11 @@ export function ProcedureApproval({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasUnsavedChanges])
 
-  const [isRefreshing, setIsRefreshing] = useState(false)
-
-  const refreshConsentStatuses = useCallback(async () => {
-    const [updated, contractHistRes] = await Promise.all([
-      Promise.all(
-        consentStatuses.map(async (s) => {
-          const checkRes = await fetch(
-            `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=${s.type}`,
-          )
-          const result = checkRes.ok ? await checkRes.json() : { data: null }
-          return { ...s, signed: !!result.data, loading: false }
-        }),
-      ),
-      fetch(
-        `/api/consent/history/${patient.id}?procedureId=${primaryRecordId}&type=service_contract`,
-      ).catch(() => null),
-    ])
-    setConsentStatuses(updated)
-    const contractHist = contractHistRes?.ok
-      ? await contractHistRes.json()
-      : { data: null }
-    if (contractHist.data) setContractSigned(true)
-  }, [consentStatuses, patient.id, primaryRecordId])
-
-  const handleManualRefresh = useCallback(async () => {
-    setIsRefreshing(true)
-    await refreshConsentStatuses()
-    setIsRefreshing(false)
-  }, [refreshConsentStatuses])
-
-  // Poll every 15s while there are unsigned items
-  useEffect(() => {
-    if (allUnsignedTypes.length === 0) return
-    const id = setInterval(() => { refreshConsentStatuses() }, 15_000)
-    return () => clearInterval(id)
-  }, [allUnsignedTypes.length, refreshConsentStatuses])
-
-  const handleOpenConsent = useCallback(async (type: string) => {
-    setActiveConsentType(type)
-    setLoadingConsentTemplate(true)
-    try {
-      const tplRes = await fetch(`/api/consent/templates?type=${type}&active=true`)
-      if (tplRes.ok) {
-        const template = await tplRes.json()
-        if (template) setActiveConsentTemplate(template as unknown as ConsentTemplate)
-      }
-    } catch {
-      // ignore
-    } finally {
-      setLoadingConsentTemplate(false)
-    }
-  }, [])
-
-  const handleConsentAccepted = useCallback(() => {
-    setActiveConsentType(null)
-    setActiveConsentTemplate(null)
-    refreshConsentStatuses()
-  }, [refreshConsentStatuses])
-
-  const handleContractCheckedChange = useCallback((checked: boolean) => {
-    setContractChecked(checked)
-    markDirty()
-  }, [markDirty])
-
-  const handleContractSignatureChange = useCallback((data: string | null) => {
-    setContractSignature(data)
-    if (data) markDirty()
-  }, [markDirty])
-
-  const handleSignContract = useCallback(async () => {
-    if (!contractTemplate || !contractChecked || !contractSignature) return
-
-    setContractSigning(true)
-    setContractError(null)
-    try {
-      await acceptConsent.mutateAsync({
-        patientId: patient.id,
-        consentTemplateId: contractTemplate.id,
-        procedureRecordId: primaryRecordId,
-        acceptanceMethod: 'both',
-        signatureData: contractSignature,
-        renderedContent: contractText,
-      })
-      setContractSigned(true)
-      markClean()
-    } catch (err) {
-      setContractError(err instanceof Error ? err.message : 'Erro inesperado ao assinar contrato')
-    } finally {
-      setContractSigning(false)
-    }
-  }, [contractTemplate, contractChecked, contractSignature, patient.id, primaryRecordId, contractText, acceptConsent, markClean])
-
   // ── Approve action ────────────────────────────────────────────────
   // Always POST to /api/encounters/{id}/finalize. In legacy mode we
   // synthesize a one-line cart from `procedure`.
   const runApprove = useCallback(async (origin: 'button' | 'wizard') => {
     if (isApproving) return
-    if (!canApprove) {
-      if (origin === 'wizard') {
-        wizardOverrides?.onSaveComplete?.({
-          success: false,
-          error: 'Assine todos os termos e o contrato de serviço para aprovar',
-          errorType: 'precondition',
-        })
-      }
-      return
-    }
-
     if (cardMethod && cardNow && (!cardTerminalId || cardExpectedRate === null)) {
       const error = 'Selecione a maquininha'
       setApproveError(error)
@@ -614,7 +339,7 @@ export function ProcedureApproval({
         })
       } else if (!wizardOverrides?.hideNavigation) {
         setTimeout(
-          () => router.push(`/pacientes/${patient.id}?tab=procedimentos`),
+          () => router.push(`/pacientes/${patient.id}?tab=atendimentos`),
           1500,
         )
       }
@@ -628,7 +353,6 @@ export function ProcedureApproval({
       setIsApproving(false)
     }
   }, [
-    canApprove,
     isApproving,
     isCartMode,
     cart,
@@ -728,55 +452,23 @@ export function ProcedureApproval({
         )
       )}
 
-      {allUnsignedTypes.length > 0 && (
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center sm:justify-center gap-3 overflow-hidden">
-          <SendConsentSigningLink
-            patientId={patient.id}
-            patientName={patient.fullName}
-            patientPhone={patient.phone}
-            procedureRecordId={primaryRecordId}
-            consentTypes={allUnsignedTypes}
-            renderedContents={signingRenderedContents}
-            whatsappApiEnabled={tenant.whatsappApiEnabled}
-          />
-          <button
-            type="button"
-            onClick={handleManualRefresh}
-            disabled={isRefreshing}
-            className="flex items-center gap-1.5 rounded-[3px] border border-sage/20 px-3 py-2.5 text-xs font-medium text-mid transition-colors hover:bg-sage/5 hover:text-charcoal disabled:opacity-50"
-            title="Verificar assinaturas"
-          >
-            <RefreshCw className={cn('size-3.5', isRefreshing && 'animate-spin')} />
-            Atualizar
-          </button>
-        </div>
+      {hasPending && (
+        <p className="rounded-[3px] border border-sage/20 bg-sage/5 px-4 py-3 text-sm text-sage">
+          Você pode coletar as assinaturas agora ou depois. As pendentes ficam em Termos, no cadastro do paciente.
+        </p>
       )}
 
-      <ConsentStatusList
-        consentStatuses={consentStatuses}
-        allConsentsSigned={allConsentsSigned}
-        activeConsentType={activeConsentType}
-        activeConsentTemplate={activeConsentTemplate}
-        loadingConsentTemplate={loadingConsentTemplate}
-        patientId={patient.id}
-        patientCpf={patient.cpf}
-        procedureId={primaryRecordId}
-        onOpenConsent={handleOpenConsent}
-        onConsentAccepted={handleConsentAccepted}
-      />
-
-      <ServiceContractSection
-        loadingContract={loadingContract}
-        contractTemplate={contractTemplate}
-        contractText={contractText}
-        contractSigned={contractSigned}
-        contractChecked={contractChecked}
-        contractSignature={contractSignature}
-        contractSigning={contractSigning}
-        contractError={contractError}
-        onCheckedChange={handleContractCheckedChange}
-        onSignatureChange={handleContractSignatureChange}
-        onSignContract={handleSignContract}
+      <ProcedureSignaturesPanel
+        procedure={procedure}
+        patient={patient}
+        tenant={tenant}
+        additionalTypeIds={additionalTypeIds}
+        primaryRecordId={primaryRecordId}
+        cart={isCartMode ? cart : undefined}
+        financialPlan={financialPlan}
+        diagrams={diagrams}
+        onPendingChange={handlePendingChange}
+        onDirtyChange={setHasUnsavedChanges}
       />
 
       {cardMethod && financialPlan && (
@@ -824,13 +516,13 @@ export function ProcedureApproval({
 
             <div className="space-y-3">
               <div className="flex flex-col gap-2">
-                <StatusRow done={allConsentsSigned} label="Todos os termos de consentimento assinados" />
-                <StatusRow done={contractSigned} label="Contrato de serviço assinado" />
+                <StatusRow done={consentsDone} label="Todos os termos de consentimento assinados" />
+                <StatusRow done={contractDone} label="Contrato de serviço assinado" />
               </div>
 
               <Button
                 onClick={handleApprove}
-                disabled={!canApprove || isApproving}
+                disabled={isApproving}
                 className="w-full bg-forest text-cream hover:bg-sage shadow-md hover:shadow-lg transition-all duration-200 disabled:opacity-50"
                 size="lg"
               >
@@ -842,16 +534,11 @@ export function ProcedureApproval({
                 ) : (
                   <>
                     <ShieldCheck className="size-4 mr-2" />
-                    Aprovar Procedimento
+                    {hasPending ? 'Aprovar e assinar depois' : 'Aprovar Procedimento'}
                   </>
                 )}
               </Button>
 
-              {!canApprove && (
-                <p className="text-xs text-mid text-center">
-                  Assine todos os termos e o contrato de serviço para aprovar
-                </p>
-              )}
             </div>
           </CardContent>
         </Card>
@@ -869,7 +556,7 @@ function CartApprovalSummary({
   onCartChange,
 }: {
   cart: EncounterCart
-  financialPlan: FinancialPlan | null
+  financialPlan: SignaturesFinancialPlan | null
   onCartChange?: (next: EncounterCart) => void
 }) {
   const total = useMemo(() => computeCartTotal(cart), [cart])

@@ -76,10 +76,10 @@ export function OpenPlanejamentosCard() {
                     : 'bg-sage/10 text-sage'
 
               return (
-                <li key={row.id}>
+                <li key={`${row.kind}-${row.id}`}>
                   <div className="group flex items-start justify-between gap-3 rounded-lg border border-transparent p-3 transition-all duration-200 hover:border-sage/15 hover:bg-petal/30 hover:shadow-sm">
                     <Link
-                      href={`/pacientes/${row.patientId}/atendimento`}
+                      href={row.href}
                       className="min-w-0 flex-1"
                     >
                       <p className="truncate font-medium text-charcoal">

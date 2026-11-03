@@ -38,22 +38,24 @@ const TYPE_CONFIG: Record<
   TimelineEntryType,
   { icon: typeof ClipboardList; color: string }
 > = {
-  plan_created: { icon: ClipboardList, color: 'bg-[#F0F7F1] text-sage' },
-  consent_signed: { icon: FileCheck, color: 'bg-[#F0F7F1] text-sage' },
-  contract_signed: { icon: FileCheck, color: 'bg-[#F0F7F1] text-sage' },
-  plan_approved: { icon: CheckCircle, color: 'bg-[#F0F7F1] text-sage' },
+  plan_created: { icon: ClipboardList, color: 'bg-confirmed-bg text-sage' },
+  consent_signed: { icon: FileCheck, color: 'bg-confirmed-bg text-sage' },
+  contract_signed: { icon: FileCheck, color: 'bg-confirmed-bg text-sage' },
+  plan_approved: { icon: CheckCircle, color: 'bg-confirmed-bg text-sage' },
   plan_executed: { icon: CheckCircle2, color: 'bg-forest/10 text-forest' },
   plan_cancelled: { icon: XCircle, color: 'bg-[#F4F6F8] text-mid' },
   financial_created: { icon: Receipt, color: 'bg-[#FFF4EF] text-amber' },
-  payment_received: { icon: CreditCard, color: 'bg-[#F0F7F1] text-sage' },
+  payment_received: { icon: CreditCard, color: 'bg-confirmed-bg text-sage' },
   photo_uploaded: { icon: Camera, color: 'bg-mint/10 text-mint' },
   patient_created: { icon: UserPlus, color: 'bg-[#F4F6F8] text-charcoal' },
   anamnesis_updated: { icon: ClipboardEdit, color: 'bg-[#F4F6F8] text-charcoal' },
-  appointment: { icon: Calendar, color: 'bg-[#F0F7F1] text-sage' },
+  appointment: { icon: Calendar, color: 'bg-confirmed-bg text-sage' },
   package_sold: { icon: PackageIcon, color: 'bg-blush/40 text-charcoal' },
   package_cancelled: { icon: PackageIcon, color: 'bg-[#F4F6F8] text-mid' },
-  document_issued: { icon: FileText, color: 'bg-[#F0F7F1] text-sage' },
-  document_sent_whatsapp: { icon: MessageCircle, color: 'bg-[#F0F7F1] text-sage' },
+  document_issued: { icon: FileText, color: 'bg-confirmed-bg text-sage' },
+  document_sent_whatsapp: { icon: MessageCircle, color: 'bg-confirmed-bg text-sage' },
+  quote_generated: { icon: FileText, color: 'bg-confirmed-bg text-sage' },
+  quote_sent_whatsapp: { icon: MessageCircle, color: 'bg-confirmed-bg text-sage' },
 }
 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {

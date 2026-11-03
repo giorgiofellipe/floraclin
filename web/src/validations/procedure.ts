@@ -28,11 +28,12 @@ export const createProcedureSchema = z.object({
   followUpDate: z.string().optional(),
   nextSessionObjectives: z.string().max(5000, 'Objetivos devem ter no máximo 5000 caracteres').optional(),
   financialPlan: financialPlanSchema.optional(),
+  diagramGroupId: z.string().uuid('ID do diagrama inválido').optional(),
 })
 
 export type CreateProcedureInput = z.infer<typeof createProcedureSchema>
 
-export const updateProcedureSchema = createProcedureSchema.partial().extend({
+export const updateProcedureSchema = createProcedureSchema.omit({ diagramGroupId: true }).partial().extend({
   id: z.string().uuid('ID do procedimento inválido'),
 })
 
@@ -56,14 +57,6 @@ export const diagramPointSchema = z.object({
   depth: z.string().max(50).optional(),
   notes: z.string().max(500).optional(),
 })
-
-export const diagramSaveSchema = z.object({
-  procedureRecordId: z.string().uuid('ID do procedimento inválido'),
-  viewType: z.enum(['front', 'left_profile', 'right_profile']),
-  points: z.array(diagramPointSchema),
-})
-
-export type DiagramSaveInput = z.infer<typeof diagramSaveSchema>
 
 // ─── Product Application Schemas ───────────────────────────────────
 

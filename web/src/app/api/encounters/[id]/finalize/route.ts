@@ -26,7 +26,7 @@ import { NextResponse, after } from 'next/server'
 import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
-import { finalizeEncounter } from '@/lib/encounter-finalize'
+import { InvalidEncounterProcedureError, finalizeEncounter } from '@/lib/encounter-finalize'
 import { recordPayment } from '@/db/queries/financial'
 import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
@@ -144,6 +144,10 @@ export async function POST(
         { success: false, error: 'Payload inválido', issues: error.issues },
         { status: 400 },
       )
+    }
+
+    if (error instanceof InvalidEncounterProcedureError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 400 })
     }
 
     const errorMsg = error instanceof Error ? error.message : ''

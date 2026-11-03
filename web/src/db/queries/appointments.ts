@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
 import { appointments, patients, procedureTypes, users, tenants, calendarBlocks } from '@/db/schema'
-import { eq, and, isNull, gte, lte, sql, or, ne, asc, inArray } from 'drizzle-orm'
+import { eq, and, isNull, gte, lte, sql, or, ne, asc, desc, inArray } from 'drizzle-orm'
 import { CLINICAL_ROLES } from '@/lib/constants'
 import { toHhMm } from '@/lib/time-options'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
@@ -854,4 +854,41 @@ export async function releasePreInstructions(tenantId: string, appointmentId: st
     .update(appointments)
     .set({ preInstructionsSentAt: null })
     .where(and(eq(appointments.tenantId, tenantId), eq(appointments.id, appointmentId)))
+}
+
+export interface PatientAppointment {
+  id: string
+  date: string
+  startTime: string
+  endTime: string | null
+  status: string
+  procedureTypeName: string | null
+  practitionerName: string | null
+}
+
+export async function listPatientAppointments(
+  tenantId: string,
+  patientId: string
+): Promise<PatientAppointment[]> {
+  return db
+    .select({
+      id: appointments.id,
+      date: appointments.date,
+      startTime: appointments.startTime,
+      endTime: appointments.endTime,
+      status: appointments.status,
+      procedureTypeName: procedureTypes.name,
+      practitionerName: users.fullName,
+    })
+    .from(appointments)
+    .leftJoin(procedureTypes, eq(procedureTypes.id, appointments.procedureTypeId))
+    .leftJoin(users, eq(users.id, appointments.practitionerId))
+    .where(
+      and(
+        eq(appointments.tenantId, tenantId),
+        eq(appointments.patientId, patientId),
+        isNull(appointments.deletedAt)
+      )
+    )
+    .orderBy(desc(appointments.date), desc(appointments.startTime))
 }

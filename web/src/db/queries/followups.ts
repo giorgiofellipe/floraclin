@@ -1,5 +1,6 @@
 import { db } from '@/db/client'
 import {
+  faceDiagramGroups,
   procedureRecords,
   procedureTypes,
   patients,
@@ -7,8 +8,14 @@ import {
 } from '@/db/schema'
 import { and, eq, inArray, isNull, or, sql, asc } from 'drizzle-orm'
 import { brToday } from '@/lib/dates'
+import { quoteTotal } from '@/lib/diagram-quote'
+import type { QuotationLine } from '@/validations/face-diagram-group'
+
+export type PlanejamentoKind = 'procedure' | 'diagram_quote'
 
 export interface OpenPlanejamentoRow {
+  kind: PlanejamentoKind
+  href: string
   id: string
   patientId: string
   patientName: string
@@ -118,6 +125,8 @@ export async function listOpenPlanejamentos(
         : null
 
     return {
+      kind: 'procedure' as const,
+      href: `/pacientes/${row.patientId}/atendimento`,
       id: row.id,
       patientId: row.patientId,
       patientName: row.patientName,
@@ -130,6 +139,95 @@ export async function listOpenPlanejamentos(
       performedAt: row.performedAt,
       followUpDate: row.followUpDate,
       totalAmount,
+      createdAt: row.createdAt,
+      lastContactedAt: row.lastContactedAt,
+      snoozedUntil: row.snoozedUntil,
+    }
+  })
+}
+
+/**
+ * Lists standalone quotations still waiting for an answer: groups with no
+ * atendimento and no session, not declined. A quotation whose atendimento was
+ * cancelled is released back to this state by releaseStandaloneGroups.
+ */
+export async function listOpenDiagramQuotes(
+  args: ListOpenPlanejamentosArgs,
+): Promise<OpenPlanejamentoRow[]> {
+  const today = brToday()
+  const limit = args.limit ?? 200
+
+  const filters = [
+    eq(faceDiagramGroups.tenantId, args.tenantId),
+    isNull(faceDiagramGroups.deletedAt),
+    eq(faceDiagramGroups.origin, 'standalone'),
+    isNull(faceDiagramGroups.procedureSessionId),
+    isNull(faceDiagramGroups.procedureRecordId),
+    isNull(faceDiagramGroups.declinedAt),
+    isNull(patients.deletedAt),
+    sql`jsonb_array_length(coalesce(${faceDiagramGroups.quotationLines}, '[]'::jsonb)) > 0`,
+  ]
+
+  if (args.practitionerId) {
+    filters.push(eq(faceDiagramGroups.practitionerId, args.practitionerId))
+  }
+
+  if (args.procedureTypeId) {
+    filters.push(
+      sql`${faceDiagramGroups.quotationLines} @> ${JSON.stringify([{ procedureTypeId: args.procedureTypeId }])}::jsonb`,
+    )
+  }
+
+  if (!args.includeSnoozed) {
+    const notSnoozed = or(
+      isNull(faceDiagramGroups.followupSnoozedUntil),
+      sql`${faceDiagramGroups.followupSnoozedUntil} <= ${today}`,
+    )
+    if (notSnoozed) filters.push(notSnoozed)
+  }
+
+  const rows = await db
+    .select({
+      id: faceDiagramGroups.id,
+      patientId: faceDiagramGroups.patientId,
+      patientName: patients.fullName,
+      patientPhone: patients.phone,
+      practitionerId: faceDiagramGroups.practitionerId,
+      practitionerName: users.fullName,
+      quotationLines: faceDiagramGroups.quotationLines,
+      createdAt: faceDiagramGroups.createdAt,
+      lastContactedAt: faceDiagramGroups.lastContactedAt,
+      snoozedUntil: faceDiagramGroups.followupSnoozedUntil,
+    })
+    .from(faceDiagramGroups)
+    .innerJoin(patients, eq(faceDiagramGroups.patientId, patients.id))
+    .innerJoin(users, eq(faceDiagramGroups.practitionerId, users.id))
+    .where(and(...filters))
+    .orderBy(
+      asc(
+        sql`COALESCE(${faceDiagramGroups.lastContactedAt}, ${faceDiagramGroups.createdAt})`,
+      ),
+    )
+    .limit(limit)
+
+  return rows.map((row) => {
+    const lines = (row.quotationLines ?? []) as QuotationLine[]
+    const extra = lines.length > 1 ? ` +${lines.length - 1}` : ''
+    return {
+      kind: 'diagram_quote' as const,
+      href: `/pacientes/${row.patientId}/diagramas/${row.id}`,
+      id: row.id,
+      patientId: row.patientId,
+      patientName: row.patientName,
+      patientPhone: row.patientPhone,
+      procedureTypeId: lines[0]?.procedureTypeId ?? '',
+      procedureTypeName: `${lines[0]?.procedureTypeName ?? 'Orçamento'}${extra}`,
+      practitionerId: row.practitionerId,
+      practitionerName: row.practitionerName,
+      status: 'quote',
+      performedAt: null,
+      followUpDate: null,
+      totalAmount: String(quoteTotal(lines)),
       createdAt: row.createdAt,
       lastContactedAt: row.lastContactedAt,
       snoozedUntil: row.snoozedUntil,

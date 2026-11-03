@@ -4,7 +4,9 @@ import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { getProcedure, updateProcedure } from '@/db/queries/procedures'
-import { getFaceDiagram, saveFaceDiagram } from '@/db/queries/face-diagrams'
+import { getFaceDiagram, saveFaceDiagram, type DiagramPointInput } from '@/db/queries/face-diagrams'
+import type { DiagramViewType } from '@/types'
+import { ensurePlanningGroup, findPlanningGroupId } from '@/db/queries/face-diagram-groups'
 import { getProductApplications, saveProductApplications } from '@/db/queries/product-applications'
 import { updateProcedureSchema } from '@/validations/procedure'
 import { computePlanningStatus } from '@/lib/procedure-status'
@@ -66,9 +68,19 @@ export async function PUT(
       let procedure = await updateProcedure(ctx.tenantId, id, parsed.data, undefined, tx)
       if (!procedure) throw new Error('Procedimento não encontrado')
 
-      if (body.diagrams && body.diagrams.length > 0) {
-        for (const diagram of body.diagrams) {
-          await saveFaceDiagram(ctx.tenantId, id, diagram.viewType, diagram.points, tx)
+      const diagrams: { viewType: DiagramViewType; points: DiagramPointInput[] }[] = body.diagrams ?? []
+      const hasPoints = diagrams.some((d) => d.points.length > 0)
+      const groupId = hasPoints
+        ? await ensurePlanningGroup(tx, {
+            tenantId: ctx.tenantId,
+            patientId: procedure.patientId,
+            practitionerId: procedure.practitionerId,
+            procedureRecordId: id,
+          })
+        : await findPlanningGroupId(tx, ctx.tenantId, id)
+      if (groupId) {
+        for (const diagram of diagrams) {
+          await saveFaceDiagram(ctx.tenantId, groupId, diagram.viewType, diagram.points, tx)
         }
       }
 
@@ -79,7 +91,7 @@ export async function PUT(
       // Only draft/planned procedures can transition — approved/executed/cancelled
       // are owned by dedicated lifecycle actions.
       if (procedure.status === 'draft' || procedure.status === 'planned') {
-        const freshDiagrams = await getFaceDiagram(ctx.tenantId, id)
+        const freshDiagrams = await getFaceDiagram(ctx.tenantId, id, tx)
         const nextStatus = computePlanningStatus({
           financialPlan: procedure.financialPlan as { totalAmount?: number | string | null } | null,
           diagrams: freshDiagrams,

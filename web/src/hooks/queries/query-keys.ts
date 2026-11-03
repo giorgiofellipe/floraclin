@@ -15,6 +15,7 @@ export const queryKeys = {
       ['appointments', 'list', practitionerId, dateFrom, dateTo] as const,
     practitioners: ['appointments', 'practitioners'] as const,
     procedureTypes: ['appointments', 'procedureTypes'] as const,
+    byPatient: (patientId: string) => ['appointments', 'patient', patientId] as const,
   },
   nfse: {
     all: ['nfse'] as const,
@@ -39,6 +40,7 @@ export const queryKeys = {
       ['financial', 'practitioner-pl', dateFrom, dateTo, practitionerId] as const,
     installmentQuote: (id: string, paidAt?: string) =>
       ['financial', 'installmentQuote', id, paidAt ?? 'now'] as const,
+    patientSummary: (patientId: string) => ['financial', 'patient-summary', patientId] as const,
   },
   settings: {
     all: ['settings'] as const,
@@ -52,6 +54,12 @@ export const queryKeys = {
   },
   anamnesis: (patientId: string) => ['anamnesis', patientId] as const,
   anamnesisTemplate: ['anamnesisTemplate'] as const,
+  diagramGroups: {
+    all: ['diagram-groups'] as const,
+    byPatient: (patientId: string) => ['diagram-groups', 'patient', patientId] as const,
+    detail: (id: string) => ['diagram-groups', 'detail', id] as const,
+    quotes: (id: string) => ['diagram-groups', 'quotes', id] as const,
+  },
   procedures: {
     all: ['procedures'] as const,
     list: (patientId: string) => ['procedures', 'list', patientId] as const,
@@ -63,6 +71,7 @@ export const queryKeys = {
     all: ['consent'] as const,
     templates: ['consent', 'templates'] as const,
     history: (patientId: string) => ['consent', 'history', patientId] as const,
+    pending: (patientId: string) => ['consent', 'pending', patientId] as const,
   },
   evaluation: {
     all: ['evaluation'] as const,

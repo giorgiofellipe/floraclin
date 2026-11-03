@@ -1,7 +1,13 @@
+import type { Role } from '@/types'
+
 export const DEFAULT_PAGE_SIZE = 20
 
 /** Roles that own an agenda: who appointments and blocks can target. */
 export const CLINICAL_ROLES = ['practitioner', 'owner'] as const
+
+export function canWriteClinical(role: Role): boolean {
+  return (CLINICAL_ROLES as readonly Role[]).includes(role)
+}
 
 export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-blue-50 text-blue-700',

@@ -1,16 +1,31 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryKeys } from './query-keys'
 import type {
   FollowupChannel,
   FollowupOutcome,
 } from '@/validations/followup'
+
+export type PlanejamentoKind = 'procedure' | 'diagram_quote'
+
+const followupsUrl = (kind: PlanejamentoKind, id: string) =>
+  kind === 'diagram_quote'
+    ? `/api/face-diagram-groups/${id}/followups`
+    : `/api/procedures/${id}/followups`
+
+const snoozeUrl = (kind: PlanejamentoKind, id: string) =>
+  kind === 'diagram_quote'
+    ? `/api/face-diagram-groups/${id}/snooze`
+    : `/api/procedures/${id}/snooze`
 
 /**
  * Row shape returned by GET /api/planejamentos. Mirrors
  * `OpenPlanejamentoRow` from `web/src/db/queries/followups.ts`.
  */
 export interface OpenPlanejamento {
+  kind: PlanejamentoKind
+  href: string
   id: string
   patientId: string
   patientName: string
@@ -20,7 +35,7 @@ export interface OpenPlanejamento {
   practitionerId: string
   practitionerName: string
   status: string
-  performedAt: string
+  performedAt: string | null
   followUpDate: string | null
   totalAmount: string | null
   createdAt: string
@@ -96,6 +111,7 @@ export function useFollowupsForProcedure(procedureRecordId: string) {
 }
 
 export interface RecordFollowupInput {
+  kind?: PlanejamentoKind
   procedureRecordId: string
   channel: FollowupChannel
   outcome: FollowupOutcome
@@ -113,9 +129,9 @@ export interface RecordFollowupResponse {
 export function useRecordFollowup() {
   const qc = useQueryClient()
   return useMutation<RecordFollowupResponse, Error, RecordFollowupInput>({
-    mutationFn: ({ procedureRecordId, ...body }) =>
+    mutationFn: ({ kind = 'procedure', procedureRecordId, ...body }) =>
       fetchJson<RecordFollowupResponse>(
-        `/api/procedures/${procedureRecordId}/followups`,
+        followupsUrl(kind, procedureRecordId),
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -125,11 +141,13 @@ export function useRecordFollowup() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['planejamentos'] })
       qc.invalidateQueries({ queryKey: ['procedures'] })
+      qc.invalidateQueries({ queryKey: queryKeys.diagramGroups.all })
     },
   })
 }
 
 export interface SnoozeProcedureInput {
+  kind?: PlanejamentoKind
   procedureRecordId: string
   until: string | null
 }
@@ -142,9 +160,9 @@ export interface SnoozeProcedureResponse {
 export function useSnoozeProcedure() {
   const qc = useQueryClient()
   return useMutation<SnoozeProcedureResponse, Error, SnoozeProcedureInput>({
-    mutationFn: ({ procedureRecordId, until }) =>
+    mutationFn: ({ kind = 'procedure', procedureRecordId, until }) =>
       fetchJson<SnoozeProcedureResponse>(
-        `/api/procedures/${procedureRecordId}/snooze`,
+        snoozeUrl(kind, procedureRecordId),
         {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },

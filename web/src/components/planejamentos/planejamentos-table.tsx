@@ -27,7 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Skeleton } from '@/components/ui/skeleton'
-import { brToday, parseBrDate } from '@/lib/dates'
+import { brToday, formatBrDate, parseBrDate } from '@/lib/dates'
 import type { OpenPlanejamento } from '@/hooks/queries/use-planejamentos'
 
 import { FollowupModal } from './followup-modal'
@@ -136,20 +136,20 @@ export function PlanejamentosTable({
                 row.snoozedUntil != null && row.snoozedUntil > brToday()
 
               return (
-                <TableRow key={row.id}>
+                <TableRow key={`${row.kind}-${row.id}`}>
                   <TableCell>
                     <Link
-                      href={`/pacientes/${row.patientId}/atendimento`}
+                      href={row.href}
                       className="block max-w-[220px] truncate font-medium text-charcoal hover:text-forest"
                     >
                       {row.patientName}
                     </Link>
                     <div className="text-xs text-mid">
-                      {formatPlannedDate(row.performedAt)}
+                      {formatPlannedDate(row.performedAt ?? row.createdAt)}
                       {showSnoozeBadge && isSnoozed && row.snoozedUntil && (
                         <span className="ml-2 inline-flex items-center gap-1 text-amber-mid">
                           <PauseCircle className="h-3 w-3" />
-                          até {new Date(row.snoozedUntil).toLocaleDateString('pt-BR')}
+                          até {formatBrDate(parseBrDate(row.snoozedUntil))}
                         </span>
                       )}
                     </div>
@@ -223,6 +223,7 @@ export function PlanejamentosTable({
           open={followupTarget !== null}
           onClose={() => setFollowupTarget(null)}
           procedureRecordId={followupTarget.id}
+          kind={followupTarget.kind}
           patientName={followupTarget.patientName}
           procedureTypeName={followupTarget.procedureTypeName}
         />
@@ -232,6 +233,7 @@ export function PlanejamentosTable({
           open={snoozeTarget !== null}
           onClose={() => setSnoozeTarget(null)}
           procedureRecordId={snoozeTarget.id}
+          kind={snoozeTarget.kind}
           currentSnoozedUntil={snoozeTarget.snoozedUntil}
           patientName={snoozeTarget.patientName}
           procedureTypeName={snoozeTarget.procedureTypeName}

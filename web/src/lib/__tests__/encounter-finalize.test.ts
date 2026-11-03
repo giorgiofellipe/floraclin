@@ -108,6 +108,7 @@ const { txState, createFinancialEntryMock } = vi.hoisted(() => {
     insertCalls: InsertCall[]
     updateCalls: UpdateCall[]
     insertedPackageId: string
+    catalogTypeCount: number
   }
   const txState: TxState = {
     executeResponses: [],
@@ -115,6 +116,7 @@ const { txState, createFinancialEntryMock } = vi.hoisted(() => {
     insertCalls: [],
     updateCalls: [],
     insertedPackageId: 'pkg-id-generated',
+    catalogTypeCount: 1,
   }
   ;(globalThis as Record<string, unknown>).__atfin_state = txState
 
@@ -139,6 +141,7 @@ function resetTx() {
   txState.executeCalls = []
   txState.insertCalls = []
   txState.updateCalls = []
+  txState.catalogTypeCount = 1
   createFinancialEntryMock.mockClear()
   createFinancialEntryMock.mockImplementation(async () => ({
     id: 'fe-id-generated',
@@ -184,6 +187,9 @@ vi.mock('@/db/client', () => {
       execute: (sqlObj: unknown) => {
         const fragment = JSON.stringify(sqlObj)
         ST.executeCalls.push({ fragment, params: [] })
+        if (fragment.includes('valid_type_count')) {
+          return Promise.resolve({ rows: [{ categories: [], has_contract: false, valid_type_count: ST.catalogTypeCount, template_valid: true }] })
+        }
         const response = ST.executeResponses.shift() ?? { rows: [] }
         return Promise.resolve(response)
       },
@@ -568,6 +574,7 @@ describe('finalizeEncounter', () => {
       '00000000-0000-0000-0000-00000000d010',
       '00000000-0000-0000-0000-00000000d011',
     ]
+    txState.catalogTypeCount = 2
     txState.executeResponses.push({
       rows: [
         { id: draftIds[0], tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: { line: 0, payload: 'a' } },
@@ -606,6 +613,7 @@ describe('finalizeEncounter', () => {
       '00000000-0000-0000-0000-00000000d020',
       '00000000-0000-0000-0000-00000000d021',
     ]
+    txState.catalogTypeCount = 2
     txState.executeResponses.push({
       rows: [
         { id: draftIds[0], tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null },
@@ -656,18 +664,18 @@ describe('finalizeEncounter', () => {
   it('accepts the same encounterId on repeat calls without throwing (signature-level)', async () => {
     const draftIdA = '00000000-0000-0000-0000-00000000d030'
     const draftIdB = '00000000-0000-0000-0000-00000000d031'
-    // Order matches the tx.execute call sequence per invocation:
+    // Queue order per invocation (the catalog/consent lookup is answered by the harness):
     //   (1) FOR UPDATE lock → rows of the locked draft
-    //   (2) UPDATE financial_entries back-fill → no rows
-    // and the same pair for the second call.
+    //   (2) UPDATE financial_entries back-fill, (3) signed-consent lookup → no rows
+    // and the same sequence for the second call.
     txState.executeResponses.push({
       rows: [{ id: draftIdA, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
-    txState.executeResponses.push({ rows: [] })
+    txState.executeResponses.push({ rows: [] }, { rows: [] })
     txState.executeResponses.push({
       rows: [{ id: draftIdB, tenant_id: tenantId, patient_id: patientId, status: 'draft', planned_snapshot: null }],
     })
-    txState.executeResponses.push({ rows: [] })
+    txState.executeResponses.push({ rows: [] }, { rows: [] })
 
     const sharedId = '00000000-0000-0000-0000-0000000000a2'
 

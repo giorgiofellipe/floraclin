@@ -32,7 +32,7 @@ export async function getTrialRecap(tenantId: string): Promise<TrialRecap> {
       (select count(*) from floraclin.procedure_records where tenant_id = ${tenantId} and deleted_at is null) as procedure_records,
       (select count(*) from floraclin.photo_assets where tenant_id = ${tenantId} and deleted_at is null) as photos,
       (select count(*) from floraclin.face_diagrams fd
-         join floraclin.procedure_records pr on pr.id = fd.procedure_record_id and pr.deleted_at is null
+         join floraclin.face_diagram_groups g on g.id = fd.group_id and g.deleted_at is null
         where fd.tenant_id = ${tenantId}) as diagrams
   `)
   const [row] = rowsFromExecuteResult<RecapRow>(result)

@@ -13,7 +13,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 //      linked financials are cancelled through cancelLinkedFinancials.
 //   5. When outcome === 'desistiu' and the procedure status is NOT in
 //      ('planned', 'approved'), we throw and write nothing.
-//   6. When the procedure does not belong to the caller's tenant, we throw.
+//   6. The procedure lookup is scoped to the caller's tenant and locks the row.
 //
 // vi.mock factories are hoisted above any top-level `const` here, so all
 // shared state lives inside `vi.hoisted()` — that block runs at hoist time.
@@ -26,6 +26,8 @@ const { txState, TABLE_TOKENS } = vi.hoisted(() => {
   }
   interface TxState {
     selectResult: Array<{ id: string; tenantId: string; status: string }>
+    selectWhere?: unknown
+    selectLock?: string
     insertedFollowups: Array<Record<string, unknown>>
     updates: UpdateCall[]
   }
@@ -44,6 +46,8 @@ type UpdateCallTable = 'procedureRecords' | 'unknown'
 
 function resetTx(initial: typeof txState.selectResult) {
   txState.selectResult = initial
+  txState.selectWhere = undefined
+  txState.selectLock = undefined
   txState.insertedFollowups = []
   txState.updates = []
 }
@@ -51,6 +55,11 @@ function resetTx(initial: typeof txState.selectResult) {
 const cancelLinkedFinancialsMock = vi.fn()
 vi.mock('@/db/queries/financial', () => ({
   cancelLinkedFinancials: (...args: unknown[]) => cancelLinkedFinancialsMock(...args),
+}))
+
+vi.mock('@/db/queries/face-diagram-groups', () => ({
+  lockDiagramGroup: vi.fn(),
+  releaseStandaloneGroups: vi.fn(),
 }))
 
 vi.mock('@/lib/tenant', async () => {
@@ -68,9 +77,17 @@ vi.mock('@/db/client', () => {
     return {
       select: () => ({
         from: () => ({
-          where: () => ({
-            limit: () => Promise.resolve(txState.selectResult),
-          }),
+          where: (condition: unknown) => {
+            txState.selectWhere = condition
+            const limit = () => Promise.resolve(txState.selectResult)
+            return {
+              for: (mode: string) => {
+                txState.selectLock = mode
+                return { limit }
+              },
+              limit,
+            }
+          },
         }),
       }),
       insert: () => ({
@@ -291,19 +308,17 @@ describe('recordFollowup', () => {
     expect(txState.updates).toHaveLength(0)
   })
 
-  it('throws when the procedure belongs to a different tenant', async () => {
-    resetTx([{ id: 'proc-1', tenantId: 'tenant-other', status: 'planned' }])
-    await expect(
-      recordFollowup({
-        tenantId: 'tenant-1',
-        contactedBy: 'user-1',
-        procedureRecordId: 'proc-1',
-        channel: 'whatsapp',
-        outcome: 'sem_resposta',
-      }),
-    ).rejects.toThrow('Procedure not found')
-    expect(txState.insertedFollowups).toHaveLength(0)
-    expect(txState.updates).toHaveLength(0)
+  it('reads the procedure under a row lock, scoped to the caller tenant', async () => {
+    await recordFollowup({
+      tenantId: 'tenant-1',
+      contactedBy: 'user-1',
+      procedureRecordId: 'proc-1',
+      channel: 'call',
+      outcome: 'desistiu',
+    })
+
+    expect(txState.selectLock).toBe('update')
+    expect(txState.selectWhere).toContainEqual(['eq', 'tenant_id', 'tenant-1'])
   })
 })
 

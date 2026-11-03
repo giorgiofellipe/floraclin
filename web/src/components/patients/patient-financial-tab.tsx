@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { FinancialList } from '@/components/financial/financial-list'
 import { formatCurrency } from '@/lib/utils'
+import { PATIENT_FINANCIAL_ENTRIES_LIMIT, summarizePatientEntries } from '@/lib/financial/patient-summary'
 import { ClockIcon, AlertTriangleIcon, CheckCircle2Icon } from 'lucide-react'
 
 interface PatientFinancialTabProps {
@@ -16,36 +17,17 @@ export function PatientFinancialTab({ patientId, patientName }: PatientFinancial
   const patients = [{ id: patientId, fullName: patientName }]
 
   const { data } = useQuery({
-    queryKey: queryKeys.financial.entries({ patientId, page: 1, limit: 100 }),
+    queryKey: queryKeys.financial.entries({ patientId, page: 1, limit: PATIENT_FINANCIAL_ENTRIES_LIMIT }),
     queryFn: async () => {
-      const res = await fetch(`/api/financial?patientId=${patientId}&page=1&limit=100`)
+      const res = await fetch(`/api/financial?patientId=${patientId}&page=1&limit=${PATIENT_FINANCIAL_ENTRIES_LIMIT}`)
       if (!res.ok) return { data: [] }
       return res.json()
     },
   })
 
   const summary = useMemo(() => {
-    const entries = data?.data ?? []
-    let totalPending = 0
-    let totalOverdue = 0
-    let totalPaid = 0
-
-    for (const entry of entries) {
-      const amount = Number(entry.totalAmount ?? 0)
-      const fineAmt = Number(entry.totalFineAmount ?? 0)
-      const interestAmt = Number(entry.totalInterestAmount ?? 0)
-      const amountPaid = Number(entry.totalAmountPaid ?? 0)
-
-      if (entry.status === 'paid') {
-        totalPaid += amount + fineAmt + interestAmt
-      } else if (entry.isOverdue) {
-        totalOverdue += amount + fineAmt + interestAmt - amountPaid
-      } else if (entry.status === 'pending' || entry.status === 'partial') {
-        totalPending += amount + fineAmt + interestAmt - amountPaid
-      }
-    }
-
-    return { totalPending, totalOverdue, totalPaid }
+    const { pending, overdue, paid } = summarizePatientEntries(data?.data ?? [])
+    return { totalPending: pending, totalOverdue: overdue, totalPaid: paid }
   }, [data])
 
   return (

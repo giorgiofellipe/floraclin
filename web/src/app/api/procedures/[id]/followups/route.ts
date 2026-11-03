@@ -143,6 +143,9 @@ export async function POST(
         changes: {
           status: { old: result.previousStatus, new: 'cancelled' },
           cancellationReason: { old: null, new: 'patient_declined' },
+          ...(result.releasedDiagramGroupIds.length > 0
+            ? { releasedDiagramGroupIds: { old: null, new: result.releasedDiagramGroupIds } }
+            : {}),
         },
       })
     }

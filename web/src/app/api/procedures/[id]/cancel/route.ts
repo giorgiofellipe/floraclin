@@ -36,14 +36,14 @@ export async function POST(
     }
 
     const result = await withTransaction(async (tx) => {
-      const updated = await cancelProcedure(ctx.tenantId, procedureId, reason.trim(), tx)
-      if (!updated) throw new Error('Falha ao cancelar procedimento')
+      const cancelled = await cancelProcedure(ctx.tenantId, procedureId, reason.trim(), tx)
+      if (!cancelled) throw new Error('Falha ao cancelar procedimento')
 
       if (procedure.status === 'approved') {
         await cancelLinkedFinancials(tx, ctx.tenantId, ctx.userId, procedureId, reason.trim())
       }
 
-      return updated
+      return cancelled
     })
 
     await createAuditLog({
@@ -55,10 +55,13 @@ export async function POST(
       changes: {
         status: { old: procedure.status, new: 'cancelled' },
         cancellationReason: { old: null, new: reason.trim() },
+        ...(result.releasedDiagramGroupIds.length > 0
+          ? { releasedDiagramGroupIds: { old: null, new: result.releasedDiagramGroupIds } }
+          : {}),
       },
     })
 
-    return NextResponse.json({ success: true, data: result })
+    return NextResponse.json({ success: true, data: result.procedure })
   } catch (error) {
     return handleApiError(error, request)
   }

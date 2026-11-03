@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
-import { acceptConsent } from '@/db/queries/consent'
+import { ConsentProcedureMismatchError, acceptConsent } from '@/db/queries/consent'
 import { consentAcceptanceSchema } from '@/validations/consent'
 import { handleApiError } from '@/lib/api-error'
 
@@ -54,6 +54,9 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ success: true, data: acceptance })
   } catch (error) {
+    if (error instanceof ConsentProcedureMismatchError) {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

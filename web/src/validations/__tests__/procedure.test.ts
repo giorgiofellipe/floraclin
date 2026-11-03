@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { createProcedureSchema, diagramPointSchema, diagramSaveSchema } from '../procedure'
+import { createProcedureSchema, diagramPointSchema } from '../procedure'
 
 describe('financialPlan debit rule', () => {
   const base = {
@@ -150,45 +150,5 @@ describe('diagramPointSchema', () => {
   it('fails with invalid quantityUnit', () => {
     const result = diagramPointSchema.safeParse({ ...validPoint, quantityUnit: 'mg' })
     expect(result.success).toBe(false)
-  })
-})
-
-describe('diagramSaveSchema', () => {
-  it('passes with valid data and empty points array', () => {
-    const result = diagramSaveSchema.safeParse({
-      procedureRecordId: '550e8400-e29b-41d4-a716-446655440000',
-      viewType: 'front',
-      points: [],
-    })
-    expect(result.success).toBe(true)
-  })
-
-  it('accepts all valid viewType values', () => {
-    for (const viewType of ['front', 'left_profile', 'right_profile']) {
-      const result = diagramSaveSchema.safeParse({
-        procedureRecordId: '550e8400-e29b-41d4-a716-446655440000',
-        viewType,
-        points: [],
-      })
-      expect(result.success).toBe(true)
-    }
-  })
-
-  it('fails with invalid viewType', () => {
-    const result = diagramSaveSchema.safeParse({
-      procedureRecordId: '550e8400-e29b-41d4-a716-446655440000',
-      viewType: 'back',
-      points: [],
-    })
-    expect(result.success).toBe(false)
-  })
-
-  it('validates nested diagram points', () => {
-    const result = diagramSaveSchema.safeParse({
-      procedureRecordId: '550e8400-e29b-41d4-a716-446655440000',
-      viewType: 'front',
-      points: [{ x: 50, y: 50, productName: '', quantity: 5, quantityUnit: 'U' }],
-    })
-    expect(result.success).toBe(false) // productName is empty
   })
 })

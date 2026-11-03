@@ -225,6 +225,7 @@ export const procedureRecords = floraclinSchema.table('procedure_records', {
   encounterId: uuid('encounter_id'),
   followupSnoozedUntil: date('followup_snoozed_until'),
   lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
+  requiredConsentTypes: jsonb('required_consent_types').$type<string[]>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
@@ -260,16 +261,54 @@ export const procedureSessions = floraclinSchema.table('procedure_sessions', {
 
 // ─── FACE DIAGRAM ────────────────────────────────────────────────────
 
+export const faceDiagramGroups = floraclinSchema.table('face_diagram_groups', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  practitionerId: uuid('practitioner_id').notNull().references(() => users.id),
+  procedureRecordId: uuid('procedure_record_id').references(() => procedureRecords.id),
+  procedureSessionId: uuid('procedure_session_id').references((): AnyPgColumn => procedureSessions.id, { onDelete: 'cascade' }),
+  origin: varchar('origin', { length: 20 }).notNull().default('standalone'), // CHECK in migration: standalone | wizard
+  quotationLines: jsonb('quotation_lines'),
+  declinedAt: timestamp('declined_at', { withTimezone: true }),
+  followupSnoozedUntil: date('followup_snoozed_until'),
+  lastContactedAt: timestamp('last_contacted_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (table) => [
+  index('idx_face_diagram_groups_patient').on(table.tenantId, table.patientId),
+  uniqueIndex('uq_face_diagram_groups_planning').on(table.procedureRecordId).where(sql`procedure_session_id IS NULL AND procedure_record_id IS NOT NULL AND deleted_at IS NULL`),
+  uniqueIndex('uq_face_diagram_groups_session').on(table.procedureSessionId).where(sql`procedure_session_id IS NOT NULL`),
+])
+
+export const faceDiagramQuotes = floraclinSchema.table('face_diagram_quotes', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  patientId: uuid('patient_id').notNull().references(() => patients.id),
+  groupId: uuid('group_id').notNull().references(() => faceDiagramGroups.id, { onDelete: 'cascade' }),
+  storagePath: text('storage_path').notNull(),
+  lines: jsonb('lines').notNull(),
+  total: decimal('total', { precision: 12, scale: 2 }).notNull(),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  whatsappStatus: varchar('whatsapp_status', { length: 10 }), // CHECK in migration: queued | sent
+  whatsappRequestedAt: timestamp('whatsapp_requested_at', { withTimezone: true }),
+  whatsappMessageId: varchar('whatsapp_message_id', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_face_diagram_quotes_group').on(table.tenantId, table.groupId),
+])
+
 export const faceDiagrams = floraclinSchema.table('face_diagrams', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id),
-  procedureSessionId: uuid('procedure_session_id').references((): AnyPgColumn => procedureSessions.id),
+  groupId: uuid('group_id').notNull().references(() => faceDiagramGroups.id, { onDelete: 'cascade' }),
   viewType: varchar('view_type', { length: 20 }).notNull().default('front'), // CHECK in migration
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
-  uniqueIndex('uq_face_diagrams_session_view').on(table.procedureSessionId, table.viewType).where(sql`procedure_session_id IS NOT NULL`),
+  index('idx_face_diagrams_group').on(table.groupId),
+  uniqueIndex('uq_face_diagrams_group_view').on(table.groupId, table.viewType),
 ])
 
 export const diagramPoints = floraclinSchema.table('diagram_points', {
@@ -1056,7 +1095,8 @@ export const clinicalDocuments = floraclinSchema.table('clinical_documents', {
 export const procedureFollowups = floraclinSchema.table('procedure_followups', {
   id: uuid('id').primaryKey().defaultRandom(),
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
-  procedureRecordId: uuid('procedure_record_id').notNull().references(() => procedureRecords.id, { onDelete: 'cascade' }),
+  procedureRecordId: uuid('procedure_record_id').references(() => procedureRecords.id, { onDelete: 'cascade' }),
+  faceDiagramGroupId: uuid('face_diagram_group_id').references(() => faceDiagramGroups.id, { onDelete: 'cascade' }),
   contactedBy: uuid('contacted_by').notNull().references(() => users.id),
   contactedAt: timestamp('contacted_at', { withTimezone: true }).notNull().defaultNow(),
   channel: varchar('channel', { length: 20 }).notNull(), // CHECK: whatsapp | call | in_person | other
@@ -1065,6 +1105,7 @@ export const procedureFollowups = floraclinSchema.table('procedure_followups', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('idx_procedure_followups_record_contacted').on(table.procedureRecordId, table.contactedAt),
+  index('idx_procedure_followups_group_contacted').on(table.faceDiagramGroupId, table.contactedAt),
 ])
 
 // ─── PATIENT EVOLUTIONS ─────────────────────────────────────────────
@@ -1442,7 +1483,7 @@ export const procedureRecordsRelations = relations(procedureRecords, ({ one, man
   practitioner: one(users, { fields: [procedureRecords.practitionerId], references: [users.id] }),
   procedureType: one(procedureTypes, { fields: [procedureRecords.procedureTypeId], references: [procedureTypes.id] }),
   appointment: one(appointments, { fields: [procedureRecords.appointmentId], references: [appointments.id] }),
-  faceDiagrams: many(faceDiagrams),
+  faceDiagramGroups: many(faceDiagramGroups),
   productApplications: many(productApplications),
   photoAssets: many(photoAssets),
   consentAcceptances: many(consentAcceptances),
@@ -1450,8 +1491,25 @@ export const procedureRecordsRelations = relations(procedureRecords, ({ one, man
 
 export const faceDiagramsRelations = relations(faceDiagrams, ({ one, many }) => ({
   tenant: one(tenants, { fields: [faceDiagrams.tenantId], references: [tenants.id] }),
-  procedureRecord: one(procedureRecords, { fields: [faceDiagrams.procedureRecordId], references: [procedureRecords.id] }),
+  group: one(faceDiagramGroups, { fields: [faceDiagrams.groupId], references: [faceDiagramGroups.id] }),
   points: many(diagramPoints),
+}))
+
+export const faceDiagramGroupsRelations = relations(faceDiagramGroups, ({ one, many }) => ({
+  tenant: one(tenants, { fields: [faceDiagramGroups.tenantId], references: [tenants.id] }),
+  patient: one(patients, { fields: [faceDiagramGroups.patientId], references: [patients.id] }),
+  practitioner: one(users, { fields: [faceDiagramGroups.practitionerId], references: [users.id] }),
+  procedureRecord: one(procedureRecords, { fields: [faceDiagramGroups.procedureRecordId], references: [procedureRecords.id] }),
+  procedureSession: one(procedureSessions, { fields: [faceDiagramGroups.procedureSessionId], references: [procedureSessions.id] }),
+  diagrams: many(faceDiagrams),
+  quotes: many(faceDiagramQuotes),
+}))
+
+export const faceDiagramQuotesRelations = relations(faceDiagramQuotes, ({ one }) => ({
+  tenant: one(tenants, { fields: [faceDiagramQuotes.tenantId], references: [tenants.id] }),
+  patient: one(patients, { fields: [faceDiagramQuotes.patientId], references: [patients.id] }),
+  group: one(faceDiagramGroups, { fields: [faceDiagramQuotes.groupId], references: [faceDiagramGroups.id] }),
+  creator: one(users, { fields: [faceDiagramQuotes.createdBy], references: [users.id] }),
 }))
 
 export const diagramPointsRelations = relations(diagramPoints, ({ one }) => ({

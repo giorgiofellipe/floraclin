@@ -17,6 +17,8 @@ export interface TimelineEntry {
     | 'package_cancelled'
     | 'document_issued'
     | 'document_sent_whatsapp'
+    | 'quote_generated'
+    | 'quote_sent_whatsapp'
   date: string
   title: string
   description?: string

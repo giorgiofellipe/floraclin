@@ -5,6 +5,12 @@ import { createAuditLog } from '@/lib/audit'
 import { withTransaction } from '@/lib/tenant'
 import { listProcedures, createProcedure } from '@/db/queries/procedures'
 import { saveFaceDiagram } from '@/db/queries/face-diagrams'
+import {
+  DiagramGroupLockedError,
+  DiagramGroupNotFoundError,
+  ensurePlanningGroup,
+  linkGroupToProcedure,
+} from '@/db/queries/face-diagram-groups'
 import { saveProductApplications } from '@/db/queries/product-applications'
 import { createProcedureSchema } from '@/validations/procedure'
 import { computePlanningStatus } from '@/lib/procedure-status'
@@ -45,6 +51,7 @@ export async function POST(request: Request) {
       followUpDate: body.followUpDate,
       nextSessionObjectives: body.nextSessionObjectives,
       financialPlan: body.financialPlan,
+      diagramGroupId: body.diagramGroupId,
     })
 
     if (!parsed.success) {
@@ -56,7 +63,7 @@ export async function POST(request: Request) {
 
     const status = computePlanningStatus(body)
 
-    const { patientId, ...createData } = parsed.data
+    const { patientId, diagramGroupId, ...createData } = parsed.data
 
     const result = await withTransaction(async (tx) => {
       const procedure = await createProcedure(
@@ -67,15 +74,26 @@ export async function POST(request: Request) {
         tx
       )
 
-      if (body.diagrams && body.diagrams.length > 0) {
+      if (diagramGroupId) {
+        await linkGroupToProcedure(tx, {
+          tenantId: ctx.tenantId,
+          patientId,
+          groupId: diagramGroupId,
+          procedureRecordId: procedure.id,
+        })
+      }
+
+      let groupId = diagramGroupId ?? null
+      const hasPoints = body.diagrams?.some((d: { points: unknown[] }) => d.points.length > 0) ?? false
+      if (body.diagrams && (groupId || hasPoints)) {
+        groupId ??= await ensurePlanningGroup(tx, {
+          tenantId: ctx.tenantId,
+          patientId,
+          practitionerId: procedure.practitionerId,
+          procedureRecordId: procedure.id,
+        })
         for (const diagram of body.diagrams) {
-          await saveFaceDiagram(
-            ctx.tenantId,
-            procedure.id,
-            diagram.viewType,
-            diagram.points,
-            tx
-          )
+          await saveFaceDiagram(ctx.tenantId, groupId, diagram.viewType, diagram.points, tx)
         }
       }
 
@@ -88,7 +106,7 @@ export async function POST(request: Request) {
         )
       }
 
-      return procedure
+      return { procedure, groupId }
     })
 
     await createAuditLog({
@@ -96,15 +114,22 @@ export async function POST(request: Request) {
       userId: ctx.userId,
       action: 'create',
       entityType: 'procedure_record',
-      entityId: result.id,
+      entityId: result.procedure.id,
       changes: {
         patientId: { old: null, new: body.patientId },
         procedureTypeId: { old: null, new: body.procedureTypeId },
+        diagramGroupId: { old: null, new: result.groupId },
       },
     })
 
-    return NextResponse.json({ success: true, data: result })
+    return NextResponse.json({ success: true, data: result.procedure })
   } catch (error) {
+    if (error instanceof DiagramGroupNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 })
+    }
+    if (error instanceof DiagramGroupLockedError) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
     return handleApiError(error, request)
   }
 }

@@ -16,16 +16,6 @@ async function mutateJson(url: string, method: string, data?: unknown) {
   return res.json()
 }
 
-export function useSaveFaceDiagram() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (data: Record<string, unknown>) => mutateJson('/api/face-diagrams', 'POST', data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.procedures.all })
-    },
-  })
-}
-
 export function useSaveProductApplications() {
   const queryClient = useQueryClient()
   return useMutation({
