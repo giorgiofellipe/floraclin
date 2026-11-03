@@ -9,7 +9,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen, waitFor, act, fireEvent } from '@testing-library/react'
 import { toast } from 'sonner'
-import { renderWithProviders as render } from '@/tests/test-utils'
+import { renderWithProviders as render, createTestQueryClient } from '@/tests/test-utils'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { BillingSettings } from '../billing-settings'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -125,6 +126,21 @@ describe('BillingSettings payment race', () => {
     })
 
     await waitFor(() => expect(mockUpdate).toHaveBeenCalled())
+  })
+
+  it('refreshes the Indique e Ganhe dashboard once the payment is confirmed', async () => {
+    searchParamsValue = new URLSearchParams('session_id=cs_test_123')
+    vi.stubGlobal('fetch', mockFetch({
+      '/api/billing/usage': USAGE_RESPONSE,
+      '/api/billing/plans': PLANS_RESPONSE,
+      'POST /api/billing/confirm': { activated: true },
+    }))
+    const queryClient = createTestQueryClient()
+    queryClient.setQueryData(queryKeys.referral, { subscribeToUnlock: true })
+
+    render(<BillingSettings />, { queryClient })
+
+    await waitFor(() => expect(queryClient.getQueryState(queryKeys.referral)?.isInvalidated).toBe(true))
   })
 
   it('removes session_id from the URL after confirming', async () => {

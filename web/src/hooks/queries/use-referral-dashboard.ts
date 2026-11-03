@@ -10,6 +10,9 @@ export function useReferralDashboard({ enabled = true }: { enabled?: boolean } =
     queryKey: queryKeys.referral,
     enabled,
     retry: false,
+    // The sidebar card keeps this query mounted, and a subscription can change in another tab or by an admin.
+    staleTime: 0,
+    refetchOnWindowFocus: true,
     queryFn: async () => {
       const res = await fetch('/api/referral')
       if (res.status === 403 || res.status === 404) return null
