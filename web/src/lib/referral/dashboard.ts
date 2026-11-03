@@ -22,7 +22,7 @@ const FREE_LABEL = `${REFERRAL_MAX_COUNTING_FOR_DISCOUNT} de ${REFERRAL_MAX_COUN
 export interface DashboardInput {
   canRefer: boolean
   enrollmentOpen: boolean
-  /** Trial or expired clinic while enrollment is open: subscribing unlocks the link. */
+  /** Enrollment open and `subscribingUnlocksReferral`: the tab shows the subscribe CTA instead of the link. */
   subscribeToUnlock: boolean
   code: string | null
   /** Retired codes that still resolve to the clinic, newest first. */
@@ -31,7 +31,7 @@ export interface DashboardInput {
   counting: number
   /** Referrer's plan price (null when no paid plan). */
   planPriceCents: number | null
-  /** isReferralEligiblePlan(plan): yearly referrers see 0%. */
+  /** isReferralEligiblePlan(plan) for a Stripe payer: yearly and granted referrers see 0%. */
   planEligible: boolean
   /** currentPeriodEnd when canRefer (display only; may lag a renewal by hours). */
   nextInvoiceAt: Date | null

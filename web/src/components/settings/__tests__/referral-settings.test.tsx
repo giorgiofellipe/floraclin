@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, screen, waitFor } from '@testing-library/react'
-import { renderWithProviders as render } from '@/tests/test-utils'
+import { renderWithProviders as render, createTestQueryClient } from '@/tests/test-utils'
+import { queryKeys } from '@/hooks/queries/query-keys'
 import { ReferralSettings } from '../referral-settings'
 
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -113,6 +114,15 @@ describe('ReferralSettings', () => {
     render(<ReferralSettings />)
     await waitFor(() => expect(track).toHaveBeenCalledTimes(1))
     expect(track).toHaveBeenCalledWith('referral_page_viewed', expected)
+  })
+
+  it('reports the state the page settles on, not the cached one from before a subscription change', async () => {
+    const queryClient = createTestQueryClient()
+    queryClient.setQueryData(queryKeys.referral, { ...INACTIVE, subscribeToUnlock: true })
+    mockResponse(ACTIVE)
+    render(<ReferralSettings />, { queryClient })
+    await waitFor(() => expect(track).toHaveBeenCalledTimes(1))
+    expect(track).toHaveBeenCalledWith('referral_page_viewed', expect.objectContaining({ state: 'sharing' }))
   })
 
   it('counts a link source once: the next visit in the same tab is direct', async () => {

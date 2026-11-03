@@ -239,6 +239,7 @@ export async function findReferrerByCode(
         deletedAt: tenants.deletedAt,
         source: tenantSubscriptions.source,
         status: tenantSubscriptions.status,
+        currentPeriodEnd: tenantSubscriptions.currentPeriodEnd,
       })
       .from(tenants)
       .leftJoin(tenantSubscriptions, eq(tenantSubscriptions.tenantId, tenants.id))
@@ -255,7 +256,10 @@ export async function findReferrerByCode(
     if (alias) [row] = await referrer(eq(tenants.id, alias.tenantId))
   }
   if (!row) return null
-  const sub = row.source === null || row.status === null ? null : { source: row.source, status: row.status }
+  const sub =
+    row.source === null || row.status === null
+      ? null
+      : { source: row.source, status: row.status, currentPeriodEnd: row.currentPeriodEnd }
   return { tenantId: row.tenantId, name: row.name, canRefer: row.deletedAt === null && canRefer(sub) }
 }
 
