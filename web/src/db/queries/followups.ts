@@ -165,6 +165,7 @@ export async function listOpenDiagramQuotes(
     isNull(faceDiagramGroups.procedureRecordId),
     isNull(faceDiagramGroups.declinedAt),
     isNull(patients.deletedAt),
+    sql`jsonb_array_length(coalesce(${faceDiagramGroups.quotationLines}, '[]'::jsonb)) > 0`,
   ]
 
   if (args.practitionerId) {

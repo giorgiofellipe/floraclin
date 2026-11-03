@@ -14,6 +14,7 @@ import { isOpenStatus } from '@/lib/procedure-status'
 import { quoteTotal } from '@/lib/diagram-quote'
 import {
   deriveDiagramStatus,
+  isOpenDiagram,
   type DiagramGroupStatus,
 } from '@/lib/face-diagram-status'
 import type { DiagramGroupOrigin, QuotationLine } from '@/validations/face-diagram-group'
@@ -298,6 +299,7 @@ export async function lockDiagramGroup(
       procedureRecordId: faceDiagramGroups.procedureRecordId,
       procedureSessionId: faceDiagramGroups.procedureSessionId,
       declinedAt: faceDiagramGroups.declinedAt,
+      quotationLines: faceDiagramGroups.quotationLines,
     })
     .from(faceDiagramGroups)
     .where(
@@ -326,14 +328,16 @@ export async function lockDiagramGroup(
     procedureStatus = (record?.status as ProcedureStatus | undefined) ?? null
   }
 
+  const { quotationLines, ...rest } = group
   return {
-    ...group,
+    ...rest,
     origin: group.origin as DiagramGroupOrigin,
     procedureStatus,
     status: deriveDiagramStatus({
       isSessionGroup: !!group.procedureSessionId,
       procedureStatus,
       declinedAt: group.declinedAt,
+      hasQuotationLines: ((quotationLines as QuotationLine[] | null) ?? []).length > 0,
     }),
   }
 }
@@ -349,7 +353,7 @@ export async function updateStandaloneGroup(
 ): Promise<void> {
   const group = await lockDiagramGroup(tx, input.tenantId, input.groupId)
   if (!group) throw new DiagramGroupNotFoundError()
-  if (group.status !== 'quote') {
+  if (!isOpenDiagram(group.status)) {
     throw new DiagramGroupLockedError('Este diagrama não pode mais ser editado')
   }
   const quotationLines = await resolveQuotationLines(tx, input.tenantId, input.quotationLines)
@@ -382,7 +386,7 @@ export async function linkGroupToProcedure(
   if (group.patientId !== input.patientId) {
     throw new DiagramGroupLockedError('Este diagrama pertence a outro paciente')
   }
-  if (group.status !== 'quote') {
+  if (!isOpenDiagram(group.status)) {
     throw new DiagramGroupLockedError('Este diagrama já está em outro atendimento')
   }
 
@@ -512,6 +516,7 @@ async function selectGroupDetails(
         isSessionGroup: !!r.procedureSessionId,
         procedureStatus: (r.procedureStatus as ProcedureStatus | null) ?? null,
         declinedAt: r.declinedAt,
+        hasQuotationLines: lines.length > 0,
       }),
       procedureRecordId: r.procedureRecordId,
       procedureSessionId: r.procedureSessionId,

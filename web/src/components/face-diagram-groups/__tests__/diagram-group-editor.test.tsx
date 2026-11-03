@@ -12,7 +12,7 @@ vi.mock('@/components/face-diagram/face-diagram-editor', () => ({
     <div data-testid="diagram" data-readonly={String(!!readOnly)} />
   ),
 }))
-vi.mock('../quotation-lines-editor', () => ({ QuotationLinesEditor: () => <div /> }))
+vi.mock('../quotation-lines-editor', () => ({ QuotationLinesEditor: () => <div data-testid="lines" /> }))
 vi.mock('../quote-history', () => ({ QuoteHistory: () => <div data-testid="history" /> }))
 vi.mock('@/hooks/queries/use-products', () => ({ useDiagramProducts: () => ({ data: [] }) }))
 let procedures: { status: string }[] | undefined = []
@@ -107,13 +107,45 @@ describe('DiagramGroupEditor', () => {
     ).toBe(true)
   })
 
-  it('disables Gerar PDF when the quotation has no lines', () => {
+  it('hides the orçamento fields and actions until the user turns the diagram into one', () => {
     renderWithProviders(
-      <DiagramGroupEditor patient={patient} group={makeGroup({ quotationLines: [] })} role="owner" />,
+      <DiagramGroupEditor
+        patient={patient}
+        group={makeGroup({ status: 'diagram', quotationLines: [] })}
+        role="owner"
+      />,
     )
+    expect(screen.queryByTestId('lines')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Gerar PDF/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Enviar por WhatsApp/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Transformar em orçamento?' }))
+
+    expect(screen.getByTestId('lines')).toBeTruthy()
     expect(
       (screen.getByRole('button', { name: /Gerar PDF/ }) as HTMLButtonElement).disabled,
     ).toBe(true)
+  })
+
+  it('opens an existing orçamento with its fields shown', () => {
+    renderWithProviders(<DiagramGroupEditor patient={patient} group={makeGroup()} role="owner" />)
+    expect(screen.getByRole('switch', { name: 'Transformar em orçamento?' })).toBeChecked()
+    expect(screen.getByTestId('lines')).toBeTruthy()
+  })
+
+  it('asks before dropping the lines of an orçamento, and keeps them on cancel', async () => {
+    renderWithProviders(<DiagramGroupEditor patient={patient} group={makeGroup()} role="owner" />)
+    const toggle = screen.getByRole('switch', { name: 'Transformar em orçamento?' })
+
+    fireEvent.click(toggle)
+    fireEvent.click(await screen.findByRole('button', { name: 'Manter orçamento' }))
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Remover' })).toBeNull())
+    expect(screen.getByTestId('lines')).toBeTruthy()
+
+    fireEvent.click(toggle)
+    fireEvent.click(await screen.findByRole('button', { name: 'Remover' }))
+    await waitFor(() => expect(screen.queryByTestId('lines')).toBeNull())
+    expect(screen.queryByRole('button', { name: /Gerar PDF/ })).toBeNull()
   })
 
   it('closes the PDF tab and explains the failure when the network is down', async () => {

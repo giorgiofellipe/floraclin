@@ -3,11 +3,15 @@ import { deriveDiagramStatus } from '@/lib/face-diagram-status'
 import { quotationLinesSchema } from '@/validations/face-diagram-group'
 import type { ProcedureStatus } from '@/types'
 
-const base = { isSessionGroup: false, declinedAt: null }
+const base = { isSessionGroup: false, declinedAt: null, hasQuotationLines: true }
 
 describe('deriveDiagramStatus', () => {
-  it('shows a standalone group as quote when it has no procedure', () => {
+  it('shows a standalone group with quotation lines as quote', () => {
     expect(deriveDiagramStatus({ ...base, procedureStatus: null })).toBe('quote')
+  })
+
+  it('shows a standalone group without quotation lines as a plain diagram', () => {
+    expect(deriveDiagramStatus({ ...base, procedureStatus: null, hasQuotationLines: false })).toBe('diagram')
   })
 
   it('shows cancelled when the linked procedure is cancelled', () => {
@@ -26,7 +30,7 @@ describe('deriveDiagramStatus', () => {
   })
 
   it('shows applied for session groups regardless of procedure status', () => {
-    expect(deriveDiagramStatus({ isSessionGroup: true, procedureStatus: 'in_progress', declinedAt: null })).toBe('applied')
+    expect(deriveDiagramStatus({ ...base, isSessionGroup: true, procedureStatus: 'in_progress' })).toBe('applied')
   })
 
   it('shows declined when declinedAt is set, even for a procedure-less group', () => {

@@ -37,6 +37,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
+import { isOpenDiagram } from '@/lib/face-diagram-status'
 import {
   countPendingSessions,
   encounterViewQueryOptions,
@@ -132,7 +133,7 @@ export function ServiceWizard({
   )
   const { data: diagramGroups } = usePatientDiagramGroups(patient.id)
   const sourceDiagramGroup = sourceDiagramGroupId
-    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId && g.status === 'quote')
+    ? diagramGroups?.find((g) => g.id === sourceDiagramGroupId && isOpenDiagram(g.status))
     : undefined
 
   // Derive initial selected type IDs from existing procedure

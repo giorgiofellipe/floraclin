@@ -10,6 +10,16 @@ import type { CatalogProduct, DiagramPointData } from '@/components/face-diagram
 import { diagramsToPoints, pointsToViews } from '@/components/face-diagram/points'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Switch } from '@/components/ui/switch'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useReadOnly } from '@/components/layout/subscription-access'
 import { useDiagramProducts } from '@/hooks/queries/use-products'
 import { useProcedures } from '@/hooks/queries/use-procedures'
@@ -22,7 +32,7 @@ import {
 import type { DiagramGroupJson } from '@/hooks/queries/use-face-diagram-groups'
 import { tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isOpenStatus } from '@/lib/procedure-status'
-import { DIAGRAM_STATUS_LABELS } from '@/lib/face-diagram-status'
+import { DIAGRAM_STATUS_LABELS, isOpenDiagram } from '@/lib/face-diagram-status'
 import { cn } from '@/lib/utils'
 import { canWriteClinical } from '@/lib/constants'
 import type { Patient } from '@/db/queries/patients'
@@ -44,6 +54,8 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
   const subscriptionReadOnly = useReadOnly()
   const [points, setPoints] = useState<DiagramPointData[]>(() => diagramsToPoints(group?.views))
   const [lines, setLines] = useState<QuotationLine[]>(() => group?.quotationLines ?? [])
+  const [isQuote, setIsQuote] = useState(() => (group?.quotationLines.length ?? 0) > 0)
+  const [confirmingRemoveQuote, setConfirmingRemoveQuote] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState<'pdf' | 'whatsapp' | null>(null)
   const [syncedUpdatedAt, setSyncedUpdatedAt] = useState(group?.updatedAt)
@@ -52,6 +64,7 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
     setSyncedUpdatedAt(group.updatedAt)
     setPoints(diagramsToPoints(group.views))
     setLines(group.quotationLines)
+    setIsQuote(group.quotationLines.length > 0)
   }
 
   const createGroup = useCreateDiagramGroup()
@@ -62,8 +75,8 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
   const { data: procedures, isLoading: loadingProcedures } = useProcedures(patient.id)
 
   const products = (productsData ?? []) as CatalogProduct[]
-  const status = group?.status ?? 'quote'
-  const readOnly = status !== 'quote' || !canWriteClinical(role) || subscriptionReadOnly
+  const status = group?.status ?? 'diagram'
+  const readOnly = !isOpenDiagram(status) || !canWriteClinical(role) || subscriptionReadOnly
   const saving = createGroup.isPending || updateGroup.isPending
 
   const hasActiveService = useMemo(
@@ -78,6 +91,19 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
       : { href: `${atendimentoHref}?new=1&diagram=${groupId}`, label: 'Iniciar atendimento com este diagrama' }
   const phoneOk = tryNormalizeBrPhoneForWhatsApp(patient.phone).ok
   const hasLines = lines.length > 0
+
+  function handleQuoteToggle(checked: boolean) {
+    if (checked) setIsQuote(true)
+    else if (hasLines) setConfirmingRemoveQuote(true)
+    else setIsQuote(false)
+  }
+
+  function removeQuote() {
+    setLines([])
+    setIsQuote(false)
+    setDirty(true)
+    setConfirmingRemoveQuote(false)
+  }
 
   async function save(): Promise<string | null> {
     const body = { views: pointsToViews(points), quotationLines: lines }
@@ -173,33 +199,48 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
         />
       </section>
 
-      <section className={cn(CARD, 'space-y-3')}>
-        <h2 className="text-sm font-medium text-charcoal">Orçamento</h2>
-        <QuotationLinesEditor
-          value={lines}
-          onChange={(next) => {
-            setLines(next)
-            setDirty(true)
-          }}
-          readOnly={readOnly}
-        />
-      </section>
+      {(!readOnly || hasLines) && (
+        <section className={cn(CARD, 'space-y-3')}>
+          {readOnly ? (
+            <h2 className="text-sm font-medium text-charcoal">Orçamento</h2>
+          ) : (
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="diagram-is-quote" className="cursor-pointer text-sm font-medium text-charcoal">
+                Transformar em orçamento?
+              </Label>
+              <Switch id="diagram-is-quote" checked={isQuote} onCheckedChange={handleQuoteToggle} />
+            </div>
+          )}
+          {isQuote && (
+            <QuotationLinesEditor
+              value={lines}
+              onChange={(next) => {
+                setLines(next)
+                setDirty(true)
+              }}
+              readOnly={readOnly}
+            />
+          )}
+        </section>
+      )}
 
       {!readOnly && (
         <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
           <Button type="button" onClick={save} disabled={saving || busy !== null}>
             {saving ? 'Salvando...' : 'Salvar'}
           </Button>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handlePdf}
-            disabled={!group || !hasLines || busy !== null || saving}
-          >
-            <FileText className="size-4" />
-            {busy === 'pdf' ? 'Gerando...' : 'Gerar PDF'}
-          </Button>
-          {phoneOk && (
+          {isQuote && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handlePdf}
+              disabled={!group || !hasLines || busy !== null || saving}
+            >
+              <FileText className="size-4" />
+              {busy === 'pdf' ? 'Gerando...' : 'Gerar PDF'}
+            </Button>
+          )}
+          {isQuote && phoneOk && (
             <Button
               type="button"
               variant="outline"
@@ -221,6 +262,25 @@ export function DiagramGroupEditor({ patient, group, role }: DiagramGroupEditorP
       )}
 
       {group && <QuoteHistory groupId={group.id} />}
+
+      <Dialog open={confirmingRemoveQuote} onOpenChange={setConfirmingRemoveQuote}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Remover orçamento?</DialogTitle>
+            <DialogDescription>
+              Os procedimentos e valores deste orçamento serão removidos ao salvar. Os PDFs já gerados continuam no histórico.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmingRemoveQuote(false)}>
+              Manter orçamento
+            </Button>
+            <Button type="button" variant="destructive" onClick={removeQuote}>
+              Remover
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

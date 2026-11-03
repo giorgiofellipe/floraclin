@@ -13,6 +13,7 @@ import { DIAGRAM_PDF_CSS } from '@/components/face-diagram/diagram-pdf'
 import { renderReactToPdf, PRINT_BASE_CSS } from '@/lib/pdf'
 import { deleteFile, getSignedUrl, getStoragePath, uploadPdfBuffer } from '@/lib/storage'
 import { quoteTotal } from '@/lib/diagram-quote'
+import { isOpenDiagram } from '@/lib/face-diagram-status'
 import { EMPTY_TENANT_HEADER } from '@/lib/tenant-header'
 import { handleApiError } from '@/lib/api-error'
 
@@ -31,7 +32,7 @@ export async function POST(
     const snapshot = await withTransaction(async (tx) => {
       const locked = await lockDiagramGroup(tx, ctx.tenantId, id)
       if (!locked) return { error: 'not_found' as const }
-      if (locked.status !== 'quote') return { error: 'not_quote' as const }
+      if (!isOpenDiagram(locked.status)) return { error: 'not_quote' as const }
       const group = await getDiagramGroup(ctx.tenantId, id, tx)
       return group ? { group } : { error: 'not_found' as const }
     })
