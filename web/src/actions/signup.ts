@@ -20,7 +20,7 @@ import { notifySignupStarted } from '@/lib/signup-notifications'
 import { confirmEmailUrl, issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
-import { generateMetaEventId } from '@/lib/marketing-attribution'
+import { generateMetaEventId, META_EVENT_ID_PARAM } from '@/lib/marketing-attribution'
 import { metaBrowserSignals, type MetaBrowserSignals } from '@/lib/meta/request-signals'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
@@ -171,7 +171,7 @@ export async function signUp(
     )
   }
   const target = new URL(signedIn ? '/onboarding' : '/confirm-email', getAppUrl())
-  target.searchParams.set('meta_event_id', metaEventId)
+  target.searchParams.set(META_EVENT_ID_PARAM, metaEventId)
   redirect(`${target.pathname}${target.search}`)
 }
 

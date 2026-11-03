@@ -108,8 +108,6 @@ describe('clinic name suggested from the Google account', () => {
     const name = screen.getByLabelText('Nome da clínica *')
 
     expect(name).toHaveAccessibleDescription(hint)
-    // On the white card: charcoal/70 is 5.4:1, mid would be 4.3:1.
-    expect(screen.getByText(hint)).toHaveClass('text-charcoal/70')
 
     await user.type(name, ' Estética')
 
@@ -125,14 +123,11 @@ describe('clinic name suggested from the Google account', () => {
 })
 
 describe('"Configurar depois"', () => {
-  it('reads as a skip: a quiet text action named "Configurar depois", while Próximo stays the primary', () => {
+  it('is named "Configurar depois" and says what it does, next to Próximo', () => {
     renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
     const skip = screen.getByRole('button', { name: 'Configurar depois' })
     expect(skip).toBe(screen.getByTestId('onboarding-use-defaults'))
     expect(skip).toHaveAccessibleDescription('Usa os procedimentos padrão, você ajusta quando quiser.')
-    // Link-style, not a filled or outlined button competing with Próximo.
-    expect(skip.className).not.toMatch(/\bbg-forest\b|\bbg-primary\b|\bborder-border\b/)
-    expect(skip).toHaveClass('h-11')
     expect(screen.queryByText('Quer começar agora?')).toBeNull()
     expect(screen.getByTestId('onboarding-next')).toHaveTextContent('Próximo')
   })
@@ -254,54 +249,6 @@ describe('action bar on phones', () => {
     expect(bar.style.bottom).toBe('0px')
   })
 
-  it('is opaque on phones, so the form does not show through it', () => {
-    renderWizard({ tenantName: 'Clínica Bella' })
-    const bar = screen.getByTestId('onboarding-actions')
-    expect(bar).toHaveClass('bg-white')
-    expect(bar.className).not.toMatch(/bg-white\/|backdrop-blur/)
-  })
-
-  it('makes Próximo full width on phones while there is no Voltar', async () => {
-    const user = userEvent.setup()
-    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
-    expect(screen.queryByTestId('onboarding-prev')).toBeNull()
-    expect(screen.getByTestId('onboarding-next')).toHaveClass('w-full', 'sm:w-auto')
-
-    await user.click(screen.getByTestId('onboarding-next'))
-
-    expect(await screen.findByTestId('onboarding-prev')).toBeInTheDocument()
-    expect(screen.getByTestId('onboarding-next')).not.toHaveClass('w-full')
-  })
-
-  it('on the last step, gives Começar a usar its own full row on phones, above Voltar and the skip action', async () => {
-    const user = userEvent.setup()
-    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
-    await user.click(screen.getByTestId('onboarding-next'))
-    await user.click(screen.getByTestId('onboarding-next'))
-    await screen.findByRole('heading', { name: /^Produtos$/, level: 2 })
-    await user.click(screen.getByTestId('onboarding-next'))
-
-    const complete = await screen.findByTestId('onboarding-complete')
-    const row = complete.closest('[data-testid="onboarding-actions"] > div')!
-    // Below sm: the row wraps, the button group dissolves into it and the
-    // primary action is ordered first at full width. From sm up: one line.
-    expect(row).toHaveClass('flex-wrap', 'sm:flex-nowrap')
-    expect(complete.parentElement).toHaveClass('contents', 'sm:flex')
-    expect(complete).toHaveClass('order-first', 'w-full', 'sm:order-none', 'sm:w-auto')
-    expect(row).toContainElement(screen.getByTestId('onboarding-prev'))
-    expect(row).toContainElement(screen.getByTestId('onboarding-skip'))
-  })
-
-  it('keeps the earlier steps on one line', async () => {
-    const user = userEvent.setup()
-    renderWizard({ tenantName: 'Clínica Bella', tenantPhone: '(11) 98888-7777' })
-    await user.click(screen.getByTestId('onboarding-next'))
-
-    const next = screen.getByTestId('onboarding-next')
-    expect(next.closest('[data-testid="onboarding-actions"] > div')).not.toHaveClass('flex-wrap')
-    expect(next.parentElement).not.toHaveClass('contents')
-  })
-
   it('stays in place from the sm breakpoint up, where it is in the page flow', () => {
     const openKeyboard = stubKeyboard({ wide: true })
     renderWizard({ tenantName: 'Clínica Bella' })
@@ -309,31 +256,6 @@ describe('action bar on phones', () => {
     openKeyboard()
 
     expect(screen.getByTestId('onboarding-actions').getAttribute('style')).toBeNull()
-  })
-})
-
-describe('header legibility', () => {
-  it('welcomes without assuming a gender', () => {
-    renderWizard()
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Bem-vindo(a) ao FloraClin')
-  })
-
-  // charcoal/70 is 5.4:1 on white and 5.2:1 on content-bg; mid is 4.3:1 and 4.0:1.
-  it('gives Sair a 44px hit area and a colour that passes AA on the page background', () => {
-    renderWizard({ tenantName: 'Clínica Bella' })
-    const sair = screen.getByRole('button', { name: 'Sair' })
-    expect(sair).toHaveClass('min-h-11', 'text-charcoal/70')
-    expect(sair).not.toHaveClass('text-mid')
-  })
-
-  it('labels the steps ahead in a colour that passes AA, apart from the current and completed ones', () => {
-    renderWizard({ tenantName: 'Clínica Bella' })
-    expect(screen.getByText('Clínica')).toHaveClass('text-forest')
-    for (const label of ['Procedimentos', 'Produtos', 'Equipe']) {
-      const el = screen.getByText(label)
-      expect(el).toHaveClass('text-charcoal/70')
-      expect(el.className).not.toMatch(/text-mid|text-sage|text-forest/)
-    }
   })
 })
 

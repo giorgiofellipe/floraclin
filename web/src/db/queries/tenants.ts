@@ -4,7 +4,6 @@ import { eq, and, isNull, asc, desc, sql } from 'drizzle-orm'
 import { fetchLogoDataUri, signLogoPath } from '@/lib/logo'
 import type { TenantHeaderInfo } from '@/lib/tenant-header'
 import type { UpdateTenantInput, ProcedureTypeInput } from '@/validations/tenant'
-import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 
 export type Tenant = typeof tenants.$inferSelect
 export type ProcedureType = typeof procedureTypes.$inferSelect
@@ -175,34 +174,14 @@ export async function markOnboardingCompleted(
  * The final onboarding save, only while onboarding is still open: false when
  * another save completed it first, and nothing was written. A taken slug
  * throws the `tenants_slug_unique` violation.
- *
- * Onboarding asks only for the name and phone; the
- * e-mail, address and hours live in Settings, so a field the request leaves
- * out keeps what the clinic already has (a wizard from before the change
- * still sends them). Hours the clinic never set get the defaults the wizard
- * used to prefill, which the agenda and the booking page read.
  */
 export async function saveOnboardingClinic(
   tenantId: string,
-  clinic: Pick<UpdateTenantInput, 'name' | 'phone'> &
-    Partial<Pick<UpdateTenantInput, 'email' | 'workingHours'>> & {
-      slug: string
-      address?: TenantAddress | null
-    },
+  clinic: Pick<UpdateTenantInput, 'name' | 'phone'> & { slug: string },
 ): Promise<boolean> {
   const rows = await db
     .update(tenants)
-    .set({
-      slug: clinic.slug,
-      name: clinic.name,
-      phone: clinic.phone || null,
-      ...(clinic.email !== undefined && { email: clinic.email || null }),
-      ...(clinic.address !== undefined && { address: clinic.address || null }),
-      workingHours:
-        clinic.workingHours ??
-        sql`coalesce(${tenants.workingHours}, ${JSON.stringify(DEFAULT_WORKING_HOURS)}::jsonb)`,
-      updatedAt: new Date(),
-    })
+    .set({ slug: clinic.slug, name: clinic.name, phone: clinic.phone || null, updatedAt: new Date() })
     .where(onboardingOpen(tenantId))
     .returning({ id: tenants.id })
   return rows.length > 0
@@ -216,7 +195,7 @@ export async function saveOnboardingClinic(
  */
 export async function saveOnboardingProgress(
   tenantId: string,
-  clinic: Partial<Pick<UpdateTenantInput, 'name' | 'phone' | 'email' | 'workingHours'>> & { address?: TenantAddress | null },
+  clinic: Partial<Pick<UpdateTenantInput, 'name' | 'phone'>>,
   settings: Record<string, unknown>,
 ): Promise<{ saved: boolean; noticeStamped: boolean }> {
   const saved = await db

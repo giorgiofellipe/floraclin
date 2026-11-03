@@ -4,7 +4,7 @@ import Script from 'next/script'
 import { usePathname, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useSyncExternalStore } from 'react'
 import { cookieConsentStatus, subscribeCookieConsent } from '@/lib/cookie-consent'
-import { DEFAULT_META_PIXEL_ID, trackMetaEvent } from '@/lib/marketing-attribution'
+import { DEFAULT_META_PIXEL_ID, META_EVENT_ID_PARAM, trackMetaEvent } from '@/lib/marketing-attribution'
 import { EMAIL_CONFIRMED_PARAM } from '@/lib/email-confirmed-toast'
 import { FIRST_PATIENT_HIGHLIGHT_PARAM } from '@/lib/first-patient-highlight'
 
@@ -12,7 +12,7 @@ import { FIRST_PATIENT_HIGHLIGHT_PARAM } from '@/lib/first-patient-highlight'
  * One-shot params the landing page drops from the URL right after reading
  * them. Dropping one is not a new page, so it sends no PageView.
  */
-const TRANSIENT_PARAMS = [EMAIL_CONFIRMED_PARAM, FIRST_PATIENT_HIGHLIGHT_PARAM]
+const TRANSIENT_PARAMS = [EMAIL_CONFIRMED_PARAM, FIRST_PATIENT_HIGHLIGHT_PARAM, META_EVENT_ID_PARAM]
 
 function pageKey(pathname: string, searchParams: URLSearchParams): string {
   const params = new URLSearchParams(searchParams)

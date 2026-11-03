@@ -4,19 +4,16 @@ import { auditLogs, tenantSlugHistory, tenants } from '@/db/schema'
 import { isUniqueViolation } from '@/lib/errors'
 import { BOOKING_SLUG_CHANGES_PER_DAY, SLUG_RESERVATION_DAYS } from '@/lib/booking-slug'
 
-export { BOOKING_SLUG_CHANGES_PER_DAY, BOOKING_SLUG_MESSAGES, SLUG_RESERVATION_DAYS } from '@/lib/booking-slug'
-
 type DbExecutor = typeof db
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
-const BOOKING_SLUG_CHANGE_WINDOW_MS = DAY_MS
-
-/** Audit rows written by changeBookingSlug; the rolling change limit counts them. */
-export const BOOKING_SLUG_AUDIT_ENTITY = 'booking_slug'
+/** The owner's changes; the rolling change limit counts these rows only. */
+const BOOKING_SLUG_AUDIT_ENTITY = 'booking_slug'
+const BOOKING_SLUG_ADMIN_AUDIT_ENTITY = 'booking_slug_admin'
 
 /** Whether a link retired at `retiredAt` is still held for (and redirects to) the clinic that left it. */
-export function isSlugReservationActive(retiredAt: Date, now: Date): boolean {
+function isSlugReservationActive(retiredAt: Date, now: Date): boolean {
   return now.getTime() - retiredAt.getTime() < SLUG_RESERVATION_DAYS * DAY_MS
 }
 
@@ -110,22 +107,28 @@ export type ChangeBookingSlugResult =
  * The old one goes to tenant_slug_history: it redirects to the new one and stays
  * reserved for this clinic for SLUG_RESERVATION_DAYS. At most
  * BOOKING_SLUG_CHANGES_PER_DAY changes in a rolling 24 h window, counted from
- * the audit rows this writes; `skipRateLimit` (platform admins) lifts it.
+ * the audit rows this writes. A platform admin's change is not held to it and
+ * does not count toward it.
+ *
+ * Runs in its own transaction, or in a savepoint of `executor` when that is one.
  *
  * Locks the tenant row (so the limit holds under concurrent saves) and both
  * slugs (lockSlugs). tenants_slug_unique backs the checks and maps to 'taken'
  * (the history insert upserts, so its primary key never conflicts).
  */
-export async function changeBookingSlug(input: {
-  tenantId: string
-  userId: string
-  slug: string
-  now?: Date
-  skipRateLimit?: boolean
-}): Promise<ChangeBookingSlugResult> {
+export async function changeBookingSlug(
+  input: {
+    tenantId: string
+    userId: string
+    slug: string
+    now?: Date
+    byPlatformAdmin?: boolean
+  },
+  executor: Pick<DbExecutor, 'transaction'> = db,
+): Promise<ChangeBookingSlugResult> {
   const now = input.now ?? new Date()
   try {
-    return await db.transaction(async (tx) => {
+    return await executor.transaction(async (tx) => {
       const [tenant] = await tx
         .select({ slug: tenants.slug })
         .from(tenants)
@@ -134,7 +137,7 @@ export async function changeBookingSlug(input: {
       if (!tenant) return { outcome: 'not_found' } as const
       if (tenant.slug === input.slug) return { outcome: 'unchanged', slug: input.slug } as const
 
-      if (!input.skipRateLimit) {
+      if (!input.byPlatformAdmin) {
         const [recent] = await tx
           .select({ n: count() })
           .from(auditLogs)
@@ -143,7 +146,7 @@ export async function changeBookingSlug(input: {
               eq(auditLogs.tenantId, input.tenantId),
               eq(auditLogs.entityType, BOOKING_SLUG_AUDIT_ENTITY),
               eq(auditLogs.action, 'update'),
-              gt(auditLogs.createdAt, new Date(now.getTime() - BOOKING_SLUG_CHANGE_WINDOW_MS)),
+              gt(auditLogs.createdAt, new Date(now.getTime() - DAY_MS)),
             ),
           )
         if ((recent?.n ?? 0) >= BOOKING_SLUG_CHANGES_PER_DAY) return { outcome: 'rate_limited' } as const
@@ -158,7 +161,7 @@ export async function changeBookingSlug(input: {
         tenantId: input.tenantId,
         userId: input.userId,
         action: 'update',
-        entityType: BOOKING_SLUG_AUDIT_ENTITY,
+        entityType: input.byPlatformAdmin ? BOOKING_SLUG_ADMIN_AUDIT_ENTITY : BOOKING_SLUG_AUDIT_ENTITY,
         entityId: input.tenantId,
         changes: { slug: { old: tenant.slug, new: input.slug } },
         createdAt: now,
@@ -166,7 +169,7 @@ export async function changeBookingSlug(input: {
       return { outcome: 'updated', slug: input.slug, previousSlug: tenant.slug } as const
     })
   } catch (err) {
-    // The violation aborted the transaction; it is rolled back by the time we get here.
+    // The violation aborted the transaction (or savepoint); it is rolled back by the time we get here.
     if (isUniqueViolation(err, 'tenants_slug_unique')) {
       return { outcome: 'taken' }
     }

@@ -12,6 +12,7 @@
 import type { FirstTouch } from '@/lib/first-touch'
 import type { InAppBrowser, InAppBrowserApp } from '@/lib/in-app-browser'
 import type { TimelineStage } from '@/types'
+import type { OnboardingCompletionMethod } from '@/validations/onboarding'
 
 export type SignupMethod = 'google' | 'email'
 export type LoginMethod = 'google' | 'email' | 'magic_link'
@@ -30,9 +31,6 @@ export type LoginFailureReason =
   | 'disallowed_useragent'
 
 export type OnboardingStepName = 'clinic' | 'procedures' | 'products' | 'team'
-
-/** `wizard`: through every step. `defaults`: "Configurar depois" from the clinic step. */
-export type OnboardingCompletionMethod = 'wizard' | 'defaults'
 
 /** Step-1 fields whose first focus and first input are tracked. Names only, never values. */
 export type OnboardingTrackedField = 'name' | 'phone'

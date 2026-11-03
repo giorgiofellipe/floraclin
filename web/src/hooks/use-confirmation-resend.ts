@@ -2,9 +2,7 @@
 
 import { useEffect, useState, useTransition } from 'react'
 import { toast } from 'sonner'
-
-/** Matches the resend route's server-side throttle. */
-export const RESEND_COOLDOWN_SECONDS = 60
+import { CONFIRM_RESEND_COOLDOWN_MS } from '@/lib/confirm-resend-cooldown'
 
 const RESEND_FAILED = 'Não foi possível reenviar o link agora.'
 
@@ -39,7 +37,7 @@ export function useConfirmationResend(email: string) {
         // tell us an email actually went out, and claiming one did sends a
         // throttled user to wait on an inbox that will stay empty.
         toast.success('Se houver um link a enviar, ele chega em instantes.')
-        setCooldown(RESEND_COOLDOWN_SECONDS)
+        setCooldown(CONFIRM_RESEND_COOLDOWN_MS / 1000)
       } catch {
         toast.error(RESEND_FAILED)
       }

@@ -3,6 +3,7 @@ import { DashboardPageClient } from './dashboard-page-client'
 import { FIRST_PATIENT_HIGHLIGHT_PARAM, wantsFirstPatientHighlight } from '@/lib/first-patient-highlight'
 import { EMAIL_CONFIRMED_PARAM, wantsEmailConfirmedToast } from '@/lib/email-confirmed-toast'
 import { EmailConfirmedToast } from '@/components/layout/email-confirmed-toast'
+import { getAuthContext } from '@/lib/auth'
 
 export const metadata: Metadata = {
   title: 'Dashboard | FloraClin',
@@ -14,9 +15,12 @@ interface DashboardPageProps {
 
 export default async function DashboardPage({ searchParams }: DashboardPageProps) {
   const params = await searchParams
+  // A hand-made ?email_confirmed=1 never says so to an owner who has not confirmed.
+  const showEmailConfirmed =
+    wantsEmailConfirmedToast(params[EMAIL_CONFIRMED_PARAM]) && (await getAuthContext()).emailVerified !== false
   return (
     <>
-      <EmailConfirmedToast show={wantsEmailConfirmedToast(params[EMAIL_CONFIRMED_PARAM])} />
+      <EmailConfirmedToast show={showEmailConfirmed} />
       <DashboardPageClient highlightFirstPatient={wantsFirstPatientHighlight(params[FIRST_PATIENT_HIGHLIGHT_PARAM])} />
     </>
   )

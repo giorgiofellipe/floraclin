@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { bookingSlugSchema } from './tenant'
 
 const roles = ['owner', 'practitioner', 'receptionist', 'financial'] as const
 
@@ -17,7 +18,7 @@ export const createTenantSchema = z.object({
 
 export const updateTenantSchema = z.object({
   name: z.string().min(1).optional(),
-  slug: z.string().regex(/^[a-z0-9-]+$/).optional(),
+  slug: bookingSlugSchema.shape.slug.optional(),
   settings: z.record(z.string(), z.unknown()).optional(),
   isActive: z.boolean().optional(),
 })

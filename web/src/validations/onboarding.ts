@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { addressSchema, workingHoursSchema } from './tenant'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { hasClinicPhone } from '@/lib/clinic-phone'
 
@@ -28,24 +27,13 @@ export type ProductSelection = z.infer<typeof productSelectionSchema>
 
 export const ONBOARDING_STEPS = ['clinic', 'procedures', 'products', 'team'] as const
 
-// An address with every field emptied is stored as none, so clearing it sticks.
-const clinicAddressSchema = addressSchema.unwrap().transform((address) =>
-  Object.values(address).some(Boolean) ? address : null,
-)
-
-// Onboarding asks for the name and phone only (the phone is required by the
-// route). Slug, e-mail, address and hours moved to Settings; they stay
-// accepted, optional, for a wizard tab opened before the change.
+// The phone is optional here because the route answers its own message for a missing one.
 const clinicDataSchema = z.object({
   name: z.string().trim().min(1),
-  slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido').optional(),
   phone: z.string().optional(),
-  email: z.string().optional(),
-  address: clinicAddressSchema.optional(),
-  workingHours: workingHoursSchema.optional(),
 })
 
-/** How onboarding was finished: through the steps, or "Configurar depois". */
+/** `wizard`: through every step. `defaults`: "Configurar depois" from the clinic step. */
 export const ONBOARDING_COMPLETION_METHODS = ['wizard', 'defaults'] as const
 export type OnboardingCompletionMethod = (typeof ONBOARDING_COMPLETION_METHODS)[number]
 
@@ -74,9 +62,6 @@ const savedWhenComplete = <T extends z.ZodType>(schema: T) => schema.optional().
 const progressClinicSchema = z.object({
   name: savedWhenComplete(safeTrimmedString('Nome', 255).min(1)),
   phone: savedWhenComplete(z.string().trim().max(20).refine(hasClinicPhone)),
-  email: savedWhenComplete(z.string().trim().max(255).email()),
-  address: savedWhenComplete(clinicAddressSchema),
-  workingHours: savedWhenComplete(workingHoursSchema),
 })
 
 export const onboardingDraftSchema = z.object({
@@ -93,9 +78,6 @@ export const onboardingDraftSchema = z.object({
   selectedProductNames: z.array(z.string().max(150)).max(200),
   productsTouched: z.boolean(),
   customProducts: z.array(productSelectionSchema).max(200),
-  // The booking link moved to Settings. Drafts saved before still carry it,
-  // and must keep parsing or the owner would lose the rest of the draft.
-  customSlug: z.string().max(100).regex(/^[a-z0-9-]*$/).optional(),
 })
 
 export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>

@@ -9,7 +9,7 @@ const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN
 const describeIntegration = RUN_INTEGRATION ? describe : describe.skip
 
 const ADDRESS = { street: 'Rua das Flores', number: '10', neighborhood: 'Centro', city: 'São Paulo', state: 'SP', zipCode: '01000-000' }
-const clinic = { name: 'Clínica Bella', phone: '(11) 98888-7777', email: '' }
+const clinic = { name: 'Clínica Bella', phone: '(11) 98888-7777' }
 
 describeIntegration('saveOnboardingClinic (integration, requires test DB)', () => {
   const tenantIds: string[] = []
@@ -30,7 +30,7 @@ describeIntegration('saveOnboardingClinic (integration, requires test DB)', () =
   it('writes nothing once onboarding is completed', async () => {
     const id = await insertTenant({ onboarding_completed: true })
 
-    expect(await saveOnboardingClinic(id, { ...clinic, slug: `bella-${id}`, address: null })).toBe(false)
+    expect(await saveOnboardingClinic(id, { ...clinic, slug: `bella-${id}` })).toBe(false)
 
     const row = await rowOf(id)
     expect(row.name).toBe('Clínica de Ana')
@@ -38,7 +38,7 @@ describeIntegration('saveOnboardingClinic (integration, requires test DB)', () =
     expect(row.address).toEqual(ADDRESS)
   })
 
-  it('saves while onboarding is open, keeping an address the request left out', async () => {
+  it('saves while onboarding is open, keeping the address set in Settings', async () => {
     const id = await insertTenant(null)
 
     expect(await saveOnboardingClinic(id, { ...clinic, slug: `bella-${id}` })).toBe(true)
@@ -47,7 +47,6 @@ describeIntegration('saveOnboardingClinic (integration, requires test DB)', () =
     expect(row.name).toBe('Clínica Bella')
     expect(row.slug).toBe(`bella-${id}`)
     expect(row.phone).toBe('(11) 98888-7777')
-    expect(row.email).toBeNull()
     expect(row.address).toEqual(ADDRESS)
   })
 })

@@ -1,7 +1,3 @@
-/**
- * The booking link is edited in Settings > Agendamento now (it used to be set
- * once in onboarding and shown as unchangeable here).
- */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'

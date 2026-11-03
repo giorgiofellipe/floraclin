@@ -11,7 +11,7 @@ function elapsedSince(startedAt: number) {
   return Math.max(0, Date.now() - startedAt)
 }
 
-function stepProperties(index: number) {
+export function stepProperties(index: number) {
   return { step_index: index, step_name: ONBOARDING_STEPS[index] }
 }
 

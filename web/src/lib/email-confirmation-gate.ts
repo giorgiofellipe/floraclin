@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { and, asc, eq } from 'drizzle-orm'
+import { and, asc, eq, sql, type SQL } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tenantUsers, users } from '@/db/schema'
 import type { AuthContext } from '@/types'
@@ -38,11 +38,7 @@ export function emailConfirmationRequiredResponse(): NextResponse {
   return NextResponse.json(EMAIL_CONFIRMATION_REQUIRED.body, { status: EMAIL_CONFIRMATION_REQUIRED.status })
 }
 
-/**
- * Route gate for the signed-in user's own address: the 403 response, or null
- * to proceed. Only an explicit `false` blocks (see AuthContext.emailVerified),
- * and platform admins are never blocked.
- */
+/** Route gate for the signed-in user's own address: the 403 response, or null to proceed. */
 export function emailConfirmationGate(ctx: Pick<AuthContext, 'emailVerified' | 'isPlatformAdmin'>): NextResponse | null {
   if (ctx.isPlatformAdmin || ctx.emailVerified !== false) return null
   return emailConfirmationRequiredResponse()
@@ -68,4 +64,23 @@ export async function isTenantAwaitingEmailConfirmation(tenantId: string): Promi
 /** Throws EmailConfirmationRequiredError while the clinic's owner has not confirmed the address. */
 export async function requireTenantEmailConfirmed(tenantId: string): Promise<void> {
   if (await isTenantAwaitingEmailConfirmation(tenantId)) throw new EmailConfirmationRequiredError()
+}
+
+/**
+ * Over tenant_users joined to users: until a password account confirms its
+ * address, only the membership created with its signup (its first) counts.
+ * Whoever registered someone else's address must not inherit that person's
+ * later invites (inviteUser adds them to the existing account).
+ */
+export function membershipUsableBeforeConfirmation(): SQL {
+  return sql`(
+    ${users.passwordHash} is null
+    or ${users.emailVerified} is not null
+    or ${tenantUsers.id} = (
+      select signup.id from ${tenantUsers} signup
+      where signup.user_id = ${tenantUsers.userId}
+      order by signup.created_at asc, signup.id asc
+      limit 1
+    )
+  )`
 }

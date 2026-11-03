@@ -80,6 +80,11 @@ vi.mock('@/lib/whatsapp-anamnesis', () => ({
   maybeAutoSendAnamnesisLink: vi.fn(),
 }))
 
+vi.mock('@/lib/email-confirmation-gate', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/email-confirmation-gate')>()),
+  isTenantAwaitingEmailConfirmation: vi.fn(),
+}))
+
 // ─── Imports (after mocks) ───────────────────────────────────────────
 
 import { db } from '@/db/client'
@@ -101,6 +106,7 @@ import { isSubscriptionActive } from '@/lib/plans'
 import { notifyDiscord } from '@/lib/discord'
 import { brToday, parseBrDate, shiftBrYmd } from '@/lib/dates'
 import { maybeAutoSendAnamnesisLink } from '@/lib/whatsapp-anamnesis'
+import { EmailConfirmationRequiredError, isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { GET } from '../route'
 
 // ─── Helpers ─────────────────────────────────────────────────────────
@@ -210,6 +216,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   process.env.CRON_SECRET = CRON_SECRET
   vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(false)
   vi.mocked(notifyDiscord).mockResolvedValue(undefined)
   vi.mocked(maybeAutoSendAnamnesisLink).mockResolvedValue({ status: 'skipped', reason: 'automation_disabled' })
 
@@ -308,6 +315,24 @@ describe('GET /api/cron/whatsapp-automations', () => {
 
       expect(findOutcome(json, 't1')?.reason).toBe('subscription_inactive')
       expect(listAutomations).not.toHaveBeenCalled()
+      expect(captureExceptionMock).not.toHaveBeenCalled()
+    })
+
+    // Catches every appointment of a clinic whose owner has not confirmed the
+    // address reaching Sentry and counting as failed.
+    it.each([
+      ['skipped up front', () => vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(true)],
+      [
+        'refused by the send after the gate passed',
+        () => vi.mocked(sendTemplateMessage).mockRejectedValue(new EmailConfirmationRequiredError()),
+      ],
+    ])('records email_unconfirmed for an unconfirmed clinic (%s), without Sentry', async (_name, arrange) => {
+      setupHappyPath([makeAppointment({ date: shiftBrYmd(brToday(), 1) })])
+      arrange()
+
+      const json = await (await GET(makeRequest(CRON_SECRET))).json()
+
+      expect(findOutcome(json, 'tenant-1')).toMatchObject({ reason: 'email_unconfirmed', appointmentsFailed: 0 })
       expect(captureExceptionMock).not.toHaveBeenCalled()
     })
 

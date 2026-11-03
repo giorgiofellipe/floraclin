@@ -26,9 +26,10 @@ import {
 } from '@/validations/onboarding'
 import { useOnboardingAutosave } from './use-onboarding-autosave'
 import { useRedirectWhenOnboardingCompleted } from './use-redirect-when-onboarding-completed'
-import { useFieldInteractionTracking, useStepAbandonTracking } from './use-onboarding-tracking'
+import { stepProperties, useFieldInteractionTracking, useStepAbandonTracking } from './use-onboarding-tracking'
 import { useKeyboardInset } from './use-keyboard-inset'
 import { ClinicStep, type ClinicStepValues } from './clinic-step'
+import { ConfirmEmailToInvite } from './confirm-email-to-invite'
 import { FIRST_PATIENT_HIGHLIGHT_PARAM } from '@/lib/first-patient-highlight'
 
 // Only the clinic step is needed on arrival, and most owners arrive on a
@@ -88,8 +89,15 @@ function submitFailureReason(status: number): OnboardingSubmitFailureReason {
   return 'server_error'
 }
 
-function stepProperties(index: number) {
-  return { step_index: index, step_name: STEPS[index].name }
+const CLINIC_FIELD_MESSAGES: Record<OnboardingTrackedField, string> = {
+  name: 'Nome da clínica é obrigatório',
+  phone: CLINIC_PHONE_REQUIRED_MESSAGE,
+}
+
+function missingClinicField(values: ClinicStepValues, phoneRequired: boolean): OnboardingTrackedField | null {
+  if (values.name.trim().length === 0) return 'name'
+  if (phoneRequired && !hasClinicPhone(values.phone)) return 'phone'
+  return null
 }
 
 interface OnboardingWizardProps {
@@ -103,6 +111,8 @@ interface OnboardingWizardProps {
   existingProducts?: Product[]
   /** Ask for the clinic phone before moving past the first step. */
   phoneRequired?: boolean
+  /** The owner's address while it is not confirmed yet; invites wait for the confirmation. */
+  unconfirmedEmail?: string | null
 }
 
 /** The procedures the wizard offers, all selected, at their default durations. */
@@ -163,6 +173,7 @@ export function OnboardingWizard({
   existingProcedureTypes,
   existingProducts = [],
   phoneRequired = false,
+  unconfirmedEmail = null,
 }: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -178,7 +189,7 @@ export function OnboardingWizard({
   const [invalidField, setInvalidField] = useState<OnboardingTrackedField | null>(null)
   // Says where the prefilled name came from until the owner edits it.
   const [nameSuggested, setNameSuggested] = useState(tenantNameSuggested && Boolean(tenantName.trim()))
-  const clinicStepValid = clinicData.name.trim().length > 0 && (!phoneRequired || hasClinicPhone(clinicData.phone))
+  const clinicStepValid = missingClinicField(clinicData, phoneRequired) === null
 
   // Step 2 state: procedure types (local selection before onboarding completes)
   const [procedureOverrides, setProcedureOverrides] = useState<ProcedureOverride[]>(() =>
@@ -186,7 +197,7 @@ export function OnboardingWizard({
   )
   const [showAddProcedure, setShowAddProcedure] = useState(false)
 
-  // Step 3 state: products — re-computed from the procedures until the user
+  // Step 3 state: products, re-computed from the procedures until the user
   // manually touches the product selection.
   const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(() =>
     draft
@@ -308,19 +319,12 @@ export function OnboardingWizard({
   }
 
   function validateClinicStep(): boolean {
-    if (clinicData.name.trim().length === 0) {
-      track('onboarding_step_validation_error', { ...stepProperties(0), fields: ['name'] })
-      setInvalidField('name')
-      toast.error('Nome da clínica é obrigatório')
-      return false
-    }
-    if (phoneRequired && !hasClinicPhone(clinicData.phone)) {
-      track('onboarding_step_validation_error', { ...stepProperties(0), fields: ['phone'] })
-      setInvalidField('phone')
-      toast.error(CLINIC_PHONE_REQUIRED_MESSAGE)
-      return false
-    }
-    return true
+    const missing = missingClinicField(clinicData, phoneRequired)
+    if (!missing) return true
+    track('onboarding_step_validation_error', { ...stepProperties(0), fields: [missing] })
+    setInvalidField(missing)
+    toast.error(CLINIC_FIELD_MESSAGES[missing])
+    return false
   }
 
   function handlePrev() {
@@ -408,9 +412,6 @@ export function OnboardingWizard({
   }
 
   return (
-    // min-h-dvh, not 100vh: on iOS 100vh is taller than what shows under the
-    // URL bar. The bottom padding keeps the last field clear of the action bar
-    // that is pinned to the bottom on phones.
     <div className="min-h-dvh bg-content-bg">
       <div className="mx-auto max-w-3xl px-4 pt-4 pb-36 sm:py-16">
         {/* Header */}
@@ -430,8 +431,6 @@ export function OnboardingWizard({
               resetAnalytics()
               void logout()
             }}
-            // 44px tall hit area around small text: easy to tap, not loud.
-            // charcoal/70, not mid: mid is under 4.5:1 on content-bg.
             className="inline-flex min-h-11 items-center gap-1 px-3 text-xs text-charcoal/70 hover:text-charcoal transition-colors sm:mt-3"
           >
             <LogOutIcon className="h-3 w-3" />
@@ -490,8 +489,6 @@ export function OnboardingWizard({
                   <span
                     className={cn(
                       'text-xs font-medium tracking-wide transition-colors duration-300',
-                      // Steps ahead stay grey, set apart from the green current
-                      // and completed ones; charcoal/70 keeps them above 4.5:1.
                       isCurrent && 'text-forest',
                       isCompleted && 'text-sage',
                       !isCurrent && !isCompleted && 'text-charcoal/70',
@@ -528,8 +525,6 @@ export function OnboardingWizard({
                 nameSuggested={nameSuggested}
               />
 
-              {/* A skip, not a second way forward: a quiet text action under
-                  the fields, so Próximo stays the only primary button. */}
               <div className="mt-6 flex flex-col items-center text-center sm:mt-8">
                 <Button
                   type="button"
@@ -538,7 +533,6 @@ export function OnboardingWizard({
                   disabled={isPending || !clinicStepValid}
                   aria-describedby="use-defaults-hint"
                   data-testid="onboarding-use-defaults"
-                  // Disabled reads as plain grey text, not a faded primary.
                   className="h-11 px-3 text-sm text-forest underline decoration-forest/40 hover:decoration-forest disabled:text-mid disabled:no-underline disabled:opacity-100"
                 >
                   {isPending ? 'Finalizando...' : 'Configurar depois'}
@@ -562,7 +556,7 @@ export function OnboardingWizard({
                 Selecione os procedimentos que sua clínica oferece. Você pode adicionar mais depois.
               </p>
 
-              {/* Default procedure types — card grid with inline editable duration + price */}
+              {/* Default procedure types: card grid with inline editable duration + price */}
               <div className="mb-8 space-y-3">
                 <h3 className="text-xs font-medium text-mid uppercase tracking-wider">
                   Procedimentos Sugeridos
@@ -719,6 +713,8 @@ export function OnboardingWizard({
                 Você pode convidar profissionais e recepcionistas agora, ou fazer isso depois em Configurações.
               </p>
 
+              {unconfirmedEmail && <ConfirmEmailToInvite email={unconfirmedEmail} />}
+
               {invitesSent > 0 && (
                 <div className="mb-6 rounded-lg bg-sage/10 border border-sage/20 p-4 flex items-center gap-3 animate-fade-in-up">
                   <div className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center flex-shrink-0">
@@ -761,6 +757,7 @@ export function OnboardingWizard({
                     type="button"
                     variant="outline"
                     onClick={() => setShowInviteForm(true)}
+                    disabled={Boolean(unconfirmedEmail)}
                     className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
                   >
                     <PlusIcon className="h-4 w-4" />
@@ -772,15 +769,7 @@ export function OnboardingWizard({
           )}
         </Card>
 
-        {/* Navigation. Pinned to the bottom on phones, above the home
-            indicator (safe-area inset) and lifted over the on-screen keyboard
-            (useKeyboardInset), so Próximo is always within reach; the page's
-            bottom padding keeps it from covering the content. In the page flow
-            from `sm` up. While the cookie banner shows, the bar sits on top of
-            it (--cookie-banner-offset) instead of under it, and leaves the
-            home-indicator inset to the banner (--cookie-banner-safe-area). No
-            transform-based animation on it or any ancestor: a transformed
-            ancestor turns position: fixed into absolute. */}
+        {/* No transform-based animation on any ancestor of this bar: it turns position: fixed into absolute. */}
         <div
           data-testid="onboarding-actions"
           className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white px-4 pt-3 pb-[calc(0.75rem+var(--cookie-banner-safe-area,env(safe-area-inset-bottom)))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"
@@ -840,7 +829,7 @@ export function OnboardingWizard({
                   onClick={handleNext}
                   disabled={isPending}
                   className={cn(
-                    'h-11 bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8 sm:h-9',
+                    'h-11 uppercase tracking-wider duration-300 shadow-sm hover:shadow-md px-8 sm:h-9',
                     currentStep === 0 && 'w-full sm:w-auto',
                   )}
                   data-testid="onboarding-next"
@@ -854,7 +843,7 @@ export function OnboardingWizard({
                   disabled={isPending}
                   data-testid="onboarding-complete"
                   className={cn(
-                    'order-first h-11 w-full bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-6 sm:order-none sm:h-9 sm:w-auto sm:px-8',
+                    'order-first h-11 w-full uppercase tracking-wider duration-300 shadow-md hover:shadow-lg px-6 sm:order-none sm:h-9 sm:w-auto sm:px-8',
                     !isPending && 'animate-subtle-pulse',
                   )}
                 >

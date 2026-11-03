@@ -48,7 +48,7 @@ export function RequestConfirmationForm() {
           Se houver uma conta aguardando confirmação para esse e-mail, enviamos um novo link.
         </p>
         <p className="text-sm text-mid">
-          Verifique também a caixa de spam. O link vale por 24 horas.
+          Verifique também a caixa de spam. Se o link expirar, peça um novo.
         </p>
       </div>
     )

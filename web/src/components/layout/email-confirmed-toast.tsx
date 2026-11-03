@@ -29,7 +29,7 @@ export function EmailConfirmedToast({ show }: { show: boolean }) {
     shown.current = true
     toast.success('E-mail confirmado.')
     setTimeout(() => {
-      window.history.replaceState(null, '', withoutEmailConfirmedParam(new URL(window.location.href)))
+      window.history.replaceState(window.history.state, '', withoutEmailConfirmedParam(new URL(window.location.href)))
     }, 0)
   }, [show])
 

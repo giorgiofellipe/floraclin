@@ -2,7 +2,10 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
 
 const { trackMetaEvent } = vi.hoisted(() => ({ trackMetaEvent: vi.fn() }))
-vi.mock('@/lib/marketing-attribution', () => ({ trackMetaEvent }))
+vi.mock('@/lib/marketing-attribution', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/marketing-attribution')>()),
+  trackMetaEvent,
+}))
 
 import { SignupConversionTracker } from '../signup-conversion-tracker'
 

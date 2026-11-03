@@ -22,16 +22,6 @@ interface ClinicStepProps {
   nameSuggested?: boolean
 }
 
-/**
- * Onboarding's first step: the clinic's name and phone, nothing else. The
- * e-mail, address, hours, logo, booking link and monthly goal are in
- * Settings, so the first screen asks for two things and gets out of the way.
- *
- * Deliberately not the Settings form: that one pulls the logo uploader and
- * the tenant mutation into the onboarding bundle. Inputs are 16px on phones
- * (the Input default below md) so iOS does not zoom into them, and nothing is
- * autofocused, which would throw the keyboard up over the page on load.
- */
 export function ClinicStep({
   values,
   onChange,
@@ -83,7 +73,6 @@ export function ClinicStep({
           aria-invalid={invalidField === 'phone' || undefined}
           aria-describedby="clinic-phone-hint"
           required
-          // Room for the action bar above the keyboard when the browser scrolls the field into view.
           className="h-11 scroll-mb-32"
         />
         <p id="clinic-phone-hint" className="text-xs text-mid">

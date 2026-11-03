@@ -60,7 +60,7 @@ vi.mock('@/db/client', async () => {
       if (/"tenants"\."deleted_at" is null/.test(sql)) {
         return { rows: memberships.filter((m) => !m.deletedAt).map((m) => [m.tenantId]) }
       }
-      if (/"tenants"\."deleted_at"/.test(sql)) return { rows: memberships.map((m) => [m.tenantId, m.deletedAt, m.isActive ?? true]) }
+      if (/"tenants"\."deleted_at"/.test(sql)) return { rows: memberships.map((m) => [m.tenantId, m.deletedAt, m.isActive ?? true, true]) }
       throw new Error(`membership lookup ignores tenants.deleted_at: ${sql}`)
     }),
   }

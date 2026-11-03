@@ -9,6 +9,7 @@ import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, te
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { discardUnconfirmedPassword, markEmailVerifiedViaGoogle } from '@/db/queries/users'
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
 import { rememberLastLogin } from '@/lib/last-login'
@@ -28,8 +29,6 @@ const baseAdapter = DrizzleAdapter(db as any, {
  * DEFAULT for `full_name`, which is NOT NULL with no default. So the adapter's
  * own `createUser` cannot insert anyone, and the very first Google sign-in
  * for a new person fails on a not-null violation.
- *
- * Confirmed by reading the SQL drizzle emits, not inferred from the types.
  */
 export const adapter: Adapter = {
   ...baseAdapter,
@@ -81,10 +80,9 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const password = credentials?.password as string
         if (!email || !password) return null
 
-        // When the hash was read: the session's authAt (see jwt). A Google or
-        // magic-link sign-in that discards a planted password while bcrypt
-        // runs below is then later than this sign-in, and revokes it.
-        const readAt = Date.now()
+        // The session's authAt (see jwt), 1ms before the hash is read: a discard
+        // stamped in that same millisecond must still count as later and revoke it.
+        const readAt = Date.now() - 1
 
         // Matched the way uq_users_email_lower indexes it. A row stored with
         // any uppercase (an invite, an OAuth adapter insert) is invisible to
@@ -106,10 +104,11 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         // must not do (message patients, invite, check out) is refused at
         // those sends, see lib/email-confirmation-gate.ts.
         //
-        // A password planted on someone else's address stays harmless: the
-        // real owner's Google or magic-link sign-in discards it and revokes
-        // every session it opened (markEmailVerifiedViaGoogle,
-        // discardUnconfirmedPassword), and a reset does the same.
+        // A password planted on someone else's address stays harmless: it
+        // enters only the clinic it created (membershipUsableBeforeConfirmation),
+        // and the real owner's Google or magic-link sign-in discards it and
+        // revokes every session it opened (markEmailVerifiedViaGoogle,
+        // discardUnconfirmedPassword), as a reset does.
 
         // Signup signs the new owner in through here (actions/signup.ts), and
         // Auth.js reports every credentials sign-in as trigger 'signIn'. The
@@ -224,7 +223,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             .where(
               and(
                 eq(tenantUsers.userId, userId),
-                eq(tenantUsers.isActive, true)
+                eq(tenantUsers.isActive, true),
+                membershipUsableBeforeConfirmation(),
               )
             )
             .limit(1)

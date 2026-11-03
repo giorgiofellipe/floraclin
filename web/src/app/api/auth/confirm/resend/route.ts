@@ -3,18 +3,11 @@ import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import { getOrIssueConfirmationUrl, MIN_LINK_VALIDITY_MS } from '@/lib/confirm-email'
+import { CONFIRM_RESEND_COOLDOWN_MS } from '@/lib/confirm-resend-cooldown'
 import { sendConfirmationEmail } from '@/lib/email'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
-
-/**
- * One resend per 60 seconds per identifier. Vercel runs several instances of
- * this route concurrently, so the gate has to be a single conditional
- * UPDATE, not a read followed by a write: a read-then-write lets two
- * instances both pass the check before either commits, and both send an
- * email.
- */
-const RESEND_COOLDOWN_MS = 60 * 1000
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,7 +34,7 @@ export async function POST(request: NextRequest) {
     // token would kill the button in every earlier email, and the owner may
     // well click the older one. The throttle is part of the same conditional
     // write, so two instances cannot both pass it and send twice.
-    const confirmUrl = await getOrIssueConfirmationUrl(normalizedEmail, MIN_LINK_VALIDITY_MS, RESEND_COOLDOWN_MS)
+    const confirmUrl = await getOrIssueConfirmationUrl(normalizedEmail, MIN_LINK_VALIDITY_MS, CONFIRM_RESEND_COOLDOWN_MS)
 
     // Throttled. Same response as every other case on purpose: a 429 here
     // would say "this address has an unconfirmed account", which is exactly
@@ -54,7 +47,8 @@ export async function POST(request: NextRequest) {
       .select({ tenantName: tenants.name })
       .from(tenantUsers)
       .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
-      .where(and(eq(tenantUsers.userId, user.id), eq(tenantUsers.isActive, true)))
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
+      .where(and(eq(tenantUsers.userId, user.id), eq(tenantUsers.isActive, true), membershipUsableBeforeConfirmation()))
       .limit(1)
 
     try {

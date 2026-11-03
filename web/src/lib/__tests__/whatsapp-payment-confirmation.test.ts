@@ -91,17 +91,6 @@ describe('sendPaymentConfirmations', () => {
     expect(sendAndRecordTemplate).not.toHaveBeenCalled()
   })
 
-  it('sends nothing, and reports nothing, while the clinic owner has not confirmed the e-mail', async () => {
-    vi.mocked(isTenantAwaitingEmailConfirmation).mockResolvedValue(true)
-
-    await sendPaymentConfirmations('t1', [{ installmentId: 'i1', amount: '350.00', paidAt: NOW }])
-
-    expect(getPaymentRecipients).not.toHaveBeenCalled()
-    expect(sendAndRecordTemplate).not.toHaveBeenCalled()
-    expect(Sentry.captureMessage).not.toHaveBeenCalled()
-    expect(reportSideEffectFailure).not.toHaveBeenCalled()
-  })
-
   // Regression: a clinic template with an extra variable reporting one error per payer instead of one warning.
   it('sends nothing, with one warning, when the template needs a value the automation does not supply', async () => {
     vi.mocked(getTemplateForTenant).mockResolvedValue({

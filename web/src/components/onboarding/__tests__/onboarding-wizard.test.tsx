@@ -191,7 +191,7 @@ describe('OnboardingWizard', () => {
   })
 
   it.each([
-    ['a taken booking link', () => Response.json({ error: 'Link em uso' }, { status: 409 }), 'Link em uso', { reason: 'slug_taken', status: 409 }],
+    ['a slug taken during the save', () => Response.json({ error: 'Tente novamente' }, { status: 409 }), 'Tente novamente', { reason: 'slug_taken', status: 409 }],
     ['invalid data', () => Response.json({ error: 'Dados de onboarding inválidos' }, { status: 400 }), 'Dados de onboarding inválidos', { reason: 'validation', status: 400 }],
     [
       'an expired trial',
@@ -228,7 +228,7 @@ describe('OnboardingWizard', () => {
   })
 
   // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
-  // The e-mail, address, hours and slug are Settings' now: not sent, so the server keeps what the clinic has.
+  // The e-mail, address, hours and slug are not sent, so the server keeps what the clinic has.
   it('keeps the tenant phone and sends only the name and phone when the owner finishes without editing them', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
@@ -299,11 +299,11 @@ describe('OnboardingWizard', () => {
     expect(vi.mocked(track)).not.toHaveBeenCalledWith('onboarding_submit_failed', expect.anything())
   })
 
-  it('stays on the wizard with the message when the booking link is taken', async () => {
+  it('stays on the wizard with the message when the slug is taken during the save', async () => {
     const user = userEvent.setup()
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       if (isCompletedCheck(url, init)) return Response.json({ completed: false })
-      if (url === '/api/onboarding') return Response.json({ error: 'Este link já está em uso. Escolha outro.' }, { status: 409 })
+      if (url === '/api/onboarding') return Response.json({ error: 'Não foi possível concluir agora. Tente novamente.' }, { status: 409 })
       return Response.json({})
     })
     render(
@@ -315,7 +315,7 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
     await user.click(screen.getByTestId('onboarding-complete'))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Este link já está em uso. Escolha outro.'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível concluir agora. Tente novamente.'))
     expect(vi.mocked(track)).toHaveBeenCalledWith('onboarding_submit_failed', expect.objectContaining({ reason: 'slug_taken', status: 409 }))
     expect(router.replace).not.toHaveBeenCalled()
   })
@@ -465,7 +465,6 @@ describe('OnboardingWizard', () => {
       selectedProductNames: [],
       productsTouched: false,
       customProducts: [],
-      customSlug: '',
     })
 
     async function goToTeamStepAndFinish(user: ReturnType<typeof userEvent.setup>) {
@@ -506,6 +505,33 @@ describe('OnboardingWizard', () => {
       expect(lastSavedBody(fetchMock).draft.step).toBe(3)
     })
 
+    // Regression: an unconfirmed owner got an invite form whose every send failed with 403 email_unconfirmed.
+    it('holds invites until the e-mail is confirmed, offers a resend, and still finishes', async () => {
+      const user = userEvent.setup()
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
+      renderWizard({
+        tenantName: 'Clínica Bella',
+        tenantPhone: '(11) 98888-7777',
+        draft: atTeamStepDraft(),
+        unconfirmedEmail: 'ana@clinica.test',
+      })
+      await user.click(screen.getByTestId('onboarding-next'))
+
+      expect(screen.getByText('Confirme seu e-mail para convidar sua equipe.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Convidar membro da equipe/ })).toBeDisabled()
+
+      await user.click(screen.getByRole('button', { name: 'Reenviar link' }))
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith('/api/auth/confirm/resend', expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ email: 'ana@clinica.test' }),
+        })),
+      )
+
+      await user.click(screen.getByTestId('onboarding-complete'))
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
+    })
+
     // A later step without a saved phone would only fail at the final submit.
     it('opens at the clinic step when its phone was never saved', () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(okResponse)
@@ -515,7 +541,6 @@ describe('OnboardingWizard', () => {
         selectedProductNames: [],
         productsTouched: false,
         customProducts: [],
-        customSlug: '',
       })
 
       renderWizard({ tenantName: 'Clínica Bella', tenantPhone: null, draft })

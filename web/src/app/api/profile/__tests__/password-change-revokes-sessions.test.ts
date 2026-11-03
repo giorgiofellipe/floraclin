@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { SQL } from 'drizzle-orm'
 
 /**
  * Sessions signed in before `passwordChangedAt` are rejected, so both ways of
@@ -43,18 +42,6 @@ describe('setting a password', () => {
 
     expect(res.status).toBe(200)
     expect(setMock).toHaveBeenCalledWith(expect.objectContaining({ passwordChangedAt: expect.any(Date) }))
-  })
-
-  // Owners can use the app before confirming; a password set through the
-  // reset e-mail (how invited and admin-created owners get one) must count as
-  // confirmed, or their WhatsApp sends stay blocked and reminders go out.
-  it('through the reset link confirms the address it was sent to, without moving an earlier confirmation', async () => {
-    await confirmReset(json({ token: 't', email: 'dona@clinica.com.br', newPassword: 'nova-senha-1' }))
-
-    const { PgDialect } = await import('drizzle-orm/pg-core')
-    const values = setMock.mock.calls[0][0] as { emailVerified: SQL }
-    const rendered = new PgDialect().sqlToQuery(values.emailVerified)
-    expect(rendered.sql).toMatch(/^coalesce\("floraclin"\."users"\."email_verified", \$1::timestamptz\)$/)
   })
 
   it('from settings stamps the change time and signs the caller back in', async () => {

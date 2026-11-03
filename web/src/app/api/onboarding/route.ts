@@ -11,7 +11,7 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
-import { isBookingSlugFree, retireBookingSlug } from '@/db/queries/booking-slugs'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
 import {
   hasPlaceholderName,
   hasPlaceholderSlug,
@@ -32,14 +32,13 @@ import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants, users } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
-// withTransaction removed — helper functions use global db which deadlocks in transactions
 import { ONBOARDING_ALREADY_COMPLETED, onboardingCompleteSchema } from '@/validations/onboarding'
 import { addressSchema } from '@/validations/tenant'
 import { handleApiError } from '@/lib/api-error'
 import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
 
-const SLUG_TAKEN_MESSAGE = 'Este link já está em uso. Escolha outro.'
+const SLUG_RACE_MESSAGE = 'Não foi possível concluir agora. Tente novamente.'
 
 const alreadyCompleted = () =>
   NextResponse.json({ success: false, error: ONBOARDING_ALREADY_COMPLETED }, { status: 409 })
@@ -110,44 +109,27 @@ export async function POST(request: Request) {
     // Onboarding is idempotent, so sequential execution is safe.
 
     {
-      // 1. Update tenant with clinic info, working hours, and slug.
-      // A slug in the request (a wizard from before the link moved to
-      // Settings) must be free. Otherwise the clinic keeps the slug it got at
-      // sign-up, which links may already carry, while it is still free; a
-      // stand-in from Google sign-up is replaced by one from the real name.
-      if (data.clinic.slug && !(await isBookingSlugFree(db, data.clinic.slug, auth.tenantId))) {
-        return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
-      }
-      const keepDraftSlug = !data.clinic.slug
-        && !placeholderSlug
+      // 1. The clinic keeps the slug it got at sign-up, which links may already
+      // carry, while it is still free; a stand-in from Google sign-up is
+      // replaced by one from the real name.
+      const keepSignupSlug = !placeholderSlug
         && !!current.slug
         && await isBookingSlugFree(db, current.slug, auth.tenantId)
-      const slug = data.clinic.slug
-        || (keepDraftSlug ? current.slug : await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId))
+      const slug = keepSignupSlug
+        ? current.slug
+        : await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
 
       let saved: boolean
       try {
-        saved = await saveOnboardingClinic(auth.tenantId, {
-          slug,
-          name: data.clinic.name,
-          phone: data.clinic.phone,
-          email: data.clinic.email,
-          address: data.clinic.address,
-          workingHours: data.clinic.workingHours,
-        })
+        saved = await saveOnboardingClinic(auth.tenantId, { slug, name: data.clinic.name, phone: data.clinic.phone })
       } catch (err) {
+        // Another clinic took the slug between the check and the save; a retry picks another.
         if (isUniqueViolation(err, 'tenants_slug_unique')) {
-          return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
+          return NextResponse.json({ error: SLUG_RACE_MESSAGE }, { status: 409 })
         }
         throw err
       }
       if (!saved) return alreadyCompleted()
-      // A real slug the clinic moves off (an older wizard's explicit one)
-      // redirects to the new one and stays reserved, as a change in Settings
-      // would. A stand-in was never meant to be shared.
-      if (current.slug && slug !== current.slug && !placeholderSlug) {
-        await retireBookingSlug(db, { tenantId: auth.tenantId, oldSlug: current.slug, newSlug: slug, now: new Date() })
-      }
 
       // 2. Create selected procedure types (only if none exist yet)
       if (existingTypes.length === 0 && data.procedureTypes.length > 0) {
@@ -212,7 +194,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // 5. Create default consent templates (idempotent — skip if any exist)
+      // 5. Create default consent templates (idempotent: skip if any exist)
       const { listConsentTemplates } = await import('@/db/queries/consent')
       const existingTemplates = await listConsentTemplates(auth.tenantId)
       const hasTemplates = Object.values(existingTemplates).some((arr) => Array.isArray(arr) && arr.length > 0)
@@ -288,9 +270,7 @@ export async function POST(request: Request) {
         await reportOnboardingCompleted({
           tenantId: auth.tenantId,
           userId: auth.userId,
-          // The address is set in Settings now, so it is usually not in this
-          // request; whatever the clinic already has still names the city.
-          clinic: { ...data.clinic, address: data.clinic.address ?? addressSchema.safeParse(current.address).data },
+          clinic: { ...data.clinic, address: addressSchema.safeParse(current.address).data },
           signedUpAt: current.createdAt,
         })
       }

@@ -68,15 +68,8 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
   return (
     <>
       <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} enabled={!auth.isPlatformAdmin} />
-      {/* Signup now lands here instead of /confirm-email, so the browser
-          half of CompleteRegistration (paired with the server's by this id)
-          moved here with it. Consent-gated inside trackMetaEvent. */}
       <SignupConversionTracker eventId={typeof metaEventId === 'string' ? metaEventId : null} />
       <EmailConfirmedToast show={showEmailConfirmed} />
-      {/* No "Confirme seu e-mail" banner here: onboarding needs nothing the
-          confirmation gates, and the banner competed with step 1. It shows
-          from the dashboard on (platform layout); the confirmation e-mail and
-          its reminders still go out meanwhile. */}
       <OnboardingWizard
         // A clinic created on arrival after Google sign-up only has a stand-in
         // name ("Clínica de Ana"). Instead of an empty field, suggest one from
@@ -86,6 +79,7 @@ export default async function OnboardingPage({ searchParams }: OnboardingPagePro
         tenantNameSuggested={Boolean(suggestedName)}
         phoneRequired
         tenantPhone={tenant.phone}
+        unconfirmedEmail={auth.emailVerified ? null : auth.email}
         draft={draft.success ? draft.data : null}
         existingProcedureTypes={procedureTypesForWizard}
         existingProducts={existingProducts}

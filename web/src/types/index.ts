@@ -39,13 +39,8 @@ export interface AuthContext {
   email: string
   fullName: string
   isPlatformAdmin: boolean
-  /**
-   * Whether the signed-in user's address is confirmed, read from the database
-   * (the token's claim goes stale after a confirmation in another browser).
-   * Optional so contexts built by hand (tests, scripts) need not state it;
-   * only an explicit `false` is gated, see lib/email-confirmation-gate.ts.
-   */
-  emailVerified?: boolean
+  /** Read from the database: the token's claim goes stale after a confirmation in another browser. */
+  emailVerified: boolean
 }
 
 export interface PaginationParams {

@@ -115,6 +115,7 @@ beforeEach(() => {
     email: 'owner@clinica.com',
     fullName: 'Dona Clínica',
     isPlatformAdmin: false,
+    emailVerified: true,
   })
   vi.mocked(requireRole).mockResolvedValue({
     tenantId: 'tenant-1',
@@ -123,6 +124,7 @@ beforeEach(() => {
     email: 'owner@clinica.com',
     fullName: 'Dona Clínica',
     isPlatformAdmin: false,
+    emailVerified: true,
   })
   vi.mocked(listRecentEvents).mockResolvedValue([])
   vi.mocked(subscriptionGate).mockResolvedValue(null)
@@ -566,6 +568,7 @@ describe('DELETE /api/integrations/meta/connection', () => {
       email: 'owner@outra.com',
       fullName: 'Outra Clínica',
       isPlatformAdmin: false,
+      emailVerified: true,
     })
 
     const res = await DELETE(
@@ -905,6 +908,7 @@ describe('GET /api/integrations/meta/auth/callback', () => {
       email: 'owner@outra.com',
       fullName: 'Outra Clínica',
       isPlatformAdmin: false,
+      emailVerified: true,
     })
     vi.mocked(verifyOAuthState).mockReturnValue(statePayload({ tenantId: 'tenant-2', userId: 'user-2' }))
     vi.mocked(exchangeCodeForLongLivedToken).mockResolvedValue({ accessToken: 'long-lived-token', expiresAt: null })

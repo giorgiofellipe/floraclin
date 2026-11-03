@@ -1,9 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
-import { trackMetaEvent } from '@/lib/marketing-attribution'
-
-const META_EVENT_ID_PARAM = 'meta_event_id'
+import { META_EVENT_ID_PARAM, trackMetaEvent } from '@/lib/marketing-attribution'
 
 interface SignupConversionTrackerProps {
   eventId: string | null

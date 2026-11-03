@@ -3,12 +3,8 @@ import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic
 import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import {
-  BOOKING_SLUG_MESSAGES,
-  changeBookingSlug,
-  isBookingSlugFree,
-  isSlugReservedForAnotherTenant,
-} from '@/db/queries/booking-slugs'
+import { changeBookingSlug, isBookingSlugFree, isSlugReservedForAnotherTenant } from '@/db/queries/booking-slugs'
+import { BOOKING_SLUG_MESSAGES } from '@/lib/booking-slug'
 import { BusinessError } from '@/lib/errors'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
@@ -143,7 +139,7 @@ export async function createTenantWithOwner(data: {
     if (existingDbUser) {
       userId = existingDbUser.id
     } else {
-      // New user — generate UUID and insert directly (no password; they'll use magic link)
+      // New user: generate UUID and insert directly (no password; they'll use magic link)
       userId = crypto.randomUUID()
 
       await tx.insert(users).values({
@@ -185,7 +181,7 @@ export async function createTenantWithOwner(data: {
       isActive: true,
     })
 
-    // 5. Send invite email (outside transaction is fine — fire-and-forget)
+    // 5. Send invite email (outside transaction is fine, fire-and-forget)
     sendInviteEmail(data.ownerEmail, loginUrl, data.name).catch(() => {
       // Email delivery failure should not break tenant creation
     })
@@ -222,30 +218,31 @@ export async function updateTenantAdmin(
   },
   actorUserId: string,
 ) {
-  // A slug change takes the owner's path (changeBookingSlug), without its
-  // rate limit: the old link redirects and stays reserved for this clinic,
-  // and a link another clinic holds or has reserved is refused.
-  if (data.slug !== undefined) {
-    const result = await changeBookingSlug({ tenantId, userId: actorUserId, slug: data.slug, skipRateLimit: true })
-    if (result.outcome === 'not_found') return null
-    if (result.outcome === 'taken') throw slugTaken()
-  }
+  // A slug change takes the owner's path: the old link redirects and stays
+  // reserved for this clinic, and a link another clinic holds or has reserved is refused.
+  return withTransaction(async (tx) => {
+    if (data.slug !== undefined) {
+      const result = await changeBookingSlug({ tenantId, userId: actorUserId, slug: data.slug, byPlatformAdmin: true }, tx)
+      if (result.outcome === 'not_found') return null
+      if (result.outcome === 'taken') throw slugTaken()
+    }
 
-  const updateData: Record<string, unknown> = { updatedAt: new Date() }
+    const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
-  if (data.name !== undefined) updateData.name = data.name
-  if (data.settings !== undefined) updateData.settings = data.settings
-  if (data.isActive !== undefined) {
-    updateData.deletedAt = data.isActive ? null : new Date()
-  }
+    if (data.name !== undefined) updateData.name = data.name
+    if (data.settings !== undefined) updateData.settings = data.settings
+    if (data.isActive !== undefined) {
+      updateData.deletedAt = data.isActive ? null : new Date()
+    }
 
-  const [tenant] = await db
-    .update(tenants)
-    .set(updateData)
-    .where(eq(tenants.id, tenantId))
-    .returning()
+    const [tenant] = await tx
+      .update(tenants)
+      .set(updateData)
+      .where(eq(tenants.id, tenantId))
+      .returning()
 
-  return tenant ?? null
+    return tenant ?? null
+  })
 }
 
 // ─── Get tenant detail ──────────────────────────────────────────────

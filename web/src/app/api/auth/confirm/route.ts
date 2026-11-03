@@ -29,9 +29,7 @@ const AFTER_CONFIRM_PATH = '/onboarding'
  * A GET carrying the session of the very address in the link is the owner
  * clicking it in the browser they signed up in (signup signs them in): no
  * scanner holds that cookie. That click confirms and goes straight on to
- * onboarding. It used to stop on the confirm-email page as well, which looks
- * like the "check your inbox" screen they had just left, so people took it
- * for a failed link and signed in by hand.
+ * onboarding.
  */
 export async function GET(request: NextRequest) {
   const email = request.nextUrl.searchParams.get('email')

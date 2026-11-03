@@ -100,11 +100,14 @@ describe('onboarding page', () => {
     expect(wizardProps.current).not.toHaveProperty('tenantWorkingHours')
   })
 
-  it('never shows the confirmation banner, not even to an unconfirmed owner', async () => {
+  // Catches the page dropping the confirmation state, which leaves step 4's invites enabled and failing.
+  it('hands the wizard the address only while it is unconfirmed', async () => {
+    await renderPage()
+    expect(wizardProps.current?.unconfirmedEmail).toBeNull()
+
     authCtx.current = { ...authCtx.current, email: 'novo@clinica.test', emailVerified: false }
     await renderPage()
-    expect(screen.queryByTestId('banner')).toBeNull()
-    expect(screen.queryByText('novo@clinica.test')).toBeNull()
+    expect(wizardProps.current?.unconfirmedEmail).toBe('novo@clinica.test')
   })
 
   it('passes the Meta event id from signup to the pixel tracker', async () => {

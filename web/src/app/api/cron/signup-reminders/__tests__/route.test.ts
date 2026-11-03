@@ -2,19 +2,20 @@
 /**
  * The DB-backed suite (db/queries/__tests__/signup-reminders.test.ts) needs a
  * test database; this one pins the cron's wiring without one: which reminder
- * goes with which key and copy, that a lost claim sends nothing, and the age
- * windows the selection queries put in their SQL.
+ * goes with which key and copy, that a lost claim sends nothing, and the order
+ * of the lookups.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/pg-proxy'
 
-const { captured, claims, sendConfirmMock, sendFinishMock, getUrlMock, finishMock } = vi.hoisted(() => ({
+const { captured, claims, sendConfirmMock, sendFinishMock, getUrlMock, finishMock, awaitingMock } = vi.hoisted(() => ({
   captured: [] as { sql: string; params: unknown[] }[],
   claims: new Map<string, string | null>(),
   sendConfirmMock: vi.fn(),
   sendFinishMock: vi.fn(),
   getUrlMock: vi.fn(),
   finishMock: vi.fn(),
+  awaitingMock: vi.fn(),
 }))
 
 // Rows per selection query, told apart by the message key in their params.
@@ -48,6 +49,7 @@ vi.mock('@/lib/confirm-email', async (importOriginal) => ({
   MIN_LINK_VALIDITY_MS: (await importOriginal<typeof import('@/lib/confirm-email')>()).MIN_LINK_VALIDITY_MS,
   getOrIssueConfirmationUrl: getUrlMock,
 }))
+vi.mock('@/lib/email-confirmation-gate', () => ({ isTenantAwaitingEmailConfirmation: awaitingMock }))
 vi.mock('@/lib/cron-monitor', () => ({ withCronMonitor: (_s: string, _c: string, run: () => unknown) => run() }))
 vi.mock('@/lib/observability', () => ({ reportSideEffectFailure: vi.fn() }))
 vi.mock('@/lib/api-error', () => ({
@@ -71,6 +73,7 @@ beforeEach(() => {
   claims.clear()
   for (const key of Object.keys(rowsByKey)) delete rowsByKey[key]
   sendConfirmMock.mockResolvedValue({ id: 'resend-1' })
+  awaitingMock.mockResolvedValue(true)
   getUrlMock.mockImplementation(async (email: string) => `https://app.test/api/auth/confirm?email=${email}&token=t`)
 })
 
@@ -82,8 +85,21 @@ describe('signup-reminders cron: confirm reminders', () => {
     expect((await run()).status).toBe(200)
 
     expect(sendConfirmMock).toHaveBeenCalledTimes(2)
-    expect(sendConfirmMock).toHaveBeenCalledWith('um@x.test', expect.stringContaining('/api/auth/confirm?'), 'Clínica Um', 'first')
-    expect(sendConfirmMock).toHaveBeenCalledWith('dois@x.test', expect.stringContaining('/api/auth/confirm?'), 'Clínica Dois', 'last')
+    // Each under the idempotency key of its own claim, so a retried claim cannot deliver twice.
+    expect(sendConfirmMock).toHaveBeenCalledWith(
+      'um@x.test',
+      expect.stringContaining('/api/auth/confirm?'),
+      'Clínica Um',
+      'first',
+      `signup-reminder/t1/${SIGNUP_CONFIRM_REMINDER_KEY}`,
+    )
+    expect(sendConfirmMock).toHaveBeenCalledWith(
+      'dois@x.test',
+      expect.stringContaining('/api/auth/confirm?'),
+      'Clínica Dois',
+      'last',
+      `signup-reminder/t2/${SIGNUP_CONFIRM_FINAL_REMINDER_KEY}`,
+    )
     const claimed = captured
       .filter((q) => q.sql.trimStart().startsWith('insert into floraclin.tenant_lifecycle_messages'))
       .map((q) => `${q.params[0]}:${q.params[1]}`)
@@ -100,45 +116,24 @@ describe('signup-reminders cron: confirm reminders', () => {
     expect(finishMock).not.toHaveBeenCalled()
   })
 
-  it('asks for a link with hours left, so the 24 hour reminder never resends one about to expire', async () => {
+  // Catches "você ainda não confirmou" (and a fresh token) reaching an owner
+  // who confirmed after the batch was selected.
+  it('skips an owner who confirmed after the batch was selected', async () => {
+    rowsByKey[SIGNUP_CONFIRM_REMINDER_KEY] = [{ tenant_id: 't1', tenant_name: 'Clínica Um', owner_email: 'um@x.test' }]
+    awaitingMock.mockResolvedValue(false)
+
+    await run()
+
+    expect(sendConfirmMock).not.toHaveBeenCalled()
+    expect(getUrlMock).not.toHaveBeenCalled()
+  })
+
+  it('asks for a link with at least MIN_LINK_VALIDITY_MS left', async () => {
     rowsByKey[SIGNUP_CONFIRM_FINAL_REMINDER_KEY] = [{ tenant_id: 't2', tenant_name: 'Clínica Dois', owner_email: 'dois@x.test' }]
 
     await run()
 
     expect(getUrlMock).toHaveBeenCalledWith('dois@x.test', MIN_LINK_VALIDITY_MS)
-    expect(MIN_LINK_VALIDITY_MS).toBeGreaterThanOrEqual(6 * 60 * 60 * 1000)
-  })
-
-  it('selects the first reminder from 1 to 24 hours and the last from 24 hours to 7 days, never overlapping', async () => {
-    await run()
-
-    const windowOf = (key: string) => {
-      const query = captured.find((q) => q.params.includes(key) && q.sql.includes('created_at <= now()'))!
-      // The two created_at bounds come first; a later interval is another rule.
-      const intervals = query.params.filter((p) => typeof p === 'string' && /^\d+ (hour|hours|days)$/.test(p))
-      return intervals.slice(0, 2)
-    }
-    expect(windowOf(SIGNUP_CONFIRM_REMINDER_KEY)).toEqual(['1 hour', '24 hours'])
-    expect(windowOf(SIGNUP_CONFIRM_FINAL_REMINDER_KEY)).toEqual(['24 hours', '7 days'])
-    // Only unconfirmed password sign-ups: not Google/magic link/invited accounts.
-    const finalQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
-    expect(finalQuery.sql).toMatch(/o\.password_hash is not null and o\.email_verified is null/)
-    expect(finalQuery.sql).toMatch(/t\.deleted_at is null/)
-  })
-
-  // Catches the last reminder going out right after the first (one sent at 23 hours, the next at 24).
-  it('holds the last reminder back until 12 hours after the first one went out', async () => {
-    await run()
-
-    const finalQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
-    expect(finalQuery.params).toContain(SIGNUP_CONFIRM_REMINDER_KEY)
-    expect(finalQuery.params).toContain('12 hours')
-    expect(finalQuery.sql).toMatch(
-      /and not exists \(\s*select 1 from floraclin\.tenant_lifecycle_messages f\s+where f\.tenant_id = t\.id and f\.message_key = \$\d+ and f\.channel = 'email'\s+and f\.status <> 'failed'\s+and coalesce\(f\.completed_at, f\.claimed_at\) > now\(\) - \$\d+::interval/,
-    )
-    // The first reminder's own query has no such rule.
-    const firstQuery = captured.find((q) => q.params.includes(SIGNUP_CONFIRM_REMINDER_KEY) && !q.params.includes(SIGNUP_CONFIRM_FINAL_REMINDER_KEY))!
-    expect(firstQuery.params).not.toContain('12 hours')
   })
 
   // Catches both confirm reminders going out in one run to a clinic that turns

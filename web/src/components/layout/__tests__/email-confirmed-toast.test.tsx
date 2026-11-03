@@ -48,6 +48,15 @@ describe('EmailConfirmedToast', () => {
     )
   })
 
+  // Catches the replace wiping the state Next's router keeps in history, which Back relies on.
+  it('keeps the router state of the history entry', () => {
+    const routerState = { __NA: true, __PRIVATE_NEXTJS_INTERNALS_TREE: ['', {}] }
+    window.history.replaceState(routerState, '', '/onboarding?email_confirmed=1')
+    render(<EmailConfirmedToast show />)
+    vi.runAllTimers()
+    expect(window.history.state).toEqual(routerState)
+  })
+
   it('does nothing without the parameter', () => {
     render(<EmailConfirmedToast show={false} />)
     vi.runAllTimers()

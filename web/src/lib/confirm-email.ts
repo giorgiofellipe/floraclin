@@ -32,6 +32,12 @@ function rawTokenFor(identifier: string, expires: Date): string {
   return crypto.createHmac('sha256', secret).update(`${identifier}:${expires.getTime()}`).digest('hex')
 }
 
+/** The raw token behind a stored row, or null when it was issued under another NEXTAUTH_SECRET. */
+function rebuiltToken(identifier: string, row: { expires: Date; token: string }): string | null {
+  const raw = rawTokenFor(identifier, row.expires)
+  return hashToken(raw) === row.token ? raw : null
+}
+
 export function confirmEmailUrl(email: string, rawToken: string): string {
   return `${getAppUrl()}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
 }
@@ -142,11 +148,12 @@ export async function getOrIssueConfirmationUrl(
 
   if (cooldownMs === undefined) {
     const [row] = await db
-      .select({ expires: verificationTokens.expires })
+      .select({ expires: verificationTokens.expires, token: verificationTokens.token })
       .from(verificationTokens)
       .where(outstanding)
       .limit(1)
-    if (row) return confirmEmailUrl(email, rawTokenFor(identifier, row.expires))
+    const reusable = row && rebuiltToken(identifier, row)
+    if (reusable) return confirmEmailUrl(email, reusable)
     // Without a cooldown the upsert always writes, so this is never null.
     return confirmEmailUrl(email, (await issueConfirmationToken(email))!)
   }
@@ -164,8 +171,12 @@ export async function getOrIssueConfirmationUrl(
         ),
       ),
     )
-    .returning({ expires: verificationTokens.expires })
-  if (reused) return confirmEmailUrl(email, rawTokenFor(identifier, reused.expires))
+    .returning({ expires: verificationTokens.expires, token: verificationTokens.token })
+  if (reused) {
+    // This update already took the cooldown slot, so the replacement is issued without one.
+    const raw = rebuiltToken(identifier, reused) ?? (await issueConfirmationToken(email))!
+    return confirmEmailUrl(email, raw)
+  }
 
   // Either throttled (the upsert's cooldown refuses it too) or there is no
   // live link to reuse.

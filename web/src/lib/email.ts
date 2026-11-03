@@ -49,8 +49,11 @@ export async function sendPasswordResetEmail(email: string, url: string) {
 }
 
 // Resend reports API rejections in the result instead of throwing.
-async function sendOrThrow(payload: Parameters<Resend['emails']['send']>[0]): Promise<{ id: string }> {
-  const { data, error } = await getResend().emails.send(payload)
+async function sendOrThrow(
+  payload: Parameters<Resend['emails']['send']>[0],
+  idempotencyKey?: string,
+): Promise<{ id: string }> {
+  const { data, error } = await getResend().emails.send(payload, idempotencyKey ? { idempotencyKey } : undefined)
   if (error) throw new Error(error.message)
   return { id: data.id }
 }
@@ -72,14 +75,14 @@ export async function sendConfirmationEmail(email: string, url: string, clinicNa
     to: email,
     subject: 'Confirme seu e-mail',
     html: renderEmailLayout({
-      preheader: 'Falta só um clique para começar seu teste gratuito.',
+      preheader: 'Confirme seu e-mail para liberar o WhatsApp, os convites e a assinatura.',
       heading: 'Confirme seu e-mail',
       paragraphs: [
-        `Bem-vindo(a) à ${clinicName}! Falta só confirmar seu e-mail para começar a usar a FloraClin.`,
+        `Bem-vindo(a) à FloraClin! Você já pode usar a ${clinicName}. Confirme seu e-mail para liberar o WhatsApp, os convites e a assinatura.`,
       ],
       button: { label: 'Confirmar e-mail', url },
       notes: [
-        'Este link expira em 24 horas.',
+        'Se o link expirar, peça um novo na FloraClin.',
         `Se não foi você quem criou a clínica ${clinicName}, não confirme e ignore este e-mail. Quem criou a conta continuaria com acesso a ela.`,
       ],
     }),
@@ -128,14 +131,18 @@ export async function sendLifecycleEmail(opts: {
   subject: string
   content: EmailContent
   replyTo?: string
+  idempotencyKey?: string
 }): Promise<{ id: string }> {
-  return sendOrThrow({
-    from: FROM,
-    to: opts.to,
-    replyTo: opts.replyTo ?? LIFECYCLE_REPLY_TO,
-    subject: opts.subject,
-    html: renderEmailLayout(opts.content),
-  })
+  return sendOrThrow(
+    {
+      from: FROM,
+      to: opts.to,
+      replyTo: opts.replyTo ?? LIFECYCLE_REPLY_TO,
+      subject: opts.subject,
+      html: renderEmailLayout(opts.content),
+    },
+    opts.idempotencyKey,
+  )
 }
 
 /**
@@ -149,10 +156,12 @@ export function sendConfirmationReminderEmail(
   url: string,
   clinicName: string,
   reminder: 'first' | 'last' = 'first',
+  idempotencyKey?: string,
 ) {
   const last = reminder === 'last'
   return sendLifecycleEmail({
     to: email,
+    idempotencyKey,
     subject: last ? 'Último lembrete: confirme seu e-mail' : 'Falta confirmar seu e-mail',
     content: {
       preheader: 'Confirme seu e-mail para liberar o WhatsApp, os convites e a assinatura.',
@@ -163,16 +172,17 @@ export function sendConfirmationReminderEmail(
       ],
       button: { label: 'Confirmar e-mail', url },
       notes: [
-        'Este link vale por 24 horas.',
+        'Se o link expirar, peça um novo na FloraClin.',
         `Se não foi você quem criou a clínica ${clinicName}, não confirme e ignore este e-mail. Quem criou a conta continuaria com acesso a ela.`,
       ],
     },
   })
 }
 
-export function sendFinishSetupReminderEmail(email: string) {
+export function sendFinishSetupReminderEmail(email: string, idempotencyKey?: string) {
   return sendLifecycleEmail({
     to: email,
+    idempotencyKey,
     subject: 'Termine de configurar sua clínica na FloraClin',
     content: {
       preheader: 'Faltam poucos passos para começar a usar a FloraClin.',

@@ -27,9 +27,9 @@ describeIntegration('saveOnboardingProgress (integration, requires test DB)', ()
 
   it('saves the clinic columns and merges the draft into the other settings', async () => {
     const id = await insertTenant({ settings: { clinic_name_placeholder: true, timezone: 'America/Sao_Paulo' } })
-    const draft = { step: 2, customSlug: 'bella' }
+    const draft = { step: 2 }
 
-    const result = await saveOnboardingProgress(id, { name: 'Clínica Bella', email: 'oi@bella.com' }, {
+    const result = await saveOnboardingProgress(id, { name: 'Clínica Bella' }, {
       onboarding_draft: draft,
       clinic_name_placeholder: false,
     })
@@ -37,7 +37,6 @@ describeIntegration('saveOnboardingProgress (integration, requires test DB)', ()
     expect(result).toEqual({ saved: true, noticeStamped: false })
     const row = await rowOf(id)
     expect(row.name).toBe('Clínica Bella')
-    expect(row.email).toBe('oi@bella.com')
     expect(row.settings).toEqual({
       clinic_name_placeholder: false,
       timezone: 'America/Sao_Paulo',

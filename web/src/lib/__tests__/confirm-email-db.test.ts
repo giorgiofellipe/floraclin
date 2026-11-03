@@ -140,6 +140,28 @@ describeIntegration('confirm-email sign-in and links (integration, requires test
     expect(await authorizeConfirm(email, token)).not.toBeNull()
   })
 
+  // Catches every resent link being dead after NEXTAUTH_SECRET rotates: the
+  // reused link is rebuilt from the secret, so it no longer matches the stored hash.
+  it.each([
+    ['a reminder', (email: string) => getOrIssueConfirmationUrl(email)],
+    ['a throttled resend', (email: string) => getOrIssueConfirmationUrl(email, 0, 60_000)],
+  ] as const)('%s after a secret rotation sends a link that works', async (_name, resend) => {
+    const { email } = await insertUser()
+    await getOrIssueConfirmationUrl(email)
+    await db
+      .update(verificationTokens)
+      .set({ lastSentAt: sql`now() - interval '2 minutes'` })
+      .where(eq(verificationTokens.identifier, confirmIdentifier(email)))
+    vi.stubEnv('NEXTAUTH_SECRET', 'rotated-secret')
+
+    try {
+      const resent = (await resend(email))!
+      expect(await authorizeConfirm(email, new URL(resent).searchParams.get('token')!)).not.toBeNull()
+    } finally {
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('a resend after a password change replaces the revoked link instead of reviving it', async () => {
     const { email } = await insertUser()
     const first = await getOrIssueConfirmationUrl(email)

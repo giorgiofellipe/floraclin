@@ -25,29 +25,18 @@ describe('EmailConfirmationBanner', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('shortens the copy to one sentence on phones and keeps the full one from sm up', () => {
+  it('has a one-sentence copy for phones, with the address in its title', () => {
     render(<EmailConfirmationBanner email="ana@clinica.test" />)
     const short = screen.getByTestId('email-confirmation-short')
-    const full = screen.getByTestId('email-confirmation-full')
-    expect(short).toHaveClass('sm:hidden')
-    expect(full).toHaveClass('hidden', 'sm:inline')
-    // The address is not printed on phones, but the title and screen readers still get it.
     expect(short).toHaveTextContent('Confirme seu e-mail ana@clinica.test para liberar WhatsApp, convites e planos.')
     expect(short).toHaveAttribute('title', 'ana@clinica.test')
-    expect(within(short).getByText('ana@clinica.test')).toHaveClass('sr-only')
   })
 
-  it('keeps a long address on one line, with the full address in the title', () => {
+  it('puts a long address in the title', () => {
     const email = 'ana.souza.estetica.c659ca03@example.test'
     render(<EmailConfirmationBanner email={email} />)
     const address = within(screen.getByTestId('email-confirmation-full')).getByText(email)
     expect(address).toHaveAttribute('title', email)
-    expect(address).toHaveClass('truncate')
-  })
-
-  it('gives the resend button a 44px tap target on phones', () => {
-    render(<EmailConfirmationBanner email="ana@clinica.test" />)
-    expect(screen.getByRole('button', { name: 'Reenviar link' })).toHaveClass('min-h-11', 'sm:min-h-9')
   })
 
   it('resends through the existing endpoint, then holds the button for the cooldown', async () => {

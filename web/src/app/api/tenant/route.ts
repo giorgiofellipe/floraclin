@@ -13,7 +13,8 @@ import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
 import { verifyCredentials } from '@/lib/whatsapp'
-import { BOOKING_SLUG_MESSAGES, changeBookingSlug } from '@/db/queries/booking-slugs'
+import { changeBookingSlug } from '@/db/queries/booking-slugs'
+import { BOOKING_SLUG_MESSAGES } from '@/lib/booking-slug'
 
 type Settings = Record<string, unknown> | undefined
 

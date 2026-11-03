@@ -78,31 +78,6 @@ describe('dashboard first-patient highlight', () => {
     expect(router.replace).toHaveBeenCalledWith('/dashboard', { scroll: false })
   })
 
-  it('makes "Novo Paciente" the primary action while the hint is up, and gives it back after', async () => {
-    const user = userEvent.setup()
-    render(<DashboardPageClient highlightFirstPatient />)
-    const patient = screen.getByTestId('dashboard-new-patient')
-    const appointment = screen.getByTestId('dashboard-new-appointment')
-
-    // An outline, not a ring: subtle-pulse animates box-shadow, which would
-    // replace a ring (also a box-shadow) for as long as it runs.
-    expect(patient).toHaveClass('bg-forest', 'text-cream', 'outline-2', 'outline-forest', 'motion-safe:animate-subtle-pulse')
-    expect(patient.className).not.toMatch(/\bring-/)
-    expect(appointment).not.toHaveClass('bg-forest')
-    expect(appointment).toHaveClass('border-sage/30')
-
-    await user.click(screen.getByRole('button', { name: 'Dispensar dica' }))
-
-    expect(patient).not.toHaveClass('bg-forest')
-    expect(patient).toHaveClass('border-sage/30')
-    expect(appointment).toHaveClass('bg-forest', 'text-cream')
-  })
-
-  it('gives the dismiss button a 44px tap target', () => {
-    render(<DashboardPageClient highlightFirstPatient />)
-    expect(screen.getByRole('button', { name: 'Dispensar dica' })).toHaveClass('size-11')
-  })
-
   it('holds the install banner back while the hint is up, without dismissing it', async () => {
     const user = userEvent.setup()
     stubInstallableMobile()

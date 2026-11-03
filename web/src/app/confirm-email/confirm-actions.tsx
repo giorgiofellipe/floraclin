@@ -118,7 +118,7 @@ export function AlreadyConfirmed({ email }: { email: string }) {
         sua clínica.
       </p>
       <Button
-        render={<a href={`/login?email=${encodeURIComponent(email)}`} />}
+        render={<a href="/login" />}
         nativeButton={false}
         className="w-full h-11"
         data-testid="confirm-email-login"

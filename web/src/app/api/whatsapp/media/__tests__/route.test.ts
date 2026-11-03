@@ -20,6 +20,7 @@ beforeEach(() => {
     email: 'dona@clinica.com.br',
     fullName: 'Dona',
     isPlatformAdmin: false,
+    emailVerified: true,
   })
   vi.mocked(getSignedUrl).mockImplementation(async (path: string) => `https://storage.example/sign/${path}`)
 })

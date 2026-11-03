@@ -7,6 +7,7 @@ import { db } from '@/db/client'
 import { tenantUsers, users, tenants } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
 import type { AuthContext, Role } from '@/types'
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 import { ForbiddenError } from '@/lib/errors'
 
 // Not /login: proxy sends a signed-in user on /login back to /dashboard, so
@@ -65,7 +66,8 @@ export async function getAuthContext(): Promise<AuthContext> {
     .where(
       and(
         eq(tenantUsers.userId, userId),
-        eq(tenantUsers.isActive, true)
+        eq(tenantUsers.isActive, true),
+        membershipUsableBeforeConfirmation(),
       )
     )
 
@@ -174,10 +176,12 @@ export async function getUserTenants(userId: string) {
     })
     .from(tenantUsers)
     .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
+    .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(
       and(
         eq(tenantUsers.userId, userId),
-        eq(tenantUsers.isActive, true)
+        eq(tenantUsers.isActive, true),
+        membershipUsableBeforeConfirmation(),
       )
     )
 }

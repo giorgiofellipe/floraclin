@@ -12,7 +12,8 @@ vi.mock('@/lib/cookie-consent', () => ({
   cookieConsentStatus: () => 'granted',
   subscribeCookieConsent: () => () => {},
 }))
-vi.mock('@/lib/marketing-attribution', () => ({
+vi.mock('@/lib/marketing-attribution', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/marketing-attribution')>()),
   DEFAULT_META_PIXEL_ID: 'pixel-1',
   trackMetaEvent: vi.fn(),
 }))
@@ -33,7 +34,8 @@ beforeEach(() => {
 describe('MetaPixel PageView on client navigations', () => {
   // Catches the second PageView sent when a page drops its one-shot param from the URL.
   it.each([
-    ['email_confirmed', '/onboarding', 'email_confirmed=1&meta_event_id=abc', 'meta_event_id=abc'],
+    ['email_confirmed', '/onboarding', 'email_confirmed=1&utm_source=ig', 'utm_source=ig'],
+    ['meta_event_id', '/onboarding', 'meta_event_id=abc&utm_source=ig', 'utm_source=ig'],
     ['primeiro_paciente', '/dashboard', 'primeiro_paciente=1', ''],
   ])('sends none when only %s was dropped from the URL', (_param, pathname, before, after) => {
     nav.pathname = pathname

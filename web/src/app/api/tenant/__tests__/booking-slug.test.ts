@@ -1,9 +1,8 @@
 // @vitest-environment node
 /**
- * The booking link left onboarding for Settings, so PUT /api/tenant sets it:
- * validated here, then changed by changeBookingSlug (reservation, redirect,
- * change limit and audit; see db/queries/__tests__/booking-slugs.test.ts),
- * whose outcomes map to the answers the form shows.
+ * PUT /api/tenant validates the booking link, then hands it to
+ * changeBookingSlug (db/queries/__tests__/booking-slugs.test.ts), whose
+ * outcomes map to the answers the form shows.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
