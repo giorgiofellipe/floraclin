@@ -14,7 +14,7 @@ vi.mock('@sentry/nextjs', () => ({
   captureMessage: (...args: unknown[]) => captureMessageMock(...args),
 }))
 
-import { buildDiscordPayload, notifyDiscord, sendDiscordNow, type DiscordEvent } from '../discord'
+import { buildDiscordPayload, notifyDiscord, type DiscordEvent } from '../discord'
 
 describe('buildDiscordPayload', () => {
   it('formats signup.started with the person, e-mail and method, and no clinic name', () => {
@@ -430,31 +430,6 @@ describe('notifyDiscord', () => {
     ).resolves.toBeUndefined()
 
     expect(captureMessageMock).toHaveBeenCalledOnce()
-  })
-
-  // The import request clears its stamp on false so the owner can ask again.
-  describe('sendDiscordNow', () => {
-    const event: DiscordEvent = { kind: 'clinic.approved', tenantName: 'Clínica Bela Pele', tenantId: 'tenant-1' }
-
-    it('counts an unconfigured channel as delivered, without posting', async () => {
-      delete process.env.DISCORD_WEBHOOK_EVENTS
-      const fetchMock = vi.fn()
-      global.fetch = fetchMock as unknown as typeof fetch
-
-      expect(await sendDiscordNow(event)).toBe(true)
-      expect(fetchMock).not.toHaveBeenCalled()
-    })
-
-    it.each([
-      ['accepted', async () => new Response(null, { status: 204 }), true],
-      ['rejected', async () => new Response(null, { status: 500 }), false],
-      ['unreachable', async () => { throw new Error('network down') }, false],
-    ])('reports a post the webhook %s', async (_case, respond, delivered) => {
-      process.env.DISCORD_WEBHOOK_EVENTS = 'https://discord.com/api/webhooks/test'
-      global.fetch = vi.fn(respond) as unknown as typeof fetch
-
-      expect(await sendDiscordNow(event)).toBe(delivered)
-    })
   })
 
   describe('whatsapp_automations.digest destination (DISCORD_WEBHOOK_LOGS)', () => {

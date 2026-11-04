@@ -106,10 +106,12 @@ function queueSelects() {
     .mockReturnValueOnce(makeChain([{ id: PRACTITIONER_ID }]))
 }
 
+// A fresh client IP per request keeps the route's per-IP booking limit out of this suite.
+let ipCounter = 0
 function makeRequest(body: Record<string, unknown>) {
   return new NextRequest('http://localhost/api/book/clinica-teste', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `10.0.1.${++ipCounter}` },
     body: JSON.stringify(body),
   })
 }

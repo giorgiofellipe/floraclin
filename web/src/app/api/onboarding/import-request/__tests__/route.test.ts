@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { sendDiscordNow } from '@/lib/discord'
+import { notifyDiscord } from '@/lib/discord'
 import { ForbiddenError } from '@/lib/errors'
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
@@ -17,7 +17,7 @@ vi.mock('@/lib/auth', () => ({
   }),
 }))
 vi.mock('@/lib/plans', () => ({ subscriptionGate: vi.fn(async () => null) }))
-vi.mock('@/lib/discord', () => ({ sendDiscordNow: vi.fn(async () => true) }))
+vi.mock('@/lib/discord', () => ({ notifyDiscord: vi.fn(async () => {}) }))
 
 import { POST } from '../route'
 
@@ -38,7 +38,7 @@ describeIntegration('POST /api/onboarding/import-request (integration, requires 
     auth.userId = randomUUID()
     auth.role = 'owner'
     auth.isPlatformAdmin = false
-    vi.mocked(sendDiscordNow).mockReset().mockResolvedValue(true)
+    vi.mocked(notifyDiscord).mockClear()
     await db.insert(tenants).values({
       id: auth.tenantId,
       name: 'Clínica Bela',
@@ -63,23 +63,7 @@ describeIntegration('POST /api/onboarding/import-request (integration, requires 
 
     expect(res.status).toBe(403)
     expect(await storedSettings()).toEqual({ online_booking_enabled: true })
-    expect(sendDiscordNow).not.toHaveBeenCalled()
-  })
-
-  it('clears the request when the team could not be told, so a retry notifies once', async () => {
-    vi.mocked(sendDiscordNow).mockResolvedValueOnce(false)
-
-    const failed = await post()
-
-    expect(failed.status).toBe(502)
-    expect(await failed.json()).toEqual({ error: 'Não foi possível enviar agora. Tente de novo.' })
-    expect(await storedSettings()).toEqual({ online_booking_enabled: true })
-
-    const retried = await post()
-
-    expect(retried.status).toBe(200)
-    expect(typeof (await storedSettings()).import_help_requested_at).toBe('string')
-    expect(sendDiscordNow).toHaveBeenCalledTimes(2)
+    expect(notifyDiscord).not.toHaveBeenCalled()
   })
 
   it('notifies the team once when two requests race, and both get the stored time', async () => {
@@ -93,8 +77,8 @@ describeIntegration('POST /api/onboarding/import-request (integration, requires 
       { requestedAt: settings.import_help_requested_at },
       { requestedAt: settings.import_help_requested_at },
     ])
-    expect(sendDiscordNow).toHaveBeenCalledTimes(1)
-    expect(sendDiscordNow).toHaveBeenCalledWith({
+    expect(notifyDiscord).toHaveBeenCalledTimes(1)
+    expect(notifyDiscord).toHaveBeenCalledWith({
       kind: 'onboarding.import_requested',
       tenantId: auth.tenantId,
       tenantName: 'Clínica Bela',

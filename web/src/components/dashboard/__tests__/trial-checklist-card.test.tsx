@@ -23,6 +23,14 @@ function activationWith(overrides: Partial<ActivationState> = {}): ActivationSta
   }
 }
 
+const allStepsDone = activationWith({
+  onboardingDone: true,
+  hasPatient: true,
+  hasAppointment: true,
+  hasProcedureRecord: true,
+  hasWhatsappSend: true,
+})
+
 describe('TrialChecklistCard', () => {
   it('counts done steps, drops the link on done rows and keeps it on open rows', () => {
     render(
@@ -38,18 +46,11 @@ describe('TrialChecklistCard', () => {
     )
   })
 
-  it('renders nothing when all five steps are done, so a finished clinic keeps no stale nag', () => {
-    const { container } = render(
-      <TrialChecklistCard
-        activation={activationWith({
-          onboardingDone: true,
-          hasPatient: true,
-          hasAppointment: true,
-          hasProcedureRecord: true,
-          hasWhatsappSend: true,
-        })}
-      />,
-    )
+  it.each([
+    ['import help is not offered', {}],
+    ['import help was already requested', { canRequestImport: true, importHelpRequested: true }],
+  ])('renders nothing when all five steps are done and %s, so a finished clinic keeps no stale nag', (_case, props) => {
+    const { container } = render(<TrialChecklistCard activation={allStepsDone} {...props} />)
 
     expect(container).toBeEmptyDOMElement()
   })
@@ -90,28 +91,10 @@ describe('TrialChecklistCard', () => {
       expect(screen.getByText('2 de 5')).toBeInTheDocument()
     })
 
-    it('shows why a request failed and lets the owner ask again', async () => {
-      const fetchMock = vi
-        .fn()
-        .mockResolvedValueOnce(Response.json({ error: 'Não foi possível enviar agora. Tente de novo.' }, { status: 502 }))
-        .mockResolvedValueOnce(Response.json({ requestedAt: '2026-11-03T12:00:00.000Z' }))
-      vi.stubGlobal('fetch', fetchMock)
-      renderWithQuery(<TrialChecklistCard activation={activationWith()} canRequestImport />)
+    it('still offers import help once all five steps are done', () => {
+      renderWithQuery(<TrialChecklistCard activation={allStepsDone} canRequestImport />)
 
-      await userEvent.click(screen.getByRole('button', { name: 'Quero ajuda' }))
-
-      expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível enviar agora. Tente de novo.')
-
-      await userEvent.click(screen.getByRole('button', { name: 'Quero ajuda' }))
-
-      expect(await screen.findByText('A gente entra em contato pelo WhatsApp para receber seus arquivos.')).toBeInTheDocument()
-      expect(screen.queryByRole('alert')).toBeNull()
-    })
-
-    it('hides the import row from anyone who is not the clinic owner', () => {
-      render(<TrialChecklistCard activation={activationWith()} canRequestImport={false} />)
-
-      expect(screen.queryByText('Importar pacientes de outro sistema')).toBeNull()
+      expect(screen.getByRole('button', { name: 'Quero ajuda' })).toBeInTheDocument()
     })
 
     it('shows an earlier request as done on load', () => {

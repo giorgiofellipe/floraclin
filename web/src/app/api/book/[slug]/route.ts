@@ -10,8 +10,11 @@ import { recordAttribution } from '@/db/queries/lead-attributions'
 import { buildFbc } from '@/lib/meta/attribution'
 import { enqueueMetaEvent } from '@/lib/meta/events'
 import { handleApiError } from '@/lib/api-error'
+import { isExclusionViolation } from '@/lib/errors'
 import { signLogoPath } from '@/lib/logo'
+import { reportSideEffectFailure } from '@/lib/observability'
 import { isSubscriptionActive } from '@/lib/plans'
+import { clientIpKey, createRateLimiter } from '@/lib/rate-limit'
 
 interface WorkingHoursDay {
   start: string
@@ -127,6 +130,10 @@ const bookingSchema = z.object({
   fbp: z.string().optional(),
 })
 
+const SLOT_TAKEN_MESSAGE = 'Este horário já não está mais disponível. Por favor, escolha outro.'
+
+const bookingsPerIp = createRateLimiter({ limit: 5, windowMs: 60 * 60 * 1000 })
+
 // POST /api/book/[slug] - Create a booking
 export async function POST(
   request: NextRequest,
@@ -202,10 +209,7 @@ export async function POST(
 
     const slot = (await getBookableSlots(tenant.id, practitionerId, date)).find((s) => s.start === startTime)
     if (!slot) {
-      return NextResponse.json(
-        { error: 'Este horário já não está mais disponível. Por favor, escolha outro.' },
-        { status: 409 }
-      )
+      return NextResponse.json({ error: SLOT_TAKEN_MESSAGE }, { status: 409 })
     }
 
     // Validate practitioner belongs to this tenant
@@ -230,64 +234,83 @@ export async function POST(
       )
     }
 
-    // Resolve or create the prospect. A phone that already has an active
-    // lead (WhatsApp or otherwise) must reuse it: prospects has a partial
-    // unique index on (tenant_id, phone) WHERE stage NOT IN ('convertido',
-    // 'perdido'), so an unconditional createNewProspect raises 23505 for
-    // the common case of a returning lead booking online.
-    let prospect = await getProspectByPhone(tenant.id, phone)
-    if (!prospect) {
-      prospect = await createNewProspect(tenant.id, { phone, name, source: 'booking_page' })
-    }
-    // That same lookup falls back to a `convertido` or `perdido` lead when the
-    // phone has no active one. Moving such a card to `agendado` would undo the
-    // conversion the Kanban, the conversion count and the marketing report all
-    // read, while convertedPatientId still says otherwise.
-    if (prospect.stage !== 'convertido' && prospect.stage !== 'perdido') {
-      await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+    if (!bookingsPerIp.take(clientIpKey(request.headers))) {
+      return NextResponse.json(
+        { error: 'Muitos agendamentos feitos a partir desta conexão. Aguarde um pouco antes de tentar novamente.' },
+        { status: 429 }
+      )
     }
 
-    const landingUrl = request.headers.get('referer') ?? null
-    const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
-    const userAgent = request.headers.get('user-agent') ?? null
+    let appointment
+    try {
+      appointment = await createAppointment(tenant.id, {
+        practitionerId,
+        date,
+        startTime,
+        endTime: slot.end,
+        status: 'scheduled',
+        source: 'online_booking',
+        patientId: null,
+        bookingName: name,
+        bookingPhone: phone,
+        bookingEmail: email || undefined,
+      })
+    } catch (error) {
+      if (isExclusionViolation(error, 'no_overlapping_appointments')) {
+        return NextResponse.json({ error: SLOT_TAKEN_MESSAGE }, { status: 409 })
+      }
+      throw error
+    }
 
-    await recordAttribution({
-      tenantId: tenant.id,
-      prospectId: prospect.id,
-      channel: 'booking_page',
-      fbclid: fbclid ?? null,
-      fbp: fbp ?? null,
-      fbc: fbclid ? buildFbc(fbclid) : null,
-      landingUrl,
-      clientIp,
-      userAgent,
-    })
+    // The appointment is the booking; a lead-tracking failure must not turn it into an error the patient retries.
+    try {
+      // Resolve or create the prospect. A phone that already has an active
+      // lead (WhatsApp or otherwise) must reuse it: prospects has a partial
+      // unique index on (tenant_id, phone) WHERE stage NOT IN ('convertido',
+      // 'perdido'), so an unconditional createNewProspect raises 23505 for
+      // the common case of a returning lead booking online.
+      let prospect = await getProspectByPhone(tenant.id, phone)
+      if (!prospect) {
+        prospect = await createNewProspect(tenant.id, { phone, name, source: 'booking_page' })
+      }
+      // That same lookup falls back to a `convertido` or `perdido` lead when the
+      // phone has no active one. Moving such a card to `agendado` would undo the
+      // conversion the Kanban, the conversion count and the marketing report all
+      // read, while convertedPatientId still says otherwise.
+      if (prospect.stage !== 'convertido' && prospect.stage !== 'perdido') {
+        await updateProspect(tenant.id, prospect.id, { stage: 'agendado' })
+      }
 
-    await enqueueMetaEvent({
-      tenantId: tenant.id,
-      eventName: 'Lead',
-      eventId: `lead:${prospect.id}`,
-      eventTime: new Date(),
-      prospectId: prospect.id,
-      patientId: prospect.convertedPatientId,
-      contact: { phone, fullName: name, email: email || null },
-      actionSource: 'website',
-      eventSourceUrl: landingUrl,
-    })
+      const landingUrl = request.headers.get('referer') ?? null
+      const clientIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? null
+      const userAgent = request.headers.get('user-agent') ?? null
 
-    // Create appointment
-    const appointment = await createAppointment(tenant.id, {
-      practitionerId,
-      date,
-      startTime,
-      endTime: slot.end,
-      status: 'scheduled',
-      source: 'online_booking',
-      patientId: null,
-      bookingName: name,
-      bookingPhone: phone,
-      bookingEmail: email || undefined,
-    })
+      await recordAttribution({
+        tenantId: tenant.id,
+        prospectId: prospect.id,
+        channel: 'booking_page',
+        fbclid: fbclid ?? null,
+        fbp: fbp ?? null,
+        fbc: fbclid ? buildFbc(fbclid) : null,
+        landingUrl,
+        clientIp,
+        userAgent,
+      })
+
+      await enqueueMetaEvent({
+        tenantId: tenant.id,
+        eventName: 'Lead',
+        eventId: `lead:${prospect.id}`,
+        eventTime: new Date(),
+        prospectId: prospect.id,
+        patientId: prospect.convertedPatientId,
+        contact: { phone, fullName: name, email: email || null },
+        actionSource: 'website',
+        eventSourceUrl: landingUrl,
+      })
+    } catch (error) {
+      reportSideEffectFailure(error, { area: 'crm', step: 'booking_lead' })
+    }
 
     return NextResponse.json(
       {

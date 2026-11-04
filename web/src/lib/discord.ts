@@ -7,8 +7,9 @@ import type { CapturedVia, IneligibleReason, PausedReason, ReferralStatus } from
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
-//   grew. signup.started / onboarding.completed / onboarding.import_requested / clinic.approved /
-//   subscription.created / lifecycle.reply / referral.*.
+//   grew. signup.started / onboarding.completed /
+//   onboarding.import_requested / clinic.approved / subscription.created /
+//   lifecycle.reply / referral.*.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest
 //   or lifecycle.template_not_approved.
@@ -482,47 +483,27 @@ export async function notifyDiscord(event: DiscordEvent): Promise<void> {
 
   try {
     after(async () => {
-      await postToDiscord(webhookUrl, event)
+      try {
+        const payload = buildDiscordPayload(event)
+        const res = await fetch(webhookUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          Sentry.captureMessage('Discord notification rejected by webhook', {
+            level: 'warning',
+            extra: { kind: event.kind, status: res.status },
+          })
+        }
+      } catch (err) {
+        Sentry.captureException(err, { extra: { kind: event.kind } })
+      }
     })
   } catch (err) {
     // after() itself throws if called outside a request scope. Should not
     // happen from the current call sites (server actions and route
     // handlers), but a signup must never fail because of it.
     Sentry.captureException(err, { extra: { kind: event.kind, phase: 'schedule' } })
-  }
-}
-
-/**
- * Posts within the request, for a caller that has to know whether the team
- * got the event. Never throws; false means it was not delivered. Unconfigured
- * counts as delivered, as notifyDiscord's no-op does.
- */
-export async function sendDiscordNow(event: DiscordEvent): Promise<boolean> {
-  const webhookUrl = webhookForEvent(event.kind)
-  if (!webhookUrl) return true
-  return postToDiscord(webhookUrl, event, AbortSignal.timeout(SEND_NOW_TIMEOUT_MS))
-}
-
-const SEND_NOW_TIMEOUT_MS = 5000
-
-async function postToDiscord(webhookUrl: string, event: DiscordEvent, signal?: AbortSignal): Promise<boolean> {
-  try {
-    const payload = buildDiscordPayload(event)
-    const res = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal,
-    })
-    if (!res.ok) {
-      Sentry.captureMessage('Discord notification rejected by webhook', {
-        level: 'warning',
-        extra: { kind: event.kind, status: res.status },
-      })
-    }
-    return res.ok
-  } catch (err) {
-    Sentry.captureException(err, { extra: { kind: event.kind } })
-    return false
   }
 }

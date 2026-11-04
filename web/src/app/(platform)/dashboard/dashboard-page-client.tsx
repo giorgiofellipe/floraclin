@@ -58,6 +58,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
     selectedMonth === currentMonth ? undefined : selectedMonth
   )
   const { data: tenant } = useTenant()
+  const settings = tenant?.settings as Record<string, unknown> | undefined
 
   if (isLoading || !data) {
     return <DashboardLoading />
@@ -161,7 +162,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
       <TrialChecklistCard
         activation={data.activation}
         canRequestImport={canRequestImport}
-        importHelpRequested={!!(tenant?.settings as Record<string, unknown> | undefined)?.[IMPORT_HELP_REQUESTED_SETTING]}
+        importHelpRequested={!!settings?.[IMPORT_HELP_REQUESTED_SETTING]}
       />
 
       {/* Pending Reschedule Alert */}
@@ -176,7 +177,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
         <FinancialSummary
           stats={data.quickStats}
           month={selectedMonth}
-          monthlyGoal={((tenant?.settings as Record<string, unknown>)?.monthly_revenue_goal as number) || 0}
+          monthlyGoal={(settings?.monthly_revenue_goal as number) || 0}
         />
       </div>
 

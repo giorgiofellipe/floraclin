@@ -1,12 +1,12 @@
 import { NextResponse } from 'next/server'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant } from '@/db/queries/tenants'
+import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant, mergeSettings } from '@/db/queries/tenants'
 import { signLogoPath } from '@/lib/logo'
 import { updateTenantSchema, bookingSettingsSchema, bookingSlugSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
@@ -144,7 +144,7 @@ export async function PUT(request: Request) {
 
       await db.update(tenants)
         .set({
-          settings: sql`COALESCE(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(parsed.data)}::jsonb`,
+          settings: mergeSettings(parsed.data),
           updatedAt: new Date(),
         })
         .where(eq(tenants.id, ctx.tenantId))

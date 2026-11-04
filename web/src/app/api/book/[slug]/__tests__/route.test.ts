@@ -1,11 +1,10 @@
 /**
  * Public booking routes have no session and no middleware or
  * `getAuthContext` gate to identify the tenant -- they resolve it from the
- * URL slug and must check the subscription themselves. These tests cover
- * that gate: `POST /api/book/[slug]` (creates the appointment) and
- * `GET /api/book/[slug]/slots` (lists open times) both reject with a 403
- * and a Portuguese message when the resolved tenant's subscription is
- * inactive, and behave normally otherwise.
+ * URL slug and must check the subscription themselves. Both
+ * `POST /api/book/[slug]` and `GET /api/book/[slug]/slots` reject with a 403
+ * when the resolved tenant's subscription is inactive. The POST also books
+ * only an offered slot, maps a lost race to 409 and limits bookings per IP.
  *
  * All DB access is mocked -- no network or database access occurs.
  *
@@ -53,10 +52,7 @@ vi.mock('@/db/queries/appointments', () => ({
     startTime: '10:00',
     endTime: '10:30',
   }),
-  getAvailableSlots: vi.fn().mockResolvedValue([
-    { start: '10:00', end: '10:30' },
-    { start: '10:30', end: '11:00' },
-  ]),
+  getAvailableSlots: vi.fn(),
 }))
 
 vi.mock('@/lib/plans', () => ({
@@ -64,8 +60,8 @@ vi.mock('@/lib/plans', () => ({
 }))
 
 // The booking POST also opens a CRM lead, records its attribution and queues
-// the Meta Lead event. Stubbed so this suite stays about the subscription
-// gate; `book/__tests__/attribution.test.ts` is what asserts on them.
+// the Meta Lead event. `book/__tests__/attribution.test.ts` asserts on what
+// they receive; this suite only checks they are skipped when no booking is made.
 vi.mock('@/db/queries/prospects', () => ({
   getProspectByPhone: vi.fn().mockResolvedValue(null),
   createNewProspect: vi.fn().mockResolvedValue({ id: 'prospect-1', stage: 'novo', convertedPatientId: null }),
@@ -95,6 +91,10 @@ import { POST } from '../route'
 import { GET as GET_SLOTS } from '../slots/route'
 import { isSubscriptionActive } from '@/lib/plans'
 import { createAppointment, getAvailableSlots } from '@/db/queries/appointments'
+import { createNewProspect, getProspectByPhone } from '@/db/queries/prospects'
+import { recordAttribution } from '@/db/queries/lead-attributions'
+import { enqueueMetaEvent } from '@/lib/meta/events'
+import { DrizzleQueryError } from 'drizzle-orm'
 
 const TENANT_ROW = {
   id: 'tenant-1',
@@ -109,10 +109,12 @@ const TENANT_ROW = {
 
 const PRACTITIONER_ID = '123e4567-e89b-12d3-a456-426614174000'
 
-function makeBookingRequest(body: unknown) {
+// Each request gets its own client IP unless a test passes one, so the per-IP limit stays out of unrelated tests.
+let ipCounter = 0
+function makeBookingRequest(body: unknown, ip = `10.0.0.${++ipCounter}`) {
   return new NextRequest('http://localhost/api/book/clinica-teste', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': ip },
     body: JSON.stringify(body),
   })
 }
@@ -129,6 +131,10 @@ const VALID_BOOKING_BODY = {
 beforeEach(() => {
   resetDbQueue()
   vi.mocked(isSubscriptionActive).mockReset()
+  vi.mocked(getAvailableSlots).mockReset().mockResolvedValue([
+    { start: '10:00', end: '10:30' },
+    { start: '10:30', end: '11:00' },
+  ])
 })
 
 beforeAll(() => {
@@ -182,10 +188,9 @@ describe('POST /api/book/[slug]', () => {
     // The clock is 06:00 in São Paulo on 2026-08-31.
     it.each([
       ['a time earlier today', { date: '2026-08-31', startTime: '05:30' }],
-      ['a time off the 30-minute grid', { startTime: '10:15' }],
-      ['a time outside the offered slots', { startTime: '18:00' }],
+      ['a time outside the offered slots', { startTime: '10:15' }],
     ])('refuses %s', async (_case, overrides) => {
-      vi.mocked(getAvailableSlots).mockResolvedValueOnce([
+      vi.mocked(getAvailableSlots).mockResolvedValue([
         { start: '05:30', end: '06:00' },
         { start: '10:00', end: '10:30' },
         { start: '10:30', end: '11:00' },
@@ -201,19 +206,73 @@ describe('POST /api/book/[slug]', () => {
     })
 
     it('books an offered time with that slot\'s end', async () => {
-      vi.mocked(getAvailableSlots).mockResolvedValueOnce([{ start: '06:30', end: '07:00' }])
+      vi.mocked(getAvailableSlots).mockResolvedValue([{ start: '06:30', end: '07:00' }])
 
       const res = await POST(makeBookingRequest({ ...VALID_BOOKING_BODY, date: '2026-08-31', startTime: '06:30' }), {
         params: Promise.resolve({ slug: 'clinica-teste' }),
       })
 
       expect(res.status).toBe(201)
-      expect(getAvailableSlots).toHaveBeenCalledWith('tenant-1', PRACTITIONER_ID, '2026-08-31', 30)
       expect(createAppointment).toHaveBeenCalledWith(
         'tenant-1',
         expect.objectContaining({ date: '2026-08-31', startTime: '06:30', endTime: '07:00' }),
       )
     })
+  })
+})
+
+describe('POST /api/book/[slug] once the request is valid', () => {
+  function queueValidBooking() {
+    pushDbResult([TENANT_ROW]) // getTenantBySlug
+    pushDbResult([]) // duplicate-booking check
+    pushDbResult([{ id: PRACTITIONER_ID }]) // practitioner belongs to tenant
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.mocked(isSubscriptionActive).mockResolvedValue(true)
+  })
+
+  it('answers 409 and opens no lead when another booking took the slot first', async () => {
+    queueValidBooking()
+    const overlap = Object.assign(new Error('conflicting key value violates exclusion constraint'), {
+      code: '23P01',
+      constraint_name: 'no_overlapping_appointments',
+    })
+    vi.mocked(createAppointment).mockRejectedValueOnce(new DrizzleQueryError('insert into appointments', [], overlap))
+
+    const res = await POST(makeBookingRequest(VALID_BOOKING_BODY), {
+      params: Promise.resolve({ slug: 'clinica-teste' }),
+    })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toBe('Este horário já não está mais disponível. Por favor, escolha outro.')
+    expect(getProspectByPhone).not.toHaveBeenCalled()
+    expect(createNewProspect).not.toHaveBeenCalled()
+    expect(recordAttribution).not.toHaveBeenCalled()
+    expect(enqueueMetaEvent).not.toHaveBeenCalled()
+  })
+
+  it('refuses a sixth booking from one IP within the hour, and not another IP', async () => {
+    const book = (ip: string, n: number) => {
+      queueValidBooking()
+      return POST(makeBookingRequest({ ...VALID_BOOKING_BODY, phone: `119888800${n}` }, ip), {
+        params: Promise.resolve({ slug: 'clinica-teste' }),
+      })
+    }
+    for (let n = 0; n < 5; n++) {
+      expect((await book('203.0.113.7', n)).status).toBe(201)
+    }
+
+    const refused = await book('203.0.113.7', 5)
+    const otherIp = await book('203.0.113.8', 6)
+
+    expect(refused.status).toBe(429)
+    expect((await refused.json()).error).toBe(
+      'Muitos agendamentos feitos a partir desta conexão. Aguarde um pouco antes de tentar novamente.',
+    )
+    expect(createAppointment).toHaveBeenCalledTimes(6)
+    expect(otherIp.status).toBe(201)
   })
 })
 

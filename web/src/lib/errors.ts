@@ -56,6 +56,16 @@ export function isUniqueViolation(err: unknown, constraintName?: string): boolea
   return false
 }
 
+/** True when a write violated the named exclusion constraint (SQLSTATE 23P01). Walks causes as isUniqueViolation does. */
+export function isExclusionViolation(err: unknown, constraintName: string): boolean {
+  for (let current: unknown = err; current != null; current = (current as { cause?: unknown }).cause) {
+    if (typeof current !== 'object') return false
+    const e = current as { code?: unknown; constraint_name?: unknown }
+    if (e.code === '23P01') return e.constraint_name === constraintName
+  }
+  return false
+}
+
 /**
  * True when Postgres reports SQLSTATE 42703 (`undefined_column`).
  *

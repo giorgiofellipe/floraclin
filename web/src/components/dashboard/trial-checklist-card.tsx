@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { toast } from 'sonner'
 import { CheckCircle2, Circle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useRequestImportHelp } from '@/hooks/mutations/use-tenant-mutations'
@@ -31,7 +32,8 @@ export function TrialChecklistCard({
 
   const rows = STEPS.map((step) => ({ ...step, done: step.isDone(activation) }))
   const doneCount = rows.filter((row) => row.done).length
-  if (doneCount === STEPS.length) return null
+  const offersImport = canRequestImport && !importHelpRequested
+  if (doneCount === STEPS.length && !offersImport) return null
 
   return (
     <div data-testid="trial-checklist" className="rounded-lg border border-sage/30 bg-sage/5 px-4 py-3">
@@ -63,9 +65,6 @@ export function TrialChecklistCard({
   )
 }
 
-// fetch rejects with a TypeError when the request never reached the server.
-const REQUEST_FAILED_MESSAGE = 'Não foi possível enviar agora. Tente de novo.'
-
 function ImportHelpRow({ requested }: { requested: boolean }) {
   const request = useRequestImportHelp()
   const done = requested || request.isSuccess
@@ -81,11 +80,6 @@ function ImportHelpRow({ requested }: { requested: boolean }) {
               ? 'A gente entra em contato pelo WhatsApp para receber seus arquivos.'
               : 'Tem pacientes em outro sistema ou planilha? A gente ajuda a trazer.'}
           </p>
-          {request.isError && (
-            <p role="alert" className="text-xs text-destructive">
-              {request.error instanceof TypeError ? REQUEST_FAILED_MESSAGE : request.error.message}
-            </p>
-          )}
         </div>
       </div>
       {!done && (
@@ -93,7 +87,7 @@ function ImportHelpRow({ requested }: { requested: boolean }) {
           variant="outline"
           className="self-start sm:self-auto"
           disabled={request.isPending}
-          onClick={() => request.mutate()}
+          onClick={() => request.mutate(undefined, { onError: (err) => toast.error(err.message) })}
         >
           Quero ajuda
         </Button>

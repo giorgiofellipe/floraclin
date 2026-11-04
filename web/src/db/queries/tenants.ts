@@ -178,14 +178,6 @@ const onboardingOpen = (tenantId: string) =>
     sql`coalesce(${tenants.settings}, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
   )
 
-/** Undoes markImportHelpRequested's stamp when the team could not be told, so the owner can ask again. */
-export async function clearImportHelpRequest(tenantId: string, requestedAt: string): Promise<void> {
-  await db
-    .update(tenants)
-    .set({ settings: sql`${tenants.settings} - ${IMPORT_HELP_REQUESTED_SETTING}::text`, updatedAt: new Date() })
-    .where(and(eq(tenants.id, tenantId), sql`${tenants.settings}->>${IMPORT_HELP_REQUESTED_SETTING}::text = ${requestedAt}`))
-}
-
 const ONBOARDING_DEFAULT_SETTINGS = { online_booking_enabled: true }
 
 /**
