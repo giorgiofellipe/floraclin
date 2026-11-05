@@ -4,6 +4,7 @@ import { lazy, Suspense, useCallback } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { canManageAccounts } from '@/lib/financial/account-roles'
 import { FinancialList } from '@/components/financial/financial-list'
 import { cn } from '@/lib/utils'
 import FinancialLoading from './loading'
@@ -15,6 +16,7 @@ import {
   BarChart3Icon,
   CreditCardIcon,
   ReceiptTextIcon,
+  LandmarkIcon,
 } from 'lucide-react'
 
 const ExpenseList = lazy(() =>
@@ -36,6 +38,11 @@ const PractitionerPLView = lazy(() =>
 const NfseDocumentsList = lazy(() =>
   import('@/components/nfse/nfse-documents-list').then((m) => ({ default: m.NfseDocumentsList }))
 )
+const ReconciliationView = lazy(() =>
+  import('@/components/financial/reconciliation/reconciliation-view').then((m) => ({
+    default: m.ReconciliationView,
+  }))
+)
 const RevenueChart = lazy(() =>
   import('@/components/financial/revenue-chart').then((m) => ({ default: m.RevenueChart }))
 )
@@ -45,6 +52,7 @@ const TABS = [
   { value: 'expenses', label: 'Despesas', icon: ArrowDownCircleIcon },
   { value: 'ledger', label: 'Extrato', icon: BookOpenIcon },
   { value: 'card-repasses', label: 'Repasses', icon: CreditCardIcon },
+  { value: 'reconciliation', label: 'Conciliação', icon: LandmarkIcon },
   { value: 'practitioner-pl', label: 'Por Profissional', icon: UsersIcon },
   { value: 'overview', label: 'Visão Geral', icon: BarChart3Icon },
   { value: 'notas-fiscais', label: 'Notas fiscais', icon: ReceiptTextIcon },
@@ -54,8 +62,14 @@ type TabValue = (typeof TABS)[number]['value']
 
 const NFSE_ROLES = ['owner', 'receptionist', 'financial']
 
+// Bank statements are for the owner and the Financeiro role only (decision on #88).
+// The server enforces it; this only keeps the tab away from everyone else.
 function visibleTabs(role: string) {
-  return TABS.filter((tab) => tab.value !== 'notas-fiscais' || NFSE_ROLES.includes(role))
+  return TABS.filter((tab) => {
+    if (tab.value === 'notas-fiscais') return NFSE_ROLES.includes(role)
+    if (tab.value === 'reconciliation') return canManageAccounts(role)
+    return true
+  })
 }
 
 function TabFallback() {
@@ -148,6 +162,12 @@ export function FinanceiroPageClient() {
         {activeTab === 'card-repasses' && (
           <Suspense fallback={<TabFallback />}>
             <CardRepassesView />
+          </Suspense>
+        )}
+
+        {activeTab === 'reconciliation' && (
+          <Suspense fallback={<TabFallback />}>
+            <ReconciliationView />
           </Suspense>
         )}
 

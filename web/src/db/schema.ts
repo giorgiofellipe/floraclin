@@ -542,6 +542,8 @@ export const cashMovements = floraclinSchema.table('cash_movements', {
   // Both legs of an internal transfer share it; they are not revenue or expense.
   transferGroupId: uuid('transfer_group_id'),
 }, (table) => [
+  // Lets reconciliation allocations prove a movement belongs to the same clinic.
+  unique('cash_movements_tenant_id_id_key').on(table.tenantId, table.id),
   // Carries the tenant so a movement can never point at another clinic's account.
   foreignKey({
     name: 'cash_movements_account_fk',
@@ -552,6 +554,108 @@ export const cashMovements = floraclinSchema.table('cash_movements', {
   index('idx_cash_movements_account_date').on(table.tenantId, table.accountId, table.movementDate),
   index('idx_cash_movements_type').on(table.tenantId, table.type),
   uniqueIndex('uq_cash_movements_active_repasse_inflow').on(table.cardRepasseId).where(sql`type = 'inflow' AND reversed_by_movement_id IS NULL AND card_repasse_id IS NOT NULL`),
+])
+
+// ─── BANK RECONCILIATION ─────────────────────────────────────────────
+
+export const bankStatementImports = floraclinSchema.table('bank_statement_imports', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  accountId: uuid('account_id').notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
+  statementHash: varchar('statement_hash', { length: 64 }).notNull(),
+  bankId: varchar('bank_id', { length: 30 }),
+  bankAccountId: varchar('bank_account_id', { length: 50 }),
+  periodStart: date('period_start'),
+  periodEnd: date('period_end'),
+  totalLines: integer('total_lines').notNull(),
+  newLines: integer('new_lines').notNull(),
+  duplicateLines: integer('duplicate_lines').notNull(),
+  suspectLines: integer('suspect_lines').notNull(),
+  importedBy: uuid('imported_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('bank_statement_imports_tenant_id_id_key').on(table.tenantId, table.id),
+  foreignKey({
+    name: 'bank_statement_imports_account_fk',
+    columns: [table.tenantId, table.accountId],
+    foreignColumns: [financialAccounts.tenantId, financialAccounts.id],
+  }),
+  uniqueIndex('uq_bank_statement_imports_hash').on(table.tenantId, table.accountId, table.statementHash),
+])
+
+// Statement text is immutable (a trigger refuses edits); only the ignore and
+// duplicate-review columns change. Lines are never deleted.
+export const bankStatementLines = floraclinSchema.table('bank_statement_lines', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  accountId: uuid('account_id').notNull(),
+  importId: uuid('import_id').notNull(),
+  postedDate: date('posted_date').notNull(), // BR calendar day as printed by the bank
+  amountCents: bigint('amount_cents', { mode: 'number' }).notNull(), // signed: credit > 0
+  fitid: varchar('fitid', { length: 100 }),
+  memo: varchar('memo', { length: 255 }).notNull(),
+  trnType: varchar('trn_type', { length: 20 }),
+  checkNumber: varchar('check_number', { length: 30 }),
+  identityKey: varchar('identity_key', { length: 64 }).notNull(),
+  occurrence: integer('occurrence').notNull(),
+  fingerprint: varchar('fingerprint', { length: 64 }).notNull(),
+  suspectedDuplicateOf: uuid('suspected_duplicate_of'),
+  suspectReviewedAt: timestamp('suspect_reviewed_at', { withTimezone: true }),
+  suspectReviewedBy: uuid('suspect_reviewed_by'),
+  ignoredAt: timestamp('ignored_at', { withTimezone: true }),
+  ignoredBy: uuid('ignored_by'),
+  ignoreReason: varchar('ignore_reason', { length: 255 }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('bank_statement_lines_tenant_id_id_key').on(table.tenantId, table.id),
+  foreignKey({
+    name: 'bank_statement_lines_account_fk',
+    columns: [table.tenantId, table.accountId],
+    foreignColumns: [financialAccounts.tenantId, financialAccounts.id],
+  }),
+  foreignKey({
+    name: 'bank_statement_lines_import_fk',
+    columns: [table.tenantId, table.importId],
+    foreignColumns: [bankStatementImports.tenantId, bankStatementImports.id],
+  }),
+  uniqueIndex('uq_bank_statement_lines_identity').on(table.tenantId, table.accountId, table.identityKey, table.occurrence),
+  index('idx_bank_statement_lines_account_date').on(table.tenantId, table.accountId, table.postedDate),
+  index('idx_bank_statement_lines_fingerprint').on(table.tenantId, table.accountId, table.fingerprint),
+])
+
+// Append-only: an allocation is only ever undone (undone_at), never edited or
+// deleted. A trigger keeps active allocations within both the line's and the
+// movement's amount, inside one account and one direction.
+export const bankReconciliationAllocations = floraclinSchema.table('bank_reconciliation_allocations', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  accountId: uuid('account_id').notNull(),
+  lineId: uuid('line_id').notNull(),
+  movementId: uuid('movement_id').notNull(),
+  amountCents: bigint('amount_cents', { mode: 'number' }).notNull(),
+  createdBy: uuid('created_by').notNull().references(() => users.id),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  undoneAt: timestamp('undone_at', { withTimezone: true }),
+  undoneBy: uuid('undone_by').references(() => users.id),
+}, (table) => [
+  foreignKey({
+    name: 'bank_reconciliation_allocations_account_fk',
+    columns: [table.tenantId, table.accountId],
+    foreignColumns: [financialAccounts.tenantId, financialAccounts.id],
+  }),
+  foreignKey({
+    name: 'bank_reconciliation_allocations_line_fk',
+    columns: [table.tenantId, table.lineId],
+    foreignColumns: [bankStatementLines.tenantId, bankStatementLines.id],
+  }),
+  foreignKey({
+    name: 'bank_reconciliation_allocations_movement_fk',
+    columns: [table.tenantId, table.movementId],
+    foreignColumns: [cashMovements.tenantId, cashMovements.id],
+  }),
+  index('idx_bank_allocations_line').on(table.tenantId, table.lineId).where(sql`undone_at IS NULL`),
+  index('idx_bank_allocations_movement').on(table.tenantId, table.movementId).where(sql`undone_at IS NULL`),
 ])
 
 // ─── PAYMENT RECORDS ─────────────────────────────────────────────────
