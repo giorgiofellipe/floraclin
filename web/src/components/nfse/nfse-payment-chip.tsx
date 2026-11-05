@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { ChevronDownIcon, FileTextIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -55,7 +56,7 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
   if (!nfse && !canEmitNew) return null
 
   const chip = nfse ? chipOf(nfse) : null
-  const hasMenu = hasDocument || canCancel || canRetry || canEmitNew
+  const hasMenu = hasDocument || canCancel || canRetry
 
   return (
     <>
@@ -102,9 +103,20 @@ export function NfsePaymentChip({ payment, canEmit, canCancel: roleCanCancel, on
               </DropdownMenuItem>
             )}
             {canRetry && <DropdownMenuItem onClick={() => onEmit(payment.id)}>Tentar de novo</DropdownMenuItem>}
-            {canEmitNew && <DropdownMenuItem onClick={() => onEmit(payment.id)}>Emitir NFS-e</DropdownMenuItem>}
           </DropdownMenuContent>
         </DropdownMenu>
+      )}
+      {canEmitNew && (
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-6 px-2 text-[10px] text-forest hover:bg-sage/10"
+          data-testid="nfse-emit"
+          onClick={() => onEmit(payment.id)}
+        >
+          <FileTextIcon className="h-3 w-3" />
+          Emitir NFS-e
+        </Button>
       )}
       {nfse && <CancelNfseDialog documentId={nfse.id} open={cancelOpen} onOpenChange={setCancelOpen} />}
     </>
