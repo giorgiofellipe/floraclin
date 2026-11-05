@@ -154,6 +154,11 @@ const EXEMPT_MUTATING_ROUTES: Record<string, string> = {
   // `integrations/meta/businesses/route.ts` is the same kind of read as a GET
   // and the rules never reach it at all.
   'integrations/meta/datasets/route.ts': 'reads the Graph API; POST only to keep the access token out of the URL',
+  // POST only because it carries a multipart file upload. It parses the OFX
+  // and summarises it against existing lines; the commit is the sibling
+  // `imports/route.ts`, which calls requireWrite. Still role-gated to Owner
+  // and Financeiro by reconciliationRoute's read mode.
+  'financial/reconciliation/imports/preview/route.ts': 'OFX upload preview, parses and reads only; POST only for the multipart file',
 
   // Platform-admin only. Gated by requirePlatformAdmin / ctx.isPlatformAdmin,
   // a strictly stronger check that subscriptionGate already exempts anyway,

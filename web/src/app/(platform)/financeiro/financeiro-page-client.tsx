@@ -3,6 +3,7 @@
 import { lazy, Suspense, useCallback } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
+import { useFinancialAccounts } from '@/hooks/queries/use-financial-accounts'
 import { FinancialList } from '@/components/financial/financial-list'
 import { cn } from '@/lib/utils'
 import FinancialLoading from './loading'
@@ -13,6 +14,7 @@ import {
   UsersIcon,
   BarChart3Icon,
   CreditCardIcon,
+  LandmarkIcon,
 } from 'lucide-react'
 
 const ExpenseList = lazy(() =>
@@ -31,6 +33,11 @@ const PractitionerPLView = lazy(() =>
     default: m.PractitionerPLView,
   }))
 )
+const ReconciliationView = lazy(() =>
+  import('@/components/financial/reconciliation/reconciliation-view').then((m) => ({
+    default: m.ReconciliationView,
+  }))
+)
 const RevenueChart = lazy(() =>
   import('@/components/financial/revenue-chart').then((m) => ({ default: m.RevenueChart }))
 )
@@ -40,6 +47,7 @@ const TABS = [
   { value: 'expenses', label: 'Despesas', icon: ArrowDownCircleIcon },
   { value: 'ledger', label: 'Extrato', icon: BookOpenIcon },
   { value: 'card-repasses', label: 'Repasses', icon: CreditCardIcon },
+  { value: 'reconciliation', label: 'Conciliação', icon: LandmarkIcon },
   { value: 'practitioner-pl', label: 'Por Profissional', icon: UsersIcon },
   { value: 'overview', label: 'Visão Geral', icon: BarChart3Icon },
 ] as const
@@ -49,6 +57,10 @@ type TabValue = (typeof TABS)[number]['value']
 function isValidTab(value: string | null): value is TabValue {
   return TABS.some((t) => t.value === value)
 }
+
+// Bank statements are for the owner and the Financeiro role only (decision on #88).
+// The server enforces it; this only keeps the tab away from everyone else.
+const MANAGER_ONLY_TABS: readonly TabValue[] = ['reconciliation']
 
 function TabFallback() {
   return (
@@ -65,8 +77,13 @@ export function FinanceiroPageClient() {
   const router = useRouter()
   const pathname = usePathname()
 
+  const { data: accountsResponse } = useFinancialAccounts()
+  const canManageAccounts = accountsResponse?.canManage === true
+  const visibleTabs = TABS.filter((t) => canManageAccounts || !MANAGER_ONLY_TABS.includes(t.value))
+
   const tabParam = searchParams.get('tab')
-  const activeTab: TabValue = isValidTab(tabParam) ? tabParam : 'receivables'
+  const activeTab: TabValue =
+    isValidTab(tabParam) && visibleTabs.some((t) => t.value === tabParam) ? tabParam : 'receivables'
 
   const handleTabChange = useCallback(
     (tab: string) => {
@@ -94,7 +111,7 @@ export function FinanceiroPageClient() {
     <div className="space-y-4">
       {/* Tab navigation */}
       <div className="flex items-center gap-1 rounded-lg bg-white p-1 shadow-sm border border-[#E8ECEF]" data-testid="financial-tabs">
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.value
           return (
@@ -138,6 +155,12 @@ export function FinanceiroPageClient() {
         {activeTab === 'card-repasses' && (
           <Suspense fallback={<TabFallback />}>
             <CardRepassesView />
+          </Suspense>
+        )}
+
+        {activeTab === 'reconciliation' && (
+          <Suspense fallback={<TabFallback />}>
+            <ReconciliationView />
           </Suspense>
         )}
 
