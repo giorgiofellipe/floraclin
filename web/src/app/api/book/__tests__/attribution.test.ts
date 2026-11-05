@@ -7,7 +7,7 @@
  * unconditional createNewProspect raises 23505 and the route's catch turns
  * it into a 500. See docs/plans/2026-08-28-meta-conversions-cook.md, Task D6.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 
 const TENANT_ID = 'tenant-1'
@@ -34,7 +34,7 @@ vi.mock('@/db/client', () => ({
 }))
 
 vi.mock('@/db/queries/appointments', () => ({
-  checkTimeConflict: vi.fn(async () => false),
+  getAvailableSlots: vi.fn(async () => [{ start: '10:00', end: '10:30' }]),
   createAppointment: vi.fn(async (_tenantId: string, data: Record<string, unknown>) => ({
     id: 'appt-1',
     date: data.date,
@@ -106,10 +106,12 @@ function queueSelects() {
     .mockReturnValueOnce(makeChain([{ id: PRACTITIONER_ID }]))
 }
 
+// A fresh client IP per request keeps the route's per-IP booking limit out of this suite.
+let ipCounter = 0
 function makeRequest(body: Record<string, unknown>) {
   return new NextRequest('http://localhost/api/book/clinica-teste', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'x-forwarded-for': `10.0.1.${++ipCounter}` },
     body: JSON.stringify(body),
   })
 }
@@ -142,6 +144,10 @@ function newProspectRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('POST /api/book/[slug] attribution', () => {
+  // The booking accepts only a future slot, and bookingBody() books 2026-09-01.
+  beforeAll(() => vi.setSystemTime(new Date('2026-08-31T09:00:00.000Z')))
+  afterAll(() => vi.useRealTimers())
+
   beforeEach(() => {
     vi.clearAllMocks()
     updateProspectMock.mockResolvedValue({ id: 'prospect-1', stage: 'agendado' })

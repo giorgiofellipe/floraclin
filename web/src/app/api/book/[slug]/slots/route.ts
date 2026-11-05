@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
 import { eq, and, isNull } from 'drizzle-orm'
-import { getAvailableSlots } from '@/db/queries/appointments'
+import { getBookableSlots } from '@/lib/booking-slots'
+import { brToday } from '@/lib/dates'
 import { handleApiError } from '@/lib/api-error'
 import { isSubscriptionActive } from '@/lib/plans'
 
@@ -37,11 +38,7 @@ export async function GET(
       )
     }
 
-    // Don't allow booking past dates
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const requestedDate = new Date(date + 'T12:00:00')
-    if (requestedDate < today) {
+    if (date < brToday()) {
       return NextResponse.json({ slots: [] })
     }
 
@@ -81,12 +78,7 @@ export async function GET(
       )
     }
 
-    const slots = await getAvailableSlots(
-      tenant[0].id,
-      practitionerId,
-      date,
-      30 // 30 minute slots for online booking
-    )
+    const slots = await getBookableSlots(tenant[0].id, practitionerId, date)
 
     // Format slots for the frontend
     return NextResponse.json({

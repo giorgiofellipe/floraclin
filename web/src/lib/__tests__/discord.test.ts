@@ -125,6 +125,22 @@ describe('buildDiscordPayload', () => {
     expect(embed.fields).toContainEqual({ name: 'Localização', value: 'Não informado', inline: true })
   })
 
+  it('formats onboarding.import_requested with the contact the team needs to collect the files', () => {
+    const payload = buildDiscordPayload({
+      kind: 'onboarding.import_requested',
+      tenantId: 'tenant-1',
+      tenantName: 'Clínica Bela Pele',
+      phone: null,
+      ownerEmail: 'ana@clinica.test',
+    })
+
+    const embed = payload.embeds[0]
+    expect(embed.title).toBe('Pedido de importação')
+    expect(embed.fields).toContainEqual({ name: 'Clínica', value: '`Clínica Bela Pele`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'Telefone', value: '`Não informado`', inline: true })
+    expect(embed.fields).toContainEqual({ name: 'E-mail', value: '`ana@clinica.test`', inline: true })
+  })
+
   it('formats clinic.approved with title and clinic field', () => {
     const payload = buildDiscordPayload({
       kind: 'clinic.approved',

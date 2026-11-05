@@ -1,8 +1,9 @@
 import { db } from '@/db/client'
 import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic-placeholder'
-import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
+import { tenants, users, tenantUsers, patients, financialEntries, plans, whatsappAutomations } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
+import { mergeSettings } from '@/db/queries/tenants'
 import { changeBookingSlug, isBookingSlugFree, isSlugReservedForAnotherTenant } from '@/db/queries/booking-slugs'
 import { BOOKING_SLUG_MESSAGES } from '@/lib/booking-slug'
 import { BusinessError } from '@/lib/errors'
@@ -230,7 +231,7 @@ export async function updateTenantAdmin(
     const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
     if (data.name !== undefined) updateData.name = data.name
-    if (data.settings !== undefined) updateData.settings = data.settings
+    if (data.settings !== undefined) updateData.settings = mergeSettings(data.settings)
     if (data.isActive !== undefined) {
       updateData.deletedAt = data.isActive ? null : new Date()
     }
@@ -413,6 +414,13 @@ export async function insertSelfSignupTenantBase(
   if (!row) {
     throw new Error('Failed to create tenant during signup')
   }
+
+  await tx.insert(whatsappAutomations).values({
+    tenantId: row.id,
+    trigger: 'appointment_confirmation',
+    enabled: true,
+    firstEnabledAt: new Date(),
+  })
 
   return {
     id: row.id,

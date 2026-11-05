@@ -106,8 +106,7 @@ export function ClinicSettingsForm({ initialData, embedded = false, onChange, ph
         address: Object.values(address).some(v => v) ? address : undefined,
         workingHours,
         settings: {
-          ...((initialData.settings as Record<string, unknown>) ?? {}),
-          monthly_revenue_goal: monthlyGoalDisplay ? parseCurrency(monthlyGoalDisplay) : undefined,
+          monthly_revenue_goal: monthlyGoalDisplay ? parseCurrency(monthlyGoalDisplay) : null,
         },
       })
       toast.success('Configurações atualizadas com sucesso')

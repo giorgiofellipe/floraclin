@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { tenants, tenantUsers, users } from '@/db/schema'
+import { tenants, tenantUsers, users, whatsappAutomations } from '@/db/schema'
 import { createSelfSignupTenant } from '../admin-tenants'
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
@@ -22,8 +22,12 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     if (!userIds.length) return
     const ids = userIds.splice(0)
     const memberships = await db.select({ tenantId: tenantUsers.tenantId }).from(tenantUsers).where(inArray(tenantUsers.userId, ids))
+    const tenantIds = memberships.map((m) => m.tenantId)
     await db.delete(tenantUsers).where(inArray(tenantUsers.userId, ids))
-    if (memberships.length) await db.delete(tenants).where(inArray(tenants.id, memberships.map((m) => m.tenantId)))
+    if (tenantIds.length) {
+      await db.delete(whatsappAutomations).where(inArray(whatsappAutomations.tenantId, tenantIds))
+      await db.delete(tenants).where(inArray(tenants.id, tenantIds))
+    }
     await db.delete(users).where(inArray(users.id, ids))
   })
 
@@ -42,6 +46,10 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     expect(tenant.settings).toEqual({ clinic_name_placeholder: true, clinic_slug_placeholder: true })
     // No lifecycle notice was shown on this path: onboarding stamps it.
     expect(tenant.lifecycleNoticeAt).toBeNull()
+    const automations = await db.select().from(whatsappAutomations).where(eq(whatsappAutomations.tenantId, tenant.id))
+    expect(automations).toEqual([
+      expect.objectContaining({ trigger: 'appointment_confirmation', enabled: true, templateId: null, config: null, firstEnabledAt: expect.any(Date) }),
+    ])
   })
 
   it('stores plain settings for a clinic named on the form', async () => {

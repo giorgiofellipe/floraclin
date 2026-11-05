@@ -49,3 +49,13 @@ export function useUpdateBookingSettings() {
     },
   })
 }
+
+export function useRequestImportHelp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (): Promise<{ requestedAt: string }> => mutateJson('/api/onboarding/import-request', 'POST'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenant.all })
+    },
+  })
+}

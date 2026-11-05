@@ -3,6 +3,7 @@ import { tenants, procedureTypes, consentTemplates } from '@/db/schema'
 import { eq, and, isNull, asc, desc, sql } from 'drizzle-orm'
 import { fetchLogoDataUri, signLogoPath } from '@/lib/logo'
 import type { TenantHeaderInfo } from '@/lib/tenant-header'
+import { IMPORT_HELP_REQUESTED_SETTING } from '@/lib/import-help'
 import type { UpdateTenantInput, ProcedureTypeInput } from '@/validations/tenant'
 
 export type Tenant = typeof tenants.$inferSelect
@@ -87,7 +88,7 @@ export async function updateTenant(
   if (data.email !== undefined) updateData.email = data.email || null
   if (data.address !== undefined) updateData.address = data.address || null
   if (data.workingHours !== undefined) updateData.workingHours = data.workingHours
-  if (data.settings !== undefined) updateData.settings = data.settings
+  if (data.settings !== undefined) updateData.settings = mergeSettings(data.settings)
 
   const [tenant] = await db
     .update(tenants)
@@ -102,18 +103,18 @@ export async function updateTenantSettings(
   tenantId: string,
   settings: Record<string, unknown>
 ): Promise<Tenant | null> {
-  const existing = await getTenant(tenantId)
-  if (!existing) return null
-
-  const merged = { ...(existing.settings as Record<string, unknown> || {}), ...settings }
-
   const [tenant] = await db
     .update(tenants)
-    .set({ settings: merged, updatedAt: new Date() })
+    .set({ settings: mergeSettings(settings), updatedAt: new Date() })
     .where(eq(tenants.id, tenantId))
     .returning()
 
   return tenant ?? null
+}
+
+/** Patches only the given keys, in the database, so concurrent writers keep each other's keys. */
+export function mergeSettings(patch: Record<string, unknown>) {
+  return sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(patch)}::jsonb`
 }
 
 // A phone_number_id in settings is only a claim: any owner can type one. Own
@@ -141,14 +142,47 @@ export async function isPhoneNumberIdClaimedByAnotherTenant(tenantId: string, ph
   return !!row
 }
 
+/**
+ * Stamps the first import help request. `first` is true only for the call
+ * that wrote the stamp, so a double tap or a second tab notifies the team once.
+ */
+export async function markImportHelpRequested(
+  tenantId: string,
+): Promise<
+  | { first: true; requestedAt: string; tenantName: string; phone: string | null }
+  | { first: false; requestedAt: string }
+  | null
+> {
+  const now = new Date().toISOString()
+  const [stamped] = await db
+    .update(tenants)
+    .set({
+      settings: mergeSettings({ [IMPORT_HELP_REQUESTED_SETTING]: now }),
+      updatedAt: new Date(),
+    })
+    .where(and(eq(tenants.id, tenantId), sql`${tenants.settings}->>${IMPORT_HELP_REQUESTED_SETTING}::text is null`))
+    .returning({ tenantName: tenants.name, phone: tenants.phone })
+  if (stamped) return { first: true, requestedAt: now, ...stamped }
+
+  const [row] = await db
+    .select({ requestedAt: sql<string | null>`${tenants.settings}->>${IMPORT_HELP_REQUESTED_SETTING}::text` })
+    .from(tenants)
+    .where(eq(tenants.id, tenantId))
+    .limit(1)
+  return row?.requestedAt ? { first: false, requestedAt: row.requestedAt } : null
+}
+
 const onboardingOpen = (tenantId: string) =>
   and(
     eq(tenants.id, tenantId),
     sql`coalesce(${tenants.settings}, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
   )
 
+const ONBOARDING_DEFAULT_SETTINGS = { online_booking_enabled: true }
+
 /**
- * Sets `onboarding_completed: true` (plus `extraSettings`) and reports
+ * Sets `onboarding_completed: true` (plus `extraSettings` and any missing
+ * ONBOARDING_DEFAULT_SETTINGS) and reports
  * whether this call is the one that completed onboarding. The flag is the
  * marker for both sign-up paths, so a clinic is reported as completed once:
  * a repeated or concurrent save finds the flag already set and gets false.
@@ -162,7 +196,7 @@ export async function markOnboardingCompleted(
   const rows = await db
     .update(tenants)
     .set({
-      settings: sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${patch}::jsonb`,
+      settings: sql`${JSON.stringify(ONBOARDING_DEFAULT_SETTINGS)}::jsonb || coalesce(${tenants.settings}, '{}'::jsonb) || ${patch}::jsonb`,
       updatedAt: new Date(),
     })
     .where(onboardingOpen(tenantId))
@@ -202,7 +236,7 @@ export async function saveOnboardingProgress(
     .update(tenants)
     .set({
       ...clinic,
-      settings: sql`coalesce(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(settings)}::jsonb`,
+      settings: mergeSettings(settings),
       updatedAt: new Date(),
     })
     .where(onboardingOpen(tenantId))
