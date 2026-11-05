@@ -27,7 +27,7 @@ export function defaultKindForMethod(method: string | null | undefined): Default
   return method === 'cash' ? 'cash' : 'bank'
 }
 
-const PROVISIONED_NAMES: Record<DefaultKind, string> = { cash: 'Caixa', bank: 'Conta principal' }
+const PROVISIONED_NAMES: Record<DefaultKind, string> = { cash: 'Caixa', bank: 'Banco' }
 
 /** Same name 0050/0051 give the account holding movements from before accounts. */
 const LEGACY_ACCOUNT_NAME = 'Geral (antes das contas)'
@@ -46,8 +46,8 @@ export interface AccountChoice {
  * clinic and be active. Otherwise: the configured destination, then the
  * clinic's default account for the method's kind, then the legacy account of a
  * clinic that had movements before accounts existed. A clinic with none of
- * those gets its default "Caixa" or "Conta principal" created here, which is
- * how a new clinic is provisioned.
+ * those gets its default "Caixa" or "Banco" created here, which is
+ * the safety net for clinics created before accounts existed.
  */
 export async function resolveMovementAccountId(
   tx: Pick<typeof db, 'select' | 'insert'>,
@@ -96,6 +96,12 @@ export function defaultAccountResolver(tx: Pick<typeof db, 'select' | 'insert'>,
     }
     return id
   }
+}
+
+/** Every clinic starts with a cash drawer and a bank account, so nobody sets up accounts before the first payment. */
+export async function provisionDefaultAccounts(tx: Pick<typeof db, 'select' | 'insert'>, tenantId: string): Promise<void> {
+  await provisionDefaultAccount(tx, tenantId, 'cash')
+  await provisionDefaultAccount(tx, tenantId, 'bank')
 }
 
 async function provisionDefaultAccount(tx: Pick<typeof db, 'select' | 'insert'>, tenantId: string, kind: DefaultKind): Promise<string> {

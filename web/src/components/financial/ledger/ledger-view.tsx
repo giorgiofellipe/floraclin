@@ -18,7 +18,7 @@ import { useFinancialAccounts } from '@/hooks/queries/use-financial-accounts'
 import { LedgerSummaryCards } from './ledger-summary-cards'
 import { LedgerExport } from './ledger-export'
 import { AccountBalances } from './account-balances'
-import { TransferDialog } from './transfer-dialog'
+import { TransferDialog, type TransferPreset } from './transfer-dialog'
 import {
   ArrowUpRightIcon,
   ArrowDownRightIcon,
@@ -49,6 +49,7 @@ export function LedgerView() {
   const [categoryId, setCategoryId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [transferOpen, setTransferOpen] = useState(false)
+  const [transferPreset, setTransferPreset] = useState<TransferPreset | null>(null)
   const [page, setPage] = useState(1)
 
   const filters = {
@@ -72,6 +73,10 @@ export function LedgerView() {
   const accounts = accountsResponse?.data ?? []
   const canManageAccounts = accountsResponse?.canManage ?? false
   const liveAccounts = accounts.filter((a) => !a.archivedAt)
+  const drawer = liveAccounts.find((a) => a.kind === 'cash' && a.isDefault)
+  const bank = liveAccounts.find((a) => a.kind === 'bank' && a.isDefault)
+  const depositPreset: TransferPreset | null =
+    drawer && bank ? { fromAccountId: drawer.id, toAccountId: bank.id } : null
 
   const accountFilterItems = useMemo(() => {
     const items: Record<string, string> = { all: 'Todas' }
@@ -134,10 +139,26 @@ export function LedgerView() {
               variant="outline"
               size="sm"
               className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
-              onClick={() => setTransferOpen(true)}
+              onClick={() => {
+                setTransferPreset(null)
+                setTransferOpen(true)
+              }}
             >
               <ArrowLeftRightIcon data-icon="inline-start" />
-              Transferir entre contas
+              Mover dinheiro
+            </Button>
+          )}
+          {depositPreset && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+              onClick={() => {
+                setTransferPreset(depositPreset)
+                setTransferOpen(true)
+              }}
+            >
+              Depositar no banco
             </Button>
           )}
         </div>
@@ -352,7 +373,7 @@ export function LedgerView() {
         </div>
       )}
 
-      <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} accounts={liveAccounts} />
+      <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} accounts={liveAccounts} preset={transferPreset} />
     </div>
   )
 }

@@ -65,4 +65,10 @@ SET "account_id" = fa."id"
 FROM "floraclin"."financial_accounts" fa
 WHERE cm."account_id" IS NULL
   AND fa."tenant_id" = cm."tenant_id"
-  AND fa."kind" = 'legacy';
+  AND fa."kind" = 'legacy';--> statement-breakpoint
+INSERT INTO "floraclin"."financial_accounts" ("tenant_id", "kind", "name", "is_default")
+SELECT t."id", k."kind", k."name", true
+FROM "floraclin"."tenants" t
+CROSS JOIN (VALUES ('cash', 'Caixa'), ('bank', 'Banco')) AS k("kind", "name")
+WHERE t."deleted_at" IS NULL
+ON CONFLICT DO NOTHING;

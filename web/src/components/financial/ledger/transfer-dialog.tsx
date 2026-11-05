@@ -22,28 +22,45 @@ import { useCreateTransfer, type FinancialAccount } from '@/hooks/queries/use-fi
 import { transferSchema } from '@/validations/financial-accounts'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { brToday } from '@/lib/dates'
+import { formatCurrency } from '@/lib/utils'
+
+export interface TransferPreset {
+  fromAccountId: string
+  toAccountId: string
+}
 
 export function TransferDialog({
   open,
   onOpenChange,
   accounts,
+  preset,
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   accounts: FinancialAccount[]
+  /** Pre-fills the accounts, like the cash drawer → bank deposit shortcut. */
+  preset?: TransferPreset | null
 }) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        {open && <TransferForm accounts={accounts} onDone={() => onOpenChange(false)} />}
+        {open && <TransferForm accounts={accounts} preset={preset} onDone={() => onOpenChange(false)} />}
       </DialogContent>
     </Dialog>
   )
 }
 
-function TransferForm({ accounts, onDone }: { accounts: FinancialAccount[]; onDone: () => void }) {
-  const [fromAccountId, setFromAccountId] = useState('')
-  const [toAccountId, setToAccountId] = useState('')
+function TransferForm({
+  accounts,
+  preset,
+  onDone,
+}: {
+  accounts: FinancialAccount[]
+  preset?: TransferPreset | null
+  onDone: () => void
+}) {
+  const [fromAccountId, setFromAccountId] = useState(preset?.fromAccountId ?? '')
+  const [toAccountId, setToAccountId] = useState(preset?.toAccountId ?? '')
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(brToday())
   const [description, setDescription] = useState('')
@@ -65,7 +82,7 @@ function TransferForm({ accounts, onDone }: { accounts: FinancialAccount[]; onDo
     }
     try {
       await createTransfer.mutateAsync(parsed.data)
-      toast.success('Transferência registrada')
+      toast.success(`${formatCurrency(parsed.data.amount)} movidos. Sua receita não mudou.`)
       onDone()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao registrar transferência')
@@ -75,7 +92,7 @@ function TransferForm({ accounts, onDone }: { accounts: FinancialAccount[]; onDo
   return (
     <>
       <DialogHeader>
-        <DialogTitle>Transferir entre contas</DialogTitle>
+        <DialogTitle>Mover dinheiro</DialogTitle>
         <DialogDescription>
           Um depósito do caixa no banco, um saque da adquirente. Sai de uma conta e entra na outra no mesmo dia,
           sem contar como receita ou despesa.

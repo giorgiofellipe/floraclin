@@ -295,7 +295,7 @@ export function BulkActionBar({
               </>
             )}
             {!cardMethod && payDialogOpen && (
-              <AccountSelect value={accountId} onChange={setAccountId} label="Conta de destino" />
+              <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} />
             )}
           </div>
           <DialogFooter className="pt-2">

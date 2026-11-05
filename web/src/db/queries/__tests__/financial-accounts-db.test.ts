@@ -170,7 +170,7 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
     expect(await balanceOf(CLINIC, bank.id)).toBe(830)
   })
 
-  it('provisions a new clinic one Caixa and one Conta principal on its first movements', async () => {
+  it('provisions a new clinic one Caixa and one Banco on its first movements', async () => {
     const drawer = await resolveMovementAccountId(db, NEW_CLINIC, { method: 'cash' })
     expect(await resolveMovementAccountId(db, NEW_CLINIC, { method: 'cash' })).toBe(drawer)
     const main = await resolveMovementAccountId(db, NEW_CLINIC, { method: 'pix' })
@@ -179,7 +179,7 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
     expect(accounts.map((a) => [a.id, a.kind, a.name, a.isDefault]).sort()).toEqual(
       [
         [drawer, 'cash', 'Caixa', true],
-        [main, 'bank', 'Conta principal', true],
+        [main, 'bank', 'Banco', true],
       ].sort(),
     )
   })

@@ -237,7 +237,7 @@ export function PartialPaymentDialog({
               onChange={setCard}
             />
           ) : (
-            <AccountSelect value={accountId} onChange={setAccountId} label="Conta de destino" />
+            <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} />
           )}
 
           {/* Backdated payment date */}

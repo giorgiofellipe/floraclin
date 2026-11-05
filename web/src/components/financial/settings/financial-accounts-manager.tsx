@@ -61,7 +61,7 @@ export function FinancialAccountsManager() {
       <div className="space-y-1">
         {accounts.length === 0 && (
           <p className="p-2.5 text-sm text-mid">
-            Nenhuma conta ainda. O primeiro pagamento cria o Caixa e a Conta principal automaticamente.
+            Nenhuma conta ainda. Todo pagamento vai para o Caixa ou para o Banco automaticamente.
           </p>
         )}
         {accounts.map((account) => (

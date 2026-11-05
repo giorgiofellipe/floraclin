@@ -330,7 +330,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                 <SelectContent />
               </Select>
             </div>
-            <AccountSelect value={accountId} onChange={setAccountId} label="Conta de origem" />
+            <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} label="Sai de" />
             <div className="space-y-2">
               <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
               <DatePicker
