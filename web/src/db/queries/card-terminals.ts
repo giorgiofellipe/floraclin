@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { cardTerminals } from '@/db/schema'
-import { and, asc, count, desc, eq, isNull } from 'drizzle-orm'
+import { cardTerminals, financialAccounts } from '@/db/schema'
+import { and, asc, count, desc, eq, inArray, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { BusinessError } from '@/lib/errors'
@@ -22,6 +22,29 @@ function toColumns(data: CardTerminalInput) {
     creditRates: data.creditRates.map((rate) => rate.toFixed(2)),
     creditPayoutMode: data.creditPayoutMode,
     creditLumpSumDays: data.creditLumpSumDays,
+    payoutAccountId: data.payoutAccountId ?? null,
+  }
+}
+
+// The (tenant_id, payout_account_id) foreign key already refuses another
+// clinic's account; this turns that into a 404 and keeps cash drawers and
+// archived accounts out of a payout.
+async function assertPayoutAccount(tx: typeof db, tenantId: string, accountId: string | null | undefined) {
+  if (!accountId) return
+  const [account] = await tx
+    .select({ id: financialAccounts.id })
+    .from(financialAccounts)
+    .where(
+      and(
+        eq(financialAccounts.tenantId, tenantId),
+        eq(financialAccounts.id, accountId),
+        isNull(financialAccounts.archivedAt),
+        inArray(financialAccounts.kind, ['bank', 'acquirer']),
+      ),
+    )
+    .limit(1)
+  if (!account) {
+    throw new BusinessError('FINANCIAL_ACCOUNT_NOT_FOUND', 'Conta de recebimento não encontrada ou arquivada')
   }
 }
 
@@ -39,6 +62,8 @@ export async function createCardTerminal(
   data: CardTerminalInput,
 ) {
   return withTransaction(async (tx) => {
+    await assertPayoutAccount(tx, tenantId, data.payoutAccountId)
+
     const [{ value: existing }] = await tx
       .select({ value: count() })
       .from(cardTerminals)
@@ -79,6 +104,7 @@ export async function updateCardTerminal(
       .where(and(activeInTenant(tenantId), eq(cardTerminals.id, id)))
       .limit(1)
     if (!current) throw notFound()
+    await assertPayoutAccount(tx, tenantId, data.payoutAccountId)
 
     if (data.isDefault) {
       await tx

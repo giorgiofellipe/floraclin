@@ -16,6 +16,7 @@ import { AuditLogViewer } from '@/components/audit/audit-log-viewer'
 import { FinancialSettingsForm } from '@/components/financial/settings/financial-settings-form'
 import { ExpenseCategoriesManager } from '@/components/financial/settings/expense-categories-manager'
 import { CardTerminalsManager } from '@/components/financial/settings/card-terminals-manager'
+import { FinancialAccountsManager } from '@/components/financial/settings/financial-accounts-manager'
 import { NfseSettingsTab } from '@/components/nfse/nfse-settings-tab'
 import { WhatsAppSettingsForm } from '@/components/settings/whatsapp-settings-form'
 import { BillingSettings } from '@/components/settings/billing-settings'
@@ -517,6 +518,7 @@ export function SettingsPageClient({
               {effectiveTab === 'financeiro' && (
                 <div className="space-y-8">
                   <FinancialSettingsForm />
+                  <FinancialAccountsManager />
                   <ExpenseCategoriesManager />
                   <CardTerminalsManager />
                 </div>

@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import type { PaymentMethod } from '@/types'
+import { accountIdField } from './financial-accounts'
 
 const paymentMethods: PaymentMethod[] = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
 
@@ -18,6 +19,7 @@ export const payExpenseInstallmentSchema = z.object({
     message: 'Método de pagamento inválido',
   }),
   paidAt: z.string().datetime({ offset: true }).optional(),
+  accountId: accountIdField,
 })
 
 export const expenseFilterSchema = z.object({

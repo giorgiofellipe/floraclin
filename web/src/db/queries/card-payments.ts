@@ -13,6 +13,7 @@ import { withTransaction } from '@/lib/tenant'
 import { brToday, parseBrDate, toBrYmd } from '@/lib/dates'
 import { createAuditLog } from '@/lib/audit'
 import { BusinessError } from '@/lib/errors'
+import { resolveMovementAccountId, reversalAccountId } from './financial-accounts'
 import {
   buildCardSchedule,
   cardInstallmentCountFor,
@@ -178,6 +179,7 @@ export async function postDueRepassesTx(
       description: cardPayments.description,
       method: cardPayments.method,
       terminalName: cardTerminals.name,
+      payoutAccountId: cardTerminals.payoutAccountId,
     })
     .from(cardRepasses)
     .innerJoin(
@@ -206,6 +208,18 @@ export async function postDueRepassesTx(
     .groupBy(cardRepasses.cardPaymentId)
   const totalByPayment = new Map(totals.map((t) => [t.cardPaymentId, Number(t.total)]))
 
+  // The card sale itself writes no movement: each repasse is the only cash it
+  // produces, posted once, to the terminal's payout account (acquirer or bank).
+  const accountByTerminalPayout = new Map<string | null, string>()
+  const payoutAccountFor = async (payoutAccountId: string | null) => {
+    let accountId = accountByTerminalPayout.get(payoutAccountId)
+    if (!accountId) {
+      accountId = await resolveMovementAccountId(tx, tenantId, { preferredAccountId: payoutAccountId })
+      accountByTerminalPayout.set(payoutAccountId, accountId)
+    }
+    return accountId
+  }
+
   for (const repasse of due) {
     const [movement] = await tx
       .insert(cashMovements)
@@ -222,6 +236,7 @@ export async function postDueRepassesTx(
         patientId: repasse.patientId,
         recordedBy: repasse.createdBy,
         cardRepasseId: repasse.id,
+        accountId: await payoutAccountFor(repasse.payoutAccountId),
       })
       .returning({ id: cashMovements.id })
 
@@ -369,6 +384,10 @@ export async function adjustCardRepasse(
         .where(and(eq(cashMovements.id, repasse.cashMovementId!), eq(cashMovements.tenantId, tenantId)))
         .for('update')
 
+      // The adjustment corrects the amount and date where the repasse landed,
+      // so both new legs stay on the original's account.
+      const accountId = await reversalAccountId(tx, tenantId, original.accountId, original.paymentMethod)
+
       const [counter] = await tx
         .insert(cashMovements)
         .values({
@@ -381,6 +400,7 @@ export async function adjustCardRepasse(
           patientId: original.patientId,
           recordedBy: userId,
           cardRepasseId: repasseId,
+          accountId,
         })
         .returning({ id: cashMovements.id })
 
@@ -401,6 +421,7 @@ export async function adjustCardRepasse(
           patientId: original.patientId,
           recordedBy: userId,
           cardRepasseId: repasseId,
+          accountId,
         })
         .returning({ id: cashMovements.id })
 

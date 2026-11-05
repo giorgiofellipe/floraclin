@@ -11,6 +11,9 @@ function notFound(error: unknown) {
   if (error instanceof BusinessError && error.code === 'CARD_TERMINAL_NOT_FOUND') {
     return NextResponse.json({ error: error.message }, { status: 404 })
   }
+  if (error instanceof BusinessError && error.code === 'FINANCIAL_ACCOUNT_NOT_FOUND') {
+    return NextResponse.json({ error: error.message }, { status: 400 })
+  }
   return null
 }
 

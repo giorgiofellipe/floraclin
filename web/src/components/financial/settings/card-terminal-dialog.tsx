@@ -16,7 +16,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateCardTerminal, useUpdateCardTerminal } from '@/hooks/queries/use-card-terminals'
+import { useFinancialAccounts } from '@/hooks/queries/use-financial-accounts'
 import { cardTerminalSchema, type CardTerminalInput } from '@/validations/card-terminals'
 import type { CardTerminalRow } from '@/db/queries/card-terminals'
 
@@ -28,6 +30,7 @@ interface FormState {
   creditRates: string[]
   creditPayoutMode: CardTerminalInput['creditPayoutMode']
   creditLumpSumDays: string
+  payoutAccountId: string | null
 }
 
 const EMPTY_FORM: FormState = {
@@ -38,7 +41,10 @@ const EMPTY_FORM: FormState = {
   creditRates: Array.from({ length: 12 }, () => ''),
   creditPayoutMode: 'per_installment',
   creditLumpSumDays: '1',
+  payoutAccountId: null,
 }
+
+const DEFAULT_PAYOUT = 'default'
 
 function toForm(row: CardTerminalRow): FormState {
   return {
@@ -49,6 +55,7 @@ function toForm(row: CardTerminalRow): FormState {
     creditRates: row.creditRates,
     creditPayoutMode: row.creditPayoutMode,
     creditLumpSumDays: String(row.creditLumpSumDays),
+    payoutAccountId: row.payoutAccountId,
   }
 }
 
@@ -63,6 +70,7 @@ function toInput(form: FormState): unknown {
     creditRates: form.creditRates.map(toNumber),
     creditPayoutMode: form.creditPayoutMode,
     creditLumpSumDays: toNumber(form.creditLumpSumDays),
+    payoutAccountId: form.payoutAccountId,
   }
 }
 
@@ -102,6 +110,15 @@ function CardTerminalForm({
   const createTerminal = useCreateCardTerminal()
   const updateTerminal = useUpdateCardTerminal()
   const saving = createTerminal.isPending || updateTerminal.isPending
+  const { data: accountsData } = useFinancialAccounts()
+  const payoutItems: Record<string, string> = {
+    [DEFAULT_PAYOUT]: 'Conta bancária padrão',
+    ...Object.fromEntries(
+      (accountsData?.data ?? [])
+        .filter((a) => a.kind === 'bank' || a.kind === 'acquirer')
+        .map((a) => [a.id, a.name]),
+    ),
+  }
 
   function patchForm(patch: Partial<FormState>) {
     setForm((current) => ({ ...current, ...patch }))
@@ -223,6 +240,24 @@ function CardTerminalForm({
             dias úteis
           </label>
         </fieldset>
+
+        <div className="space-y-2">
+          <Label>Repasses caem em</Label>
+          <Select
+            items={payoutItems}
+            value={form.payoutAccountId ?? DEFAULT_PAYOUT}
+            onValueChange={(v) => patchForm({ payoutAccountId: !v || v === DEFAULT_PAYOUT ? null : v })}
+          >
+            <SelectTrigger className="w-full" aria-label="Conta dos repasses">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent />
+          </Select>
+          <p className="text-xs text-mid">
+            Cada repasse entra uma única vez nessa conta. Se for a conta da adquirente, registre a
+            transferência para o banco quando o dinheiro for sacado.
+          </p>
+        </div>
 
         <div className="flex items-center gap-3">
           <Switch

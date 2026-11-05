@@ -34,6 +34,7 @@ export const queryKeys = {
     settings: ['financial', 'settings'] as const,
     categories: ['financial', 'categories'] as const,
     cardTerminals: ['financial', 'cardTerminals'] as const,
+    accounts: (includeArchived = false) => ['financial', 'accounts', includeArchived] as const,
     cardRepasses: (filters?: object) => ['financial', 'cardRepasses', filters] as const,
     ledger: (filters?: Record<string, unknown>) => ['financial', 'ledger', filters] as const,
     practitionerPL: (dateFrom: string, dateTo: string, practitionerId?: string) =>

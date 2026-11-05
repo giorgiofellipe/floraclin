@@ -47,6 +47,7 @@ const SAMPLE_ROWS: LedgerReportRow[] = [
     movementDate: new Date('2026-04-10T15:00:00Z'),
     patientName: 'Ana Souza',
     categoryName: null,
+    accountName: 'Conta principal',
   },
 ]
 

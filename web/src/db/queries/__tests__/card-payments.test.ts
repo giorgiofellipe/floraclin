@@ -14,6 +14,15 @@ vi.mock('@/lib/audit', () => ({
   createAuditLog: (...args: unknown[]) => createAuditLogMock(...args),
 }))
 
+// Account resolution is covered in financial-accounts.test.ts; here only which
+// account each repasse movement asks for.
+const resolveMovementAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-payout')
+const reversalAccountIdMock = vi.fn(async (_tx: unknown, _tenant: unknown, original: unknown) => (original as string) ?? 'acct-legacy')
+vi.mock('../financial-accounts', () => ({
+  resolveMovementAccountId: (...args: unknown[]) => resolveMovementAccountIdMock(...args),
+  reversalAccountId: (...args: [unknown, unknown, unknown]) => reversalAccountIdMock(...args),
+}))
+
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const USER_ID = '00000000-0000-0000-0000-0000000000u1'
 const PATIENT_ID = '00000000-0000-0000-0000-00000000p001'
@@ -222,6 +231,7 @@ describe('postDueRepassesTx', () => {
       description: 'Procedimento',
       method: 'credit_card',
       terminalName: 'Stone',
+      payoutAccountId: 'acct-acquirer',
       status: 'pending',
     }
     return routedTx((q) => {
@@ -252,6 +262,20 @@ describe('postDueRepassesTx', () => {
     expect(selectSql(select.fields, select.capture)).toMatch(/ for update of "card_repasses", "card_payments" skip locked$/)
     const claim = updates(log, cardRepasses)[0]
     expect(whereParams(claim.capture)).toEqual(expect.arrayContaining([TENANT, REPASSE_ID, 'pending']))
+  })
+
+  // The sale wrote no movement, so this inflow is the only place the cash
+  // lands: the terminal's payout account, never also a bank default.
+  it("posts the repasse once, to the terminal's payout account", async () => {
+    const { postDueRepassesTx } = await import('../card-payments')
+    const { tx, log } = stateful()
+
+    await postDueRepassesTx(tx as never, TENANT, { todayYmd: TODAY })
+
+    expect(resolveMovementAccountIdMock).toHaveBeenCalledWith(tx, TENANT, { preferredAccountId: 'acct-acquirer' })
+    const movements = inserts(log, cashMovements).map(valuesOf)
+    expect(movements).toHaveLength(1)
+    expect(movements[0]).toMatchObject({ type: 'inflow', amount: '455.05', accountId: 'acct-payout' })
   })
 })
 
@@ -303,6 +327,7 @@ describe('adjustCardRepasse', () => {
         movementDate: parseBrDate('2026-10-10', '12:00:00'),
         paymentMethod: 'credit_card',
         patientId: PATIENT_ID,
+        accountId: 'acct-acquirer',
       },
     }
     let seq = 0
@@ -356,6 +381,11 @@ describe('adjustCardRepasse', () => {
       movementDate: parseBrDate('2026-10-12', '12:00:00'),
       cardRepasseId: REPASSE_ID,
     })
+    // Both legs stay where the repasse landed, whatever the terminal says today.
+    expect([valuesOf(movementOps[0]).accountId, valuesOf(movementOps[2]).accountId]).toEqual([
+      'acct-acquirer',
+      'acct-acquirer',
+    ])
     expect(repasse).toMatchObject({
       netAmount: '440.00',
       feeAmount: '60.00',

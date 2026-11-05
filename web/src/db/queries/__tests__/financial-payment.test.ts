@@ -33,6 +33,13 @@ vi.mock('../card-payments', () => ({
   createCardPaymentTx: (...args: unknown[]) => createCardPaymentTxMock(...args),
 }))
 
+// Account resolution is covered in financial-accounts.test.ts. Here it is one
+// call with a fixed answer, so the scripted tx sequence stays the payment's own.
+const resolveMovementAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-default')
+vi.mock('../financial-accounts', () => ({
+  resolveMovementAccountId: (...args: unknown[]) => resolveMovementAccountIdMock(...args),
+}))
+
 const reportSideEffectFailureMock = vi.fn()
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
@@ -636,6 +643,8 @@ describe('recordPayment by card', () => {
     const link = log.find((q) => q.op === 'update' && tableOf(q) === paymentRecords && q.capture.value && 'cardPaymentId' in (q.capture.value as object))
     expect(link?.capture.value).toEqual({ cardPaymentId: CARD_PAYMENT_ID })
     expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(false)
+    // Its cash arrives with the repasses, on the terminal's payout account.
+    expect(resolveMovementAccountIdMock).not.toHaveBeenCalled()
   })
 
   it('pix still writes the cash inflow and opens no card payment', async () => {
@@ -660,9 +669,12 @@ describe('recordPayment by card', () => {
       paymentMethod: 'pix',
       paidAt: '2026-05-22T15:00:00.000Z',
       expectedTotalDue: 3000,
+      accountId: 'acct-picked',
     })
 
     expect(createCardPaymentTxMock).not.toHaveBeenCalled()
-    expect(log.some((q) => q.op === 'insert' && tableOf(q) === cashMovements)).toBe(true)
+    expect(resolveMovementAccountIdMock).toHaveBeenCalledWith(tx, TENANT, { accountId: 'acct-picked', method: 'pix' })
+    const inflow = log.find((q) => q.op === 'insert' && tableOf(q) === cashMovements)
+    expect(inflow?.capture.value).toMatchObject({ type: 'inflow', amount: '3000.00', accountId: 'acct-default' })
   })
 })

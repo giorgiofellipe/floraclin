@@ -25,6 +25,7 @@ import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { brToday, toPaidAtIso } from '@/lib/dates'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { AccountSelect } from './account-select'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
 import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
@@ -74,6 +75,7 @@ export function BulkActionBar({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
   const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1, expectedRate: null })
+  const [accountId, setAccountId] = useState<string | undefined>()
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
@@ -105,6 +107,7 @@ export function BulkActionBar({
         paymentMethod,
         paidAt: paidAtIso,
         card: toCardPayload(paymentMethod, card),
+        accountId: cardMethod ? undefined : accountId,
       })
       setPayDialogOpen(false)
       onClear()
@@ -290,6 +293,9 @@ export function BulkActionBar({
                   </p>
                 )}
               </>
+            )}
+            {!cardMethod && payDialogOpen && (
+              <AccountSelect value={accountId} onChange={setAccountId} label="Conta de destino" />
             )}
           </div>
           <DialogFooter className="pt-2">

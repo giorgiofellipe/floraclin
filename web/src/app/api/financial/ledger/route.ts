@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       paymentMethod: searchParams.get('paymentMethod') ?? undefined,
       patientId: searchParams.get('patientId') ?? undefined,
       categoryId: searchParams.get('categoryId') ?? undefined,
+      accountId: searchParams.get('accountId') ?? undefined,
       page: searchParams.get('page') ? Number(searchParams.get('page')) : 1,
       limit: searchParams.get('limit') ? Number(searchParams.get('limit')) : 50,
     }

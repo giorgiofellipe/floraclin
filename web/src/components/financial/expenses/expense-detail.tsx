@@ -27,6 +27,7 @@ import {
 import { ExpenseAttachmentUpload } from './expense-attachment-upload'
 import { ExpenseEditDialog } from './expense-edit-dialog'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
+import { AccountSelect } from '@/components/financial/account-select'
 import {
   BanknoteIcon,
   XCircleIcon,
@@ -72,6 +73,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
   const [selectedInstallment, setSelectedInstallment] = useState<Installment | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
   const [paidAt, setPaidAt] = useState('')
+  const [accountId, setAccountId] = useState<string | undefined>()
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [revertDialogOpen, setRevertDialogOpen] = useState(false)
   const [revertTarget, setRevertTarget] = useState<Installment | null>(null)
@@ -92,6 +94,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
     setSelectedInstallment(inst)
     setPaymentMethod('pix')
     setPaidAt('')
+    setAccountId(undefined)
     setPayDialogOpen(true)
   }
 
@@ -102,6 +105,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
         id: selectedInstallment.id,
         paymentMethod,
         paidAt: paidAt ? new Date(paidAt).toISOString() : undefined,
+        accountId,
       })
       setPayDialogOpen(false)
       setSelectedInstallment(null)
@@ -326,6 +330,7 @@ export function ExpenseDetail({ expenseId }: { expenseId: string }) {
                 <SelectContent />
               </Select>
             </div>
+            <AccountSelect value={accountId} onChange={setAccountId} label="Conta de origem" />
             <div className="space-y-2">
               <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
               <DatePicker

@@ -26,6 +26,7 @@ export async function PUT(
       expectedTotalDue: body.expectedTotalDue,
       acceptOverpayment: body.acceptOverpayment,
       card: body.card,
+      accountId: body.accountId,
     })
     if (!parsed.success) {
       return NextResponse.json(

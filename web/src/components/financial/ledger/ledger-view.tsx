@@ -14,11 +14,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { useFinancialAccounts } from '@/hooks/queries/use-financial-accounts'
 import { LedgerSummaryCards } from './ledger-summary-cards'
 import { LedgerExport } from './ledger-export'
+import { AccountBalances } from './account-balances'
+import { TransferDialog } from './transfer-dialog'
 import {
   ArrowUpRightIcon,
   ArrowDownRightIcon,
+  ArrowLeftRightIcon,
   FilterXIcon,
 } from 'lucide-react'
 import { startOfMonth, format } from 'date-fns'
@@ -43,6 +47,8 @@ export function LedgerView() {
   const [paymentMethod, setPaymentMethod] = useState('')
   const [patientId, setPatientId] = useState('')
   const [categoryId, setCategoryId] = useState('')
+  const [accountId, setAccountId] = useState('')
+  const [transferOpen, setTransferOpen] = useState(false)
   const [page, setPage] = useState(1)
 
   const filters = {
@@ -52,6 +58,7 @@ export function LedgerView() {
     paymentMethod: paymentMethod || undefined,
     patientId: patientId || undefined,
     categoryId: categoryId || undefined,
+    accountId: accountId || undefined,
     page,
     limit: 30,
   }
@@ -60,6 +67,22 @@ export function LedgerView() {
   const { data: patients } = useFinancialPatients()
   const { data: categoriesResponse } = useExpenseCategories()
   const categories = categoriesResponse?.data ?? []
+  // Archived accounts stay filterable: their history is still in the ledger.
+  const { data: accountsResponse } = useFinancialAccounts({ includeArchived: true })
+  const accounts = accountsResponse?.data ?? []
+  const canManageAccounts = accountsResponse?.canManage ?? false
+  const liveAccounts = accounts.filter((a) => !a.archivedAt)
+
+  const accountFilterItems = useMemo(() => {
+    const items: Record<string, string> = { all: 'Todas' }
+    for (const a of accountsResponse?.data ?? []) items[a.id] = a.archivedAt ? `${a.name} (arquivada)` : a.name
+    return items
+  }, [accountsResponse])
+
+  const selectAccount = (id: string) => {
+    setAccountId(id)
+    setPage(1)
+  }
 
   const patientFilterItems = useMemo(() => {
     const items: Record<string, string> = { all: 'Todos' }
@@ -79,22 +102,47 @@ export function LedgerView() {
     return items
   }, [categories])
 
-  const hasActiveFilters = movementType !== 'all' || paymentMethod || patientId || categoryId
+  const hasActiveFilters = movementType !== 'all' || paymentMethod || patientId || categoryId || accountId
 
   const clearFilters = () => {
     setMovementType('all')
     setPaymentMethod('')
     setPatientId('')
     setCategoryId('')
+    setAccountId('')
     setPage(1)
   }
 
   const movements = data?.movements ?? []
-  const summary = data?.summary ?? { totalInflows: 0, totalOutflows: 0, netResult: 0, overdueReceivables: 0 }
+  const summary = data?.summary ?? {
+    totalInflows: 0,
+    totalOutflows: 0,
+    netResult: 0,
+    transfersIn: 0,
+    transfersOut: 0,
+    overdueReceivables: 0,
+  }
   const pagination = data?.pagination ?? { total: 0, page: 1, limit: 30, totalPages: 1 }
 
   return (
     <div className="space-y-6">
+      {canManageAccounts && (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <AccountBalances accounts={accounts} selectedId={accountId} onSelect={selectAccount} />
+          {liveAccounts.length >= 2 && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
+              onClick={() => setTransferOpen(true)}
+            >
+              <ArrowLeftRightIcon data-icon="inline-start" />
+              Transferir entre contas
+            </Button>
+          )}
+        </div>
+      )}
+
       <LedgerSummaryCards summary={summary} />
 
       {/* Filters */}
@@ -158,6 +206,19 @@ export function LedgerView() {
           </Select>
         </div>
 
+        {/* Account filter */}
+        {accounts.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <Label className="text-xs text-mid">Conta</Label>
+            <Select items={accountFilterItems} value={accountId || 'all'} onValueChange={(v) => selectAccount(!v || v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-[170px] border-sage/20" aria-label="Conta">
+                <SelectValue placeholder="Conta" />
+              </SelectTrigger>
+              <SelectContent />
+            </Select>
+          </div>
+        )}
+
         {hasActiveFilters && (
           <Button
             variant="ghost"
@@ -171,7 +232,7 @@ export function LedgerView() {
         )}
 
         <div className="ml-auto">
-          <LedgerExport filters={{ type: filters.type, dateFrom, dateTo, paymentMethod: filters.paymentMethod, patientId: filters.patientId, categoryId: filters.categoryId }} />
+          <LedgerExport filters={{ type: filters.type, dateFrom, dateTo, paymentMethod: filters.paymentMethod, patientId: filters.patientId, categoryId: filters.categoryId, accountId: filters.accountId }} />
         </div>
       </div>
 
@@ -186,6 +247,7 @@ export function LedgerView() {
                 <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Descrição</th>
                 <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Referência</th>
                 <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Método</th>
+                <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Conta</th>
                 <th className="px-4 py-3 text-right text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Valor</th>
                 <th className="px-4 py-3 text-right text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Saldo</th>
               </tr>
@@ -193,7 +255,7 @@ export function LedgerView() {
             <tbody>
               {isPending && (
                 <tr>
-                  <td colSpan={7} className="text-center text-mid py-12">
+                  <td colSpan={8} className="text-center text-mid py-12">
                     <span className="flex items-center justify-center gap-2">
                       <span className="size-2 animate-pulse rounded-full bg-sage" />
                       Carregando extrato...
@@ -203,7 +265,7 @@ export function LedgerView() {
               )}
               {!isPending && movements.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="text-center text-mid py-12">
+                  <td colSpan={8} className="text-center text-mid py-12">
                     Nenhuma movimentação encontrada no período.
                   </td>
                 </tr>
@@ -240,10 +302,15 @@ export function LedgerView() {
                         <span className="inline-flex items-center rounded-full bg-[#F0F7F1] px-2 py-0.5 text-[11px] font-medium text-[#4A6B52]">
                           {PAYMENT_METHOD_ITEMS[m.paymentMethod] ?? m.paymentMethod}
                         </span>
+                      ) : m.isTransfer ? (
+                        <span className="inline-flex items-center rounded-full bg-[#F4F6F8] px-2 py-0.5 text-[11px] font-medium text-mid">
+                          Transferência
+                        </span>
                       ) : (
                         <span className="text-mid">—</span>
                       )}
                     </td>
+                    <td className="px-4 py-3 text-mid whitespace-nowrap">{m.accountName ?? '—'}</td>
                     <td className={`px-4 py-3 text-right font-medium tabular-nums ${isInflow ? 'text-[#4A6B52]' : 'text-red-600'}`}>
                       {isInflow ? '+' : '-'}{formatCurrency(Number(m.amount))}
                     </td>
@@ -284,6 +351,8 @@ export function LedgerView() {
           </Button>
         </div>
       )}
+
+      <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} accounts={liveAccounts} />
     </div>
   )
 }

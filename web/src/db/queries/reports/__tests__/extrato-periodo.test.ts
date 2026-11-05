@@ -43,9 +43,11 @@ vi.mock('@/db/schema', () => ({
     movementDate: 'movement_date',
     patientId: 'patient_id',
     expenseCategoryId: 'expense_category_id',
+    accountId: 'account_id',
   },
   patients: { id: 'id', fullName: 'full_name' },
   expenseCategories: { id: 'id', name: 'name' },
+  financialAccounts: { id: 'id', name: 'name', tenantId: 'tenant_id' },
 }))
 
 vi.mock('drizzle-orm', () => ({
@@ -75,6 +77,7 @@ function row(overrides: {
     movementDate: new Date('2026-04-10T15:00:00Z'),
     patientName: 'Ana Souza',
     categoryName: null,
+    accountName: 'Conta principal',
     ...overrides,
   }
 }

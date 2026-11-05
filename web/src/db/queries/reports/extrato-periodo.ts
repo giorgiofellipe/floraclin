@@ -1,5 +1,5 @@
 import { db } from '@/db/client'
-import { cashMovements, patients, expenseCategories } from '@/db/schema'
+import { cashMovements, financialAccounts, patients, expenseCategories } from '@/db/schema'
 import { and, eq, desc, gte, lte } from 'drizzle-orm'
 import { startOfBrDay, endOfBrDay } from '@/lib/dates'
 import { directionalCompare, type SortDirection } from '@/lib/reports/sort'
@@ -12,6 +12,7 @@ export interface LedgerReportRow {
   movementDate: Date
   patientName: string | null
   categoryName: string | null
+  accountName: string | null
 }
 
 /** Server-recognized sort keys for this report. */
@@ -62,10 +63,15 @@ export async function listLedgerReportRows(
       movementDate: cashMovements.movementDate,
       patientName: patients.fullName,
       categoryName: expenseCategories.name,
+      accountName: financialAccounts.name,
     })
     .from(cashMovements)
     .leftJoin(patients, eq(patients.id, cashMovements.patientId))
     .leftJoin(expenseCategories, eq(expenseCategories.id, cashMovements.expenseCategoryId))
+    .leftJoin(
+      financialAccounts,
+      and(eq(financialAccounts.id, cashMovements.accountId), eq(financialAccounts.tenantId, cashMovements.tenantId)),
+    )
     .where(
       and(
         eq(cashMovements.tenantId, tenantId),
@@ -83,6 +89,7 @@ export async function listLedgerReportRows(
     movementDate: row.movementDate,
     patientName: row.patientName,
     categoryName: row.categoryName,
+    accountName: row.accountName,
   }))
 
   if (sort) {

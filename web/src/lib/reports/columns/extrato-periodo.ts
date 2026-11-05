@@ -59,4 +59,9 @@ export const LEDGER_REPORT_COLUMNS: ReportColumn<LedgerReportRow>[] = [
     align: 'right',
     sortable: true,
   },
+  {
+    key: 'account',
+    header: 'Conta',
+    value: (row) => row.accountName ?? '-',
+  },
 ]

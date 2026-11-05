@@ -20,6 +20,7 @@ export async function GET(request: Request) {
       paymentMethod: searchParams.get('paymentMethod') ?? undefined,
       patientId: searchParams.get('patientId') ?? undefined,
       categoryId: searchParams.get('categoryId') ?? undefined,
+      accountId: searchParams.get('accountId') ?? undefined,
     }
 
     // Validate with ledgerFilterSchema (page/limit will get defaults but we ignore them)
@@ -35,6 +36,7 @@ export async function GET(request: Request) {
       paymentMethod: parsed.data.paymentMethod,
       patientId: parsed.data.patientId,
       categoryId: parsed.data.categoryId,
+      accountId: parsed.data.accountId,
     })
 
     // Sanitize filename parts to prevent header injection

@@ -16,6 +16,8 @@ export const cardTerminalSchema = z.object({
   creditRates: z.array(percent).length(12, 'Informe a taxa de 1x a 12x'),
   creditPayoutMode: z.enum(['per_installment', 'lump_sum']),
   creditLumpSumDays: payoutDays,
+  // Where repasses land; omitted or null means the default bank account.
+  payoutAccountId: z.string().uuid('Conta inválida').nullable().optional(),
 })
 
 export type CardTerminalInput = z.infer<typeof cardTerminalSchema>
