@@ -90,6 +90,27 @@ export interface NfseDocumentSummary {
   retryable: boolean
 }
 
+/** The list filter's statuses: 'processing' covers pending and processing. */
+export type NfseListStatus = 'issued' | 'cancelled' | 'failed' | 'processing'
+
+export interface NfseDocumentListItem {
+  id: string
+  paymentRecordId: string
+  nfseNumber: string | null
+  status: NfseDocumentStatus
+  cancelRequested: boolean
+  issuedAt: string | null
+  createdAt: string
+  competenceDate: string
+  value: number
+  patientId: string
+  patientName: string
+  errorMessage: string | null
+  retryable: boolean
+  emailSentAt: string | null
+  environment: NfseEnvironment
+}
+
 export interface NfseProcessResult {
   id: string
   status: NfseDocumentStatus
