@@ -6,6 +6,11 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.2.99'],
+  // pdfkit (inside @bullcode/fiscal) reads its standard-font metrics from
+  // `__dirname/data/*.afm` at runtime. Bundled, `__dirname` points into the
+  // chunk and the DANFSe PDF fails with ENOENT; left external, the package
+  // loads from node_modules and file tracing ships those .afm files.
+  serverExternalPackages: ['@bullcode/fiscal'],
   env: {
     NEXT_PUBLIC_BUILD_DATE: new Date().toISOString().slice(0, 16).replace('T', ' '),
     // Inlined from the server-side `VERCEL_ENV` at build time so the browser
