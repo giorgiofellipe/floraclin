@@ -48,6 +48,26 @@ export function SignaturePad({
     return () => window.removeEventListener('resize', resizeCanvas)
   }, [initialData])
 
+  const showsCanvas = !(disabled && initialData)
+
+  // signature_pad 2.x only starts a stroke on a single-finger touchstart, but
+  // handles every touchmove. A touch that starts with two fingers (or a palm
+  // resting on a tablet) then moves with no stroke open and the library throws
+  // reading `.push` of undefined. Drop those moves before it sees them.
+  useEffect(() => {
+    if (!sigRef.current) return
+    const canvas = sigRef.current.getCanvas()
+    const pad = sigRef.current.getSignaturePad()
+    const guardTouchMove = (event: TouchEvent) => {
+      if (pad.toData().length === 0) {
+        event.preventDefault()
+        event.stopImmediatePropagation()
+      }
+    }
+    canvas.addEventListener('touchmove', guardTouchMove, { capture: true, passive: false })
+    return () => canvas.removeEventListener('touchmove', guardTouchMove, { capture: true })
+  }, [showsCanvas])
+
   const handleEnd = useCallback(() => {
     if (sigRef.current && !sigRef.current.isEmpty()) {
       setIsEmpty(false)
