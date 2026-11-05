@@ -137,6 +137,21 @@ describe('createNfseGateway', () => {
       pAliq: tag(xml, 'pAliq'),
       vServ: tag(xml, 'vServ'),
     }).toEqual({ CPF: '52998224725', indFinal: '1', tpAmb: '2', pTotTribSN: '6.00', pAliq: undefined, vServ: '150.50' })
+    expect(xml).toContain('<tpEmit>1</tpEmit><finNFSe>0</finNFSe><cLocEmi>')
+    expect(xml).toContain('<cTribNac>060201</cTribNac><cNBS>126029000</cNBS><xDescServ>')
+    expect(xml).not.toContain('<gIBSCBS>')
+  })
+
+  it('reshapes the DPS to the production XSD before signing', async () => {
+    await createNfseGateway(settings(), 'production').emit({ ...snapshot, environment: 'production' })
+    const xml: string = sefin.emit.mock.calls[0][0]
+    expect(xml).toContain('<tpAmb>1</tpAmb>')
+    expect(xml).toContain('<tpEmit>1</tpEmit><cLocEmi>')
+    expect(xml).not.toContain('<tpEmit>1</tpEmit><finNFSe>0</finNFSe>')
+    expect(xml).toContain('<IBSCBS><finNFSe>0</finNFSe>')
+    expect(xml).toContain('<cTribNac>060201</cTribNac><xDescServ>Limpeza de pele</xDescServ><cNBS>126029000</cNBS>')
+    expect(xml).toContain('<gIBSCBS><CST>000</CST><cClassTrib>000001</cClassTrib></gIBSCBS>')
+    expect(xml).toContain('<Signature')
   })
 
   it('states the municipal ISS rate only for a non-optant', async () => {
@@ -161,6 +176,21 @@ describe('createNfseGateway', () => {
     const error = await createNfseGateway(settings(), 'restricted').emit(snapshot).catch((e) => e)
     expect(error).toBeInstanceOf(NfseGatewayError)
     expect(error).toMatchObject({ code: 'invalid_request', message: 'E0001: CEP inválido' })
+  })
+
+  it('appends the Sefin complement so E1235 names the schema mismatch', async () => {
+    sefin.emit.mockRejectedValue(
+      new SefinError(
+        'rejected',
+        [{ code: 'E1235', description: 'Falha no esquema XML do DF-e.', complement: "Element 'finNFSe' is not expected." }],
+        400,
+      ),
+    )
+    const error = await createNfseGateway(settings(), 'restricted').emit(snapshot).catch((e) => e)
+    expect(error).toMatchObject({
+      code: 'invalid_request',
+      message: "E1235: Falha no esquema XML do DF-e. Element 'finNFSe' is not expected.",
+    })
   })
 
   it('maps an unavailable Sefin to provider_error with the retry message', async () => {

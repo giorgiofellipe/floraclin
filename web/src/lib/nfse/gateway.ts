@@ -12,6 +12,7 @@ import {
 import { shiftBrYmd, toBrYmd } from '@/lib/dates'
 import { NFSE_APP_VERSION, NFSE_CLOCK_SKEW_MS } from './config'
 import type { NfseCancelReason, NfseEnvironment, NfseSettingsWithSecrets, NfseSnapshot } from './types'
+import { reshapeDpsXmlForEnvironment } from './xml'
 
 const DPS_ALREADY_ISSUED = 'E0014'
 const ALREADY_CANCELLED = 'E0840'
@@ -56,10 +57,9 @@ function toGatewayError(error: unknown): NfseGatewayError {
   if (error instanceof NfseGatewayError) return error
   if (error instanceof SefinError && error.kind === 'rejected') {
     const first = error.messages[0]
-    return new NfseGatewayError(
-      'invalid_request',
-      first ? `${first.code}: ${first.description}` : 'A Sefin Nacional rejeitou a nota.',
-    )
+    if (!first) return new NfseGatewayError('invalid_request', 'A Sefin Nacional rejeitou a nota.')
+    const text = first.code ? `${first.code}: ${first.description}` : first.description
+    return new NfseGatewayError('invalid_request', first.complement ? `${text} ${first.complement}` : text)
   }
   if (error instanceof RangeError) return new NfseGatewayError('invalid_request', error.message)
   return new NfseGatewayError('provider_error', UNAVAILABLE_MESSAGE)
@@ -191,7 +191,7 @@ export function createNfseGateway(settings: NfseSettingsWithSecrets, environment
       }
       try {
         const dps = buildDps(toDpsInput(snapshot, environment))
-        const issued = await client.emit(signDps(dps.xml, certificate))
+        const issued = await client.emit(signDps(reshapeDpsXmlForEnvironment(dps.xml, environment), certificate))
         return { accessKey: issued.accessKey, nfseXml: issued.nfseXml }
       } catch (error) {
         if (!hasCode(error, DPS_ALREADY_ISSUED)) throw toGatewayError(error)
