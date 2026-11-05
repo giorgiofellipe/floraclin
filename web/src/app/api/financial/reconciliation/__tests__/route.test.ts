@@ -111,10 +111,10 @@ describe('reading', () => {
 
   it('searches candidates for the session tenant', async () => {
     vi.mocked(findMatchCandidates).mockResolvedValue([])
-    const res = await getCandidates(new Request('http://test/api?search=pix&includeBookkeepingPairs=true'), params)
+    const res = await getCandidates(new Request('http://test/api?search=pix'), params)
 
     expect(res.status).toBe(200)
-    expect(findMatchCandidates).toHaveBeenCalledWith('tenant-from-session', LINE, { search: 'pix', includeBookkeepingPairs: true })
+    expect(findMatchCandidates).toHaveBeenCalledWith('tenant-from-session', LINE, { search: 'pix' })
   })
 
   it('maps a missing line to a conflict response with the code', async () => {
@@ -172,7 +172,7 @@ describe('ignore and expense from a line', () => {
   })
 
   it('creates the expense with the category and method chosen', async () => {
-    vi.mocked(createExpenseFromStatementLine).mockResolvedValue({ expenseId: 'e', movementId: 'm', allocationId: 'a' })
+    vi.mocked(createExpenseFromStatementLine).mockResolvedValue({ expenseId: 'e', movementId: 'm', allocationId: 'a', reused: false })
     const category = '44444444-4444-4444-8444-44444444444d'
     const res = await postExpense(json({ categoryId: category }), params)
 

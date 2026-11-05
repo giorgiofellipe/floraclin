@@ -41,8 +41,8 @@ function ExpenseForm({ line, onClose }: { line: StatementLineView; onClose: () =
 
   async function handleSave() {
     try {
-      await create.mutateAsync({ lineId: line.id, categoryId, description, paymentMethod })
-      toast.success('Despesa registrada e conciliada')
+      const result = await create.mutateAsync({ lineId: line.id, categoryId, description, paymentMethod })
+      toast.success(result.reused ? 'A despesa já criada a partir deste lançamento foi conciliada de novo' : 'Despesa registrada e conciliada')
       onClose()
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Erro ao criar a despesa')
@@ -56,6 +56,7 @@ function ExpenseForm({ line, onClose }: { line: StatementLineView; onClose: () =
         <DialogDescription>
           Registra uma despesa paga de {formatCurrency(Math.abs(line.amountCents) / 100)} nesta conta e já a concilia com
           este lançamento. Use para tarifas e contas pagas direto no banco.
+          {line.createdExpenseId && ' Este lançamento já gerou uma despesa: ela será conciliada de novo, sem criar outra.'}
         </DialogDescription>
       </DialogHeader>
       <div className="space-y-4">

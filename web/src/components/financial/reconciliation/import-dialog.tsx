@@ -85,8 +85,8 @@ export function ImportDialog({
             {data.alreadyImported && <p className="text-amber-700">Este mesmo extrato já foi importado nesta conta.</p>}
             {data.suspects.length > 0 && (
               <div className="rounded-md bg-amber-50 p-3 text-amber-800" data-testid="import-suspects">
-                {data.suspects.length} lançamento(s) parecem repetir outros já importados com outro identificador do banco.
-                Eles serão importados e marcados para você conferir.
+                {data.suspects.length} lançamento(s) parecem repetir outros já importados (mesmo dia e valor, com outro
+                identificador do banco ou outra descrição). Eles serão importados e marcados para você conferir.
               </div>
             )}
             {data.warnings.map((w) => (

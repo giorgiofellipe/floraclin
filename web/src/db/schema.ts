@@ -606,6 +606,9 @@ export const bankStatementLines = floraclinSchema.table('bank_statement_lines', 
   ignoredAt: timestamp('ignored_at', { withTimezone: true }),
   ignoredBy: uuid('ignored_by'),
   ignoreReason: varchar('ignore_reason', { length: 255 }),
+  // Set once when this debit became an expense; kept after an undo so a retry
+  // relinks that expense instead of creating another.
+  createdExpenseId: uuid('created_expense_id').references(() => expenses.id),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   unique('bank_statement_lines_tenant_id_id_key').on(table.tenantId, table.id),
@@ -622,6 +625,8 @@ export const bankStatementLines = floraclinSchema.table('bank_statement_lines', 
   uniqueIndex('uq_bank_statement_lines_identity').on(table.tenantId, table.accountId, table.identityKey, table.occurrence),
   index('idx_bank_statement_lines_account_date').on(table.tenantId, table.accountId, table.postedDate),
   index('idx_bank_statement_lines_fingerprint').on(table.tenantId, table.accountId, table.fingerprint),
+  index('idx_bank_statement_lines_fitid').on(table.tenantId, table.accountId, table.fitid).where(sql`${table.fitid} IS NOT NULL`),
+  uniqueIndex('uq_bank_statement_lines_created_expense').on(table.createdExpenseId),
 ])
 
 // Append-only: an allocation is only ever undone (undone_at), never edited or

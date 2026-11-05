@@ -43,11 +43,11 @@ const account = (kind: 'bank' | 'cash', name: string) => ({
   openingBalanceDate: null,
 })
 
-function ofx(...rows: Array<{ id?: string; date: string; amount: string; memo: string; type?: string }>) {
+function ofx(...rows: Array<{ id?: string; date: string; amount: string; memo: string; type?: string; check?: string }>) {
   const body = rows
     .map(
       (r) =>
-        `<STMTTRN><TRNTYPE>${r.type ?? (r.amount.startsWith('-') ? 'DEBIT' : 'CREDIT')}<DTPOSTED>${r.date}000000[-3:BRT]<TRNAMT>${r.amount}${r.id ? `<FITID>${r.id}` : ''}<MEMO>${r.memo}</STMTTRN>`,
+        `<STMTTRN><TRNTYPE>${r.type ?? (r.check ? 'CHECK' : r.amount.startsWith('-') ? 'DEBIT' : 'CREDIT')}<DTPOSTED>${r.date}000000[-3:BRT]<TRNAMT>${r.amount}${r.id ? `<FITID>${r.id}` : ''}<MEMO>${r.memo}${r.check ? `<CHECKNUM>${r.check}` : ''}</STMTTRN>`,
     )
     .join('\n')
   return parseOfx(`OFXHEADER:100\n\n<OFX><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>1<ACCTID>9</BANKACCTFROM><BANKTRANLIST>${body}</BANKTRANLIST></STMTRS></OFX>`)
@@ -166,6 +166,33 @@ describeIntegration('bank reconciliation (integration, requires test DB)', () =>
 
       await confirmSuspectedLineIsDistinct(CLINIC, USER, repeated.id)
       expect((await lineBy('FITID MUDOU')).suspectReviewedAt ?? repeated.suspectReviewedAt).toBeDefined()
+    })
+
+    it('keeps cheques with different numbers apart, even with the same day, amount and memo', async () => {
+      await importLines(ofx({ date: '20261009', amount: '-25.00', memo: 'CHEQUE COMPENSADO', check: '101' }))
+      const next = ofx({ date: '20261009', amount: '-25.00', memo: 'CHEQUE COMPENSADO', check: '102' })
+      const preview = await previewStatementImport(CLINIC, bank.id, next)
+      expect(preview).toMatchObject({ alreadyImported: false, newLines: 1, duplicateLines: 0, suspects: [] })
+      const result = await commitStatementImport(CLINIC, USER, { accountId: bank.id, fileName: 'cheque.ofx', parsed: next })
+      expect(result).toMatchObject({ alreadyImported: false, newLines: 1 })
+      const { lines } = await listStatementLines(CLINIC, { accountId: bank.id, status: 'all', limit: 200 })
+      expect(lines.filter((l) => l.memo === 'CHEQUE COMPENSADO')).toHaveLength(2)
+    })
+
+    it('imports a reused FITID with another payer and flags it for review instead of dropping it', async () => {
+      await importLines(ofx({ id: 'REUSED', date: '20261011', amount: '45.00', memo: 'PIX ALICE' }))
+      const bob = ofx({ id: 'REUSED', date: '20261011', amount: '45.00', memo: 'PIX BOB' })
+      const preview = await previewStatementImport(CLINIC, bank.id, bob)
+      expect(preview).toMatchObject({ alreadyImported: false, newLines: 1, duplicateLines: 0 })
+      expect(preview.suspects).toEqual([expect.objectContaining({ memo: 'PIX BOB', reason: 'reused_fitid' })])
+
+      const result = await commitStatementImport(CLINIC, USER, { accountId: bank.id, fileName: 'bob.ofx', parsed: bob })
+      expect(result).toMatchObject({ newLines: 1, suspectLines: 1 })
+      expect((await lineBy('PIX BOB')).suspectedDuplicateOf).toBe((await lineBy('PIX ALICE')).id)
+
+      // The very same line again is still only a retry.
+      const again = await previewStatementImport(CLINIC, bank.id, ofx({ id: 'REUSED', date: '20261011', amount: '45.00', memo: 'PIX ALICE' }))
+      expect(again).toMatchObject({ newLines: 0, duplicateLines: 1 })
     })
 
     it('serialises two concurrent uploads of overlapping statements without duplicating a line', async () => {
@@ -337,30 +364,32 @@ describeIntegration('bank reconciliation (integration, requires test DB)', () =>
       expect(candidates.every((c) => c.type === 'inflow')).toBe(true)
     })
 
-    it('hides a proven net-zero bookkeeping reversal pair, but only while neither half is reconciled', async () => {
-      await importLines(ofx({ id: 'B1', date: '20261020', amount: '200.00', memo: 'RECIBO REAL' }))
+    it('keeps a received payment and its refund visible when both are on the statement, only labelled', async () => {
+      await importLines(
+        ofx({ id: 'B1', date: '20261020', amount: '200.00', memo: 'RECIBO REAL' }, { id: 'B2', date: '20261020', amount: '-200.00', memo: 'ESTORNO REAL' }),
+      )
       const counter = await movement('outflow', '200.00', '2026-10-20T16:00:00Z', { description: 'Estorno pagamento' })
       const original = await movement('inflow', '200.00', '2026-10-20T15:00:00Z', { description: 'Pagamento estornado', reversedByMovementId: counter.id })
-      const line = await lineBy('RECIBO REAL')
 
-      expect((await findMatchCandidates(CLINIC, line.id)).map((c) => c.id)).not.toContain(original.id)
-      const shown = await findMatchCandidates(CLINIC, line.id, { includeBookkeepingPairs: true })
-      expect(shown.find((c) => c.id === original.id)).toMatchObject({ bookkeepingPair: true })
+      // Neither half is reconciled yet: both still show up, without any toggle.
+      const receipt = (await findMatchCandidates(CLINIC, (await lineBy('RECIBO REAL')).id)).find((c) => c.id === original.id)
+      const refund = (await findMatchCandidates(CLINIC, (await lineBy('ESTORNO REAL')).id)).find((c) => c.id === counter.id)
+      expect(receipt).toMatchObject({ reversalPair: true })
+      expect(refund).toMatchObject({ reversalPair: true })
 
-      // The bank really did receive it: once the user reconciles it, it is a real receipt, never hidden again.
-      await allocateStatementLine(CLINIC, USER, line.id, [{ movementId: original.id, amountCents: 20000 }])
-      await importLines(ofx({ id: 'B2', date: '20261020', amount: '-200.00', memo: 'ESTORNO REAL' }))
-      const refund = await lineBy('ESTORNO REAL')
-      const refundCandidates = await findMatchCandidates(CLINIC, refund.id)
-      expect(refundCandidates.find((c) => c.id === counter.id)).toMatchObject({ bookkeepingPair: false })
+      await allocateStatementLine(CLINIC, USER, (await lineBy('RECIBO REAL')).id, [{ movementId: original.id, amountCents: 20000 }])
+      await allocateStatementLine(CLINIC, USER, (await lineBy('ESTORNO REAL')).id, [{ movementId: counter.id, amountCents: 20000 }])
+      expect(await lineBy('ESTORNO REAL')).toMatchObject({ status: 'matched' })
     })
 
-    it('does not hide a reversal pair that is not net zero on one account', async () => {
-      await importLines(ofx({ id: 'B3', date: '20261021', amount: '80.00', memo: 'OUTRA CONTA' }))
-      const counter = await movement('outflow', '80.00', '2026-10-21T16:00:00Z', { accountId: cash.id })
-      const original = await movement('inflow', '80.00', '2026-10-21T15:00:00Z', { reversedByMovementId: counter.id })
-      const line = await lineBy('OUTRA CONTA')
-      expect((await findMatchCandidates(CLINIC, line.id)).map((c) => c.id)).toContain(original.id)
+    it('lists a reversal half after an otherwise equal ordinary movement', async () => {
+      await importLines(ofx({ id: 'B3', date: '20261021', amount: '80.00', memo: 'ORDEM ESTORNO' }))
+      const counter = await movement('outflow', '80.00', '2026-10-21T16:00:00Z')
+      const reversed = await movement('inflow', '80.00', '2026-10-21T15:00:00Z', { reversedByMovementId: counter.id })
+      const ordinary = await movement('inflow', '80.00', '2026-10-21T15:00:00Z')
+      const ids = (await findMatchCandidates(CLINIC, (await lineBy('ORDEM ESTORNO')).id)).map((c) => c.id)
+      expect(ids).toContain(reversed.id)
+      expect(ids.indexOf(ordinary.id)).toBeLessThan(ids.indexOf(reversed.id))
     })
   })
 
@@ -383,6 +412,46 @@ describeIntegration('bank reconciliation (integration, requires test DB)', () =>
       const installments = await db.select().from(expenseInstallments).where(eq(expenseInstallments.id, outflows[0].expenseInstallmentId!))
       expect(installments[0]).toMatchObject({ status: 'paid', dueDate: '2026-10-22' })
       expect(await lineBy('TARIFA MANUTENCAO')).toMatchObject({ status: 'matched', allocatedCents: 3990 })
+    })
+
+    it('never creates a second expense for a line after its match was undone: it relinks the first', async () => {
+      await importLines(ofx({ id: 'E4', date: '20261024', amount: '-18.73', memo: 'UMA TARIFA' }))
+      const line = await lineBy('UMA TARIFA')
+      const first = await createExpenseFromStatementLine(CLINIC, USER, line.id, { categoryId, paymentMethod: 'transfer' })
+      expect(first.reused).toBe(false)
+      expect(await lineBy('UMA TARIFA')).toMatchObject({ createdExpenseId: first.expenseId })
+
+      await undoStatementLineMatch(CLINIC, USER, { lineId: line.id })
+      const second = await createExpenseFromStatementLine(CLINIC, USER, line.id, { categoryId, paymentMethod: 'pix' })
+      expect(second).toMatchObject({ expenseId: first.expenseId, movementId: first.movementId, reused: true })
+
+      const outflows = await db.select().from(cashMovements).where(and(eq(cashMovements.tenantId, CLINIC), eq(cashMovements.amount, '18.73')))
+      expect(outflows).toHaveLength(1)
+      expect(await lineBy('UMA TARIFA')).toMatchObject({ status: 'matched', allocatedCents: 1873 })
+    })
+
+    it('points to the existing expense when its payment can no longer be relinked', async () => {
+      await importLines(ofx({ id: 'E5', date: '20261025', amount: '-9.99', memo: 'TARIFA ESTORNADA' }))
+      const line = await lineBy('TARIFA ESTORNADA')
+      const first = await createExpenseFromStatementLine(CLINIC, USER, line.id, { categoryId, paymentMethod: 'transfer' })
+      await undoStatementLineMatch(CLINIC, USER, { lineId: line.id })
+      // Its payment was reverted in the ledger since.
+      const [counter] = await db
+        .insert(cashMovements)
+        .values({ tenantId: CLINIC, accountId: bank.id, type: 'inflow', amount: '9.99', description: 'Estorno', movementDate: new Date(), recordedBy: USER })
+        .returning()
+      await db.update(cashMovements).set({ reversedByMovementId: counter.id }).where(eq(cashMovements.id, first.movementId))
+
+      await expect(createExpenseFromStatementLine(CLINIC, USER, line.id, { categoryId, paymentMethod: 'transfer' })).rejects.toMatchObject({
+        code: 'STATEMENT_LINE_EXPENSE_EXISTS',
+      })
+      const outflows = await db
+        .select()
+        .from(cashMovements)
+        .where(and(eq(cashMovements.tenantId, CLINIC), eq(cashMovements.type, 'outflow'), eq(cashMovements.amount, '9.99')))
+      expect(outflows).toHaveLength(1)
+      // The link itself cannot be cleared to make room for another expense.
+      await expect(db.update(bankStatementLines).set({ createdExpenseId: null }).where(eq(bankStatementLines.id, line.id))).rejects.toThrow()
     })
 
     it('refuses credits and leaves nothing behind when the category is wrong', async () => {

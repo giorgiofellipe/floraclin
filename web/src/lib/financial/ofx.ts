@@ -90,9 +90,15 @@ export function parseOfxDate(raw: string | null): string | null {
   return isValidYmd(ymd) ? ymd : null
 }
 
+/** "1.234.567" with "." as the thousands separator: 1–3 digits, then groups of exactly 3. */
+function isGrouped(intPart: string, separator: string): boolean {
+  return intPart.split(separator).every((group, i) => (i === 0 ? /^\d{1,3}$/ : /^\d{3}$/).test(group))
+}
+
 /**
- * TRNAMT → signed cents without floating point. Accepts "1234.56", "-1.234,56"
- * and "1234,5". Anything with more than two decimals, or not a number, is null.
+ * TRNAMT → signed cents without floating point. Accepts "1234.56", "-1.234,56",
+ * "1,234,567" and "1234,5". Anything with more than two decimals, thousands
+ * groups that are not of three digits ("1,2,3"), or not a number, is null.
  */
 export function parseOfxAmountToCents(raw: string | null): number | null {
   if (!raw) return null
@@ -109,6 +115,8 @@ export function parseOfxAmountToCents(raw: string | null): number | null {
   // The last separator is the decimal one when both kinds appear; a separator
   // repeated ("1.234.567") is a thousands group; a single one is the decimal
   // point, so "1.234" (three decimals) is refused below instead of guessed.
+  // Thousands groups are validated before the separators are dropped, so a
+  // malformed number is refused instead of read as a different amount.
   const lastDot = text.lastIndexOf('.')
   const lastComma = text.lastIndexOf(',')
   const decimalAt = Math.max(lastDot, lastComma)
@@ -116,14 +124,22 @@ export function parseOfxAmountToCents(raw: string | null): number | null {
   let decPart = ''
   if (decimalAt >= 0) {
     const separator = text[decimalAt]
+    const thousands = separator === '.' ? ',' : '.'
     const hasBothKinds = lastDot >= 0 && lastComma >= 0
     const repeated = text.split(separator).length - 1 > 1
-    if (hasBothKinds || !repeated) {
+    if (hasBothKinds) {
+      intPart = text.slice(0, decimalAt)
+      decPart = text.slice(decimalAt + 1)
+      if (intPart.includes(separator) || !isGrouped(intPart, thousands)) return null
+      intPart = intPart.split(thousands).join('')
+    } else if (repeated) {
+      if (!isGrouped(text, separator)) return null
+      intPart = text.split(separator).join('')
+    } else {
       intPart = text.slice(0, decimalAt)
       decPart = text.slice(decimalAt + 1)
     }
   }
-  intPart = intPart.replace(/[.,]/g, '')
   if (intPart === '' && decPart === '') return null
   if (!/^\d*$/.test(intPart) || !/^\d*$/.test(decPart)) return null
   if (decPart.length > 2) {
@@ -143,30 +159,47 @@ function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
 
+type IdentityFields = Pick<OfxTransaction, 'fitid' | 'date' | 'amountCents' | 'memo'> &
+  Partial<Pick<OfxTransaction, 'checkNumber' | 'type'>>
+
 /**
- * What makes two statement lines the same record. A bank FITID alone is not
- * enough (some banks reuse short sequential ids per file), so it is combined
- * with the day and the amount. Without a FITID the memo takes its place.
+ * What makes two statement lines the same record: every discriminator the bank
+ * sent (FITID, day, amount, cheque number, type and memo, which carries the
+ * payer). A FITID alone is not enough: some banks reuse short sequential ids
+ * per file, so a reused FITID with another payer or cheque is a different line
+ * (the importer flags it for review). Memo case, accents and spacing are ignored.
  */
-export function lineIdentityKey(line: Pick<OfxTransaction, 'fitid' | 'date' | 'amountCents' | 'memo'>): string {
-  return line.fitid
-    ? sha256(`fitid|${line.fitid}|${line.date}|${line.amountCents}`)
-    : sha256(`nofitid|${line.date}|${line.amountCents}|${normalizeMemo(line.memo)}`)
+export function lineIdentityKey(line: IdentityFields): string {
+  return sha256(
+    JSON.stringify([
+      'line',
+      line.fitid ?? '',
+      line.date,
+      line.amountCents,
+      line.checkNumber ?? '',
+      line.type ?? '',
+      normalizeMemo(line.memo),
+    ]),
+  )
 }
 
 /**
- * Day + amount + memo, ignoring the FITID. Two lines with the same fingerprint
- * but different identities may be one transaction whose id the bank changed, or
- * two genuine identical ones: the importer keeps both and flags the later one.
+ * Day + amount + cheque + memo, ignoring the FITID. Two lines with the same
+ * fingerprint but different identities may be one transaction whose id the bank
+ * changed, or two genuine identical ones: the importer keeps both and flags the
+ * later one for review.
  */
-export function lineFingerprint(line: Pick<OfxTransaction, 'date' | 'amountCents' | 'memo'>): string {
-  return sha256(`fp|${line.date}|${line.amountCents}|${normalizeMemo(line.memo)}`)
+export function lineFingerprint(line: Omit<IdentityFields, 'fitid'>): string {
+  return sha256(JSON.stringify(['fp', line.date, line.amountCents, line.checkNumber ?? '', normalizeMemo(line.memo)]))
 }
 
-/** Hash of the whole file's transactions, so re-uploading the same statement is recognised. */
+/**
+ * Hash of the whole file's transactions with every field the bank sent, so only
+ * an equivalent statement is recognised as already imported.
+ */
 export function statementHash(transactions: readonly OfxTransaction[]): string {
   return sha256(
-    transactions.map((t) => `${t.fitid ?? ''}|${t.date}|${t.amountCents}|${normalizeMemo(t.memo)}`).join('\n'),
+    JSON.stringify(transactions.map((t) => [t.fitid, t.date, t.amountCents, t.checkNumber, t.type, t.memo])),
   )
 }
 

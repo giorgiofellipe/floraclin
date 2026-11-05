@@ -60,7 +60,15 @@ export interface ImportSuspect {
   amountCents: number
   memo: string
   suspectedDuplicateOf: string
+  /**
+   * same_details: same day, amount, cheque and text as an imported line (the
+   * bank changed its id, or a genuine repeat). reused_fitid: same bank id, day
+   * and amount, but another payer, cheque or text.
+   */
+  reason: SuspectReason
 }
+
+export type SuspectReason = 'same_details' | 'reused_fitid'
 
 export interface ImportPreview {
   total: number
@@ -79,6 +87,7 @@ interface PlannedLine extends OfxTransaction {
   fingerprint: string
   occurrence: number
   suspectedDuplicateOf: string | null
+  suspectReason: SuspectReason | null
 }
 
 async function lockBankAccount(tx: Tx, tenantId: string, accountId: string) {
@@ -99,8 +108,9 @@ async function lockBankAccount(tx: Tx, tenantId: string, accountId: string) {
  * lineIdentityKey) and an occurrence number: identical lines in one file keep
  * their multiplicity (1st, 2nd...), and a re-upload only skips the slots that
  * already exist, so legitimate identical same-day transactions are never merged.
- * A new line that merely shares day, amount and memo with an older line under
- * a different identity (the bank changed its FITID) is imported but flagged.
+ * A new line that only partly matches an older one (same day, amount and memo
+ * under another FITID, or the same FITID with another payer, cheque or memo) is
+ * imported but flagged for review.
  */
 async function planImport(tx: Tx, tenantId: string, accountId: string, transactions: readonly OfxTransaction[]) {
   const seen = new Map<string, number>()
@@ -108,7 +118,7 @@ async function planImport(tx: Tx, tenantId: string, accountId: string, transacti
     const identityKey = lineIdentityKey(t)
     const occurrence = (seen.get(identityKey) ?? 0) + 1
     seen.set(identityKey, occurrence)
-    return { ...t, identityKey, fingerprint: lineFingerprint(t), occurrence, suspectedDuplicateOf: null }
+    return { ...t, identityKey, fingerprint: lineFingerprint(t), occurrence, suspectedDuplicateOf: null, suspectReason: null }
   })
 
   const existingSlots = new Set<string>()
@@ -145,7 +155,50 @@ async function planImport(tx: Tx, tenantId: string, accountId: string, transacti
       .orderBy(asc(bankStatementLines.createdAt), asc(bankStatementLines.id))
     for (const row of rows) if (!oldestByFingerprint.has(row.fingerprint)) oldestByFingerprint.set(row.fingerprint, row.id)
   }
-  for (const line of fresh) line.suspectedDuplicateOf = oldestByFingerprint.get(line.fingerprint) ?? null
+  // The same bank id, day and amount under a different identity: the bank
+  // reused the FITID for another payer or cheque, or re-exported the line with
+  // other text. Either way it is imported and shown for review, never dropped.
+  const fitids = [...new Set(fresh.flatMap((p) => (p.fitid ? [p.fitid] : [])))]
+  const oldestByFitid = new Map<string, { id: string; identityKey: string }[]>()
+  for (let i = 0; i < fitids.length; i += CHUNK) {
+    const rows = await tx
+      .select({
+        id: bankStatementLines.id,
+        identityKey: bankStatementLines.identityKey,
+        fitid: bankStatementLines.fitid,
+        postedDate: bankStatementLines.postedDate,
+        amountCents: bankStatementLines.amountCents,
+      })
+      .from(bankStatementLines)
+      .where(
+        and(
+          eq(bankStatementLines.tenantId, tenantId),
+          eq(bankStatementLines.accountId, accountId),
+          inArray(bankStatementLines.fitid, fitids.slice(i, i + CHUNK)),
+        ),
+      )
+      .orderBy(asc(bankStatementLines.createdAt), asc(bankStatementLines.id))
+    for (const row of rows) {
+      const key = `${row.fitid}|${row.postedDate}|${row.amountCents}`
+      oldestByFitid.set(key, [...(oldestByFitid.get(key) ?? []), { id: row.id, identityKey: row.identityKey }])
+    }
+  }
+
+  for (const line of fresh) {
+    const byFingerprint = oldestByFingerprint.get(line.fingerprint)
+    if (byFingerprint) {
+      line.suspectedDuplicateOf = byFingerprint
+      line.suspectReason = 'same_details'
+      continue
+    }
+    const byFitid = line.fitid
+      ? oldestByFitid.get(`${line.fitid}|${line.date}|${line.amountCents}`)?.find((r) => r.identityKey !== line.identityKey)
+      : undefined
+    if (byFitid) {
+      line.suspectedDuplicateOf = byFitid.id
+      line.suspectReason = 'reused_fitid'
+    }
+  }
 
   return { planned, fresh }
 }
@@ -201,6 +254,7 @@ export async function previewStatementImport(tenantId: string, accountId: string
         amountCents: p.amountCents,
         memo: p.memo,
         suspectedDuplicateOf: p.suspectedDuplicateOf as string,
+        reason: p.suspectReason as SuspectReason,
       })),
     alreadyImported: Boolean(already),
     warnings: accountWarnings(account, parsed),
@@ -387,6 +441,8 @@ export interface StatementLine {
   suspectReviewedAt: Date | null
   ignoredAt: Date | null
   ignoreReason: string | null
+  /** The expense this debit created, kept after an undo (a retry relinks it). */
+  createdExpenseId: string | null
   allocatedCents: number
   status: StatementLineStatus
   allocations: StatementLineAllocation[]
@@ -428,6 +484,7 @@ export async function listStatementLines(
       suspectReviewedAt: bankStatementLines.suspectReviewedAt,
       ignoredAt: bankStatementLines.ignoredAt,
       ignoreReason: bankStatementLines.ignoreReason,
+      createdExpenseId: bankStatementLines.createdExpenseId,
       allocated: allocatedToLine,
     })
     .from(bankStatementLines)
@@ -490,6 +547,7 @@ export async function listStatementLines(
         suspectReviewedAt: r.suspectReviewedAt,
         ignoredAt: r.ignoredAt,
         ignoreReason: r.ignoreReason,
+        createdExpenseId: r.createdExpenseId,
         allocatedCents,
         status: lineStatus(r.amountCents, allocatedCents, Boolean(r.ignoredAt)),
         allocations: allocations
@@ -506,25 +564,19 @@ const movementCents = sql`round(${cashMovements.amount} * 100)::bigint`
 const allocatedToMovement = sql`COALESCE((SELECT SUM(a.amount_cents) FROM floraclin.bank_reconciliation_allocations a WHERE a.tenant_id = "cash_movements"."tenant_id" AND a.movement_id = "cash_movements"."id" AND a.undone_at IS NULL), 0)`
 
 /**
- * A movement that is half of a bookkeeping correction: a payment that was
- * reversed and its counter-entry, on the same account for the same amount,
- * with neither half reconciled. Together they net to zero, so they are kept
- * out of the default queue. Once either half is allocated, or if the pair is
- * not a clean same-account net-zero one, nothing is hidden. A real bank refund
- * can still be matched by showing the hidden ones.
+ * A movement that is half of a reversal: a payment that was reversed and its
+ * counter-entry, on the same account for the same amount. The ledger cannot
+ * tell a bookkeeping correction (no money moved) from a real refund (money
+ * came in and went back out, both on the statement), so such movements are
+ * never hidden; they are only labelled and listed after the others.
  */
-const isBookkeepingPair = sql`EXISTS (
+const isReversalPair = sql`EXISTS (
   SELECT 1 FROM floraclin.cash_movements p
   WHERE p.tenant_id = "cash_movements"."tenant_id"
     AND p.account_id = "cash_movements"."account_id"
     AND p.amount = "cash_movements"."amount"
     AND p.type <> "cash_movements"."type"
     AND (p.reversed_by_movement_id = "cash_movements"."id" OR "cash_movements"."reversed_by_movement_id" = p.id)
-    AND NOT EXISTS (
-      SELECT 1 FROM floraclin.bank_reconciliation_allocations a
-      WHERE a.tenant_id = "cash_movements"."tenant_id" AND a.undone_at IS NULL
-        AND a.movement_id IN ("cash_movements"."id", p.id)
-    )
 )`
 
 export interface MatchCandidate {
@@ -536,14 +588,15 @@ export interface MatchCandidate {
   movementDate: Date
   remainingCents: number
   dayDistance: number
-  bookkeepingPair: boolean
+  /** Half of a payment and its reversal: may be a real refund or only a correction. */
+  reversalPair: boolean
 }
 
 /** Ledger movements on the line's account that can still take part of the line, closest first. */
 export async function findMatchCandidates(
   tenantId: string,
   lineId: string,
-  opts: { search?: string; includeBookkeepingPairs?: boolean; windowDays?: number } = {},
+  opts: { search?: string; windowDays?: number } = {},
 ): Promise<MatchCandidate[]> {
   const [line] = await db
     .select({
@@ -572,7 +625,7 @@ export async function findMatchCandidates(
       movementDate: cashMovements.movementDate,
       remaining: sql<string>`${movementCents} - ${allocatedToMovement}`,
       dayDistance,
-      bookkeepingPair: isBookkeepingPair,
+      reversalPair: isReversalPair,
     })
     .from(cashMovements)
     .where(
@@ -584,11 +637,11 @@ export async function findMatchCandidates(
         search
           ? sql`${cashMovements.description} ILIKE ${'%' + search.replace(/[\\%_]/g, '\\$&') + '%'}`
           : sql`${dayDistance} <= ${opts.windowDays ?? 45}`,
-        opts.includeBookkeepingPairs ? undefined : sql`NOT ${isBookkeepingPair}`,
       ),
     )
     .orderBy(
       sql`CASE WHEN ${movementCents} - ${allocatedToMovement} = ${lineRemaining} THEN 0 ELSE 1 END`,
+      sql`CASE WHEN ${isReversalPair} THEN 1 ELSE 0 END`,
       dayDistance,
       desc(cashMovements.movementDate),
       asc(cashMovements.id),
@@ -604,7 +657,7 @@ export async function findMatchCandidates(
     movementDate: r.movementDate,
     remainingCents: Number(r.remaining),
     dayDistance: Number(r.dayDistance),
-    bookkeepingPair: Boolean(r.bookkeepingPair),
+    reversalPair: Boolean(r.reversalPair),
   }))
 }
 
@@ -882,12 +935,84 @@ export interface CreateFeeFromLineInput {
   paymentMethod: 'pix' | 'transfer' | 'debit_card' | 'cash' | 'credit_card'
 }
 
+async function linkLineToMovement(
+  tx: Tx,
+  tenantId: string,
+  userId: string,
+  line: { id: string; accountId: string },
+  movementId: string,
+  amountCents: number,
+  createdFrom: 'statement_line' | 'statement_line_relink',
+) {
+  let allocation
+  try {
+    ;[allocation] = await tx
+      .insert(bankReconciliationAllocations)
+      .values({ tenantId, accountId: line.accountId, lineId: line.id, movementId, amountCents, createdBy: userId })
+      .returning({ id: bankReconciliationAllocations.id })
+  } catch (error) {
+    asAllocationConflict(error)
+  }
+  await createAuditLog(
+    {
+      tenantId,
+      userId,
+      action: 'create',
+      entityType: 'bank_reconciliation_allocation',
+      entityId: allocation.id,
+      changes: { allocation: { old: null, new: { lineId: line.id, movementId, amountCents, createdFrom } } },
+    },
+    tx,
+  )
+  return allocation.id
+}
+
+/**
+ * The line already created an expense (and the match was undone since): link
+ * that expense's current payment again instead of creating a second one. When
+ * the payment was reverted or moved to another account there is nothing safe
+ * to relink, and the user is pointed to the existing expense.
+ */
+async function relinkCreatedExpense(
+  tx: Tx,
+  tenantId: string,
+  userId: string,
+  line: { id: string; accountId: string; amountCents: number },
+  expenseId: string,
+) {
+  const amountCents = Math.abs(line.amountCents)
+  const [movement] = await tx
+    .select({ id: cashMovements.id, remaining: sql<string>`${movementCents} - ${allocatedToMovement}` })
+    .from(cashMovements)
+    .innerJoin(expenseInstallments, eq(expenseInstallments.id, cashMovements.expenseInstallmentId))
+    .where(
+      and(
+        eq(cashMovements.tenantId, tenantId),
+        eq(expenseInstallments.expenseId, expenseId),
+        eq(cashMovements.type, 'outflow'),
+        eq(cashMovements.accountId, line.accountId),
+        isNull(cashMovements.reversedByMovementId),
+      ),
+    )
+    .orderBy(desc(cashMovements.recordedAt))
+    .limit(1)
+  if (!movement || Number(movement.remaining) < amountCents) {
+    throw new BusinessError(
+      'STATEMENT_LINE_EXPENSE_EXISTS',
+      'Este lançamento já gerou uma despesa, mas o pagamento dela foi estornado, está em outra conta ou já foi conciliado. Pague ou concilie a despesa existente em vez de criar outra',
+    )
+  }
+  const allocationId = await linkLineToMovement(tx, tenantId, userId, line, movement.id, amountCents, 'statement_line_relink')
+  return { expenseId, movementId: movement.id, allocationId, reused: true }
+}
+
 /**
  * A bank debit with no ledger entry (a fee, a bill paid straight from the
  * bank): records it as a normal paid expense through the usual expense paths,
  * on the line's account, and links the whole line to the resulting outflow. It
- * all happens in one transaction, and the line lock plus the allocation limit
- * make a double click or a second user create it only once.
+ * all happens in one transaction under the line lock. The line keeps the
+ * expense it created, so a double click, a second user or a retry after undo
+ * never creates another one: a retry relinks the existing expense.
  */
 export async function createExpenseFromStatementLine(
   tenantId: string,
@@ -904,6 +1029,8 @@ export async function createExpenseFromStatementLine(
     if ((await activeAllocatedToLine(tx, tenantId, lineId)) > 0) {
       throw new BusinessError('STATEMENT_LINE_ALLOCATED', 'Este lançamento já está conciliado')
     }
+    if (line.createdExpenseId) return relinkCreatedExpense(tx, tenantId, userId, line, line.createdExpenseId)
+
     const [account] = await tx
       .select({ id: financialAccounts.id })
       .from(financialAccounts)
@@ -945,26 +1072,11 @@ export async function createExpenseFromStatementLine(
       .orderBy(desc(cashMovements.recordedAt))
       .limit(1)
 
-    let allocation
-    try {
-      ;[allocation] = await tx
-        .insert(bankReconciliationAllocations)
-        .values({ tenantId, accountId: line.accountId, lineId, movementId: movement.id, amountCents, createdBy: userId })
-        .returning({ id: bankReconciliationAllocations.id })
-    } catch (error) {
-      asAllocationConflict(error)
-    }
-    await createAuditLog(
-      {
-        tenantId,
-        userId,
-        action: 'create',
-        entityType: 'bank_reconciliation_allocation',
-        entityId: allocation.id,
-        changes: { allocation: { old: null, new: { lineId, movementId: movement.id, amountCents, createdFrom: 'statement_line' } } },
-      },
-      tx,
-    )
-    return { expenseId: expense.id, movementId: movement.id, allocationId: allocation.id }
+    await tx
+      .update(bankStatementLines)
+      .set({ createdExpenseId: expense.id })
+      .where(and(eq(bankStatementLines.tenantId, tenantId), eq(bankStatementLines.id, lineId)))
+    const allocationId = await linkLineToMovement(tx, tenantId, userId, line, movement.id, amountCents, 'statement_line')
+    return { expenseId: expense.id, movementId: movement.id, allocationId, reused: false }
   })
 }

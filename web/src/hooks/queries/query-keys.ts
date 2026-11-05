@@ -37,8 +37,8 @@ export const queryKeys = {
     accounts: (includeArchived = false) => ['financial', 'accounts', includeArchived] as const,
     reconciliationLines: (accountId: string, status: string, offset: number) =>
       ['financial', 'reconciliation', 'lines', accountId, status, offset] as const,
-    reconciliationCandidates: (lineId: string, search: string, includePairs: boolean) =>
-      ['financial', 'reconciliation', 'candidates', lineId, search, includePairs] as const,
+    reconciliationCandidates: (lineId: string, search: string) =>
+      ['financial', 'reconciliation', 'candidates', lineId, search] as const,
     cardRepasses: (filters?: object) => ['financial', 'cardRepasses', filters] as const,
     ledger: (filters?: Record<string, unknown>) => ['financial', 'ledger', filters] as const,
     practitionerPL: (dateFrom: string, dateTo: string, practitionerId?: string) =>
