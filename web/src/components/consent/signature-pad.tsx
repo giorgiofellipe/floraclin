@@ -20,47 +20,116 @@ export function SignaturePad({
 }: SignaturePadProps) {
   const sigRef = useRef<SignatureCanvas | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [isEmpty, setIsEmpty] = useState(true)
+  const isDrawingRef = useRef(false)
+  const pendingResizeRef = useRef(false)
+  const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const seededRef = useRef(false)
+  // Capture the seed at mount. Parent echoes of toDataURL after a stroke must
+  // not reload the canvas — signature_pad 2.3.2 crashes in _strokeUpdate when
+  // _data is cleared while a throttled touchmove is still in flight.
+  const seedDataRef = useRef(initialData)
+  const [isEmpty, setIsEmpty] = useState(!initialData)
 
-  useEffect(() => {
-    if (initialData && sigRef.current) {
-      sigRef.current.fromDataURL(initialData)
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- setIsEmpty mirrors the imperative canvas state after load; intentional
-      setIsEmpty(false)
+  const resizeCanvas = useCallback(() => {
+    const container = containerRef.current
+    const pad = sigRef.current
+    if (!container || !pad) return
+    if (isDrawingRef.current) {
+      pendingResizeRef.current = true
+      return
     }
-  }, [initialData])
 
-  // Resize canvas to fit container
+    const canvas = pad.getCanvas()
+    const rect = container.getBoundingClientRect()
+    const cssWidth = Math.round(rect.width)
+    const cssHeight = Math.round(rect.height)
+    if (cssWidth < 1 || cssHeight < 1) return
+
+    const ratio = Math.max(window.devicePixelRatio || 1, 1)
+    const nextWidth = Math.round(cssWidth * ratio)
+    const nextHeight = Math.round(cssHeight * ratio)
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return
+
+    const snapshot = pad.isEmpty() ? null : pad.toDataURL('image/png')
+    canvas.width = nextWidth
+    canvas.height = nextHeight
+    canvas.getContext('2d')?.scale(ratio, ratio)
+    if (snapshot) pad.fromDataURL(snapshot)
+  }, [])
+
   useEffect(() => {
-    const resizeCanvas = () => {
-      if (!containerRef.current || !sigRef.current) return
-      const canvas = sigRef.current.getCanvas()
-      const rect = containerRef.current.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = rect.height
-      if (initialData) {
-        sigRef.current.fromDataURL(initialData)
+    const container = containerRef.current
+    if (!container) return
+
+    resizeCanvas()
+
+    const cancelPendingResize = () => {
+      if (resizeTimerRef.current != null) {
+        clearTimeout(resizeTimerRef.current)
+        resizeTimerRef.current = null
       }
     }
 
-    resizeCanvas()
-    window.addEventListener('resize', resizeCanvas)
-    return () => window.removeEventListener('resize', resizeCanvas)
-  }, [initialData])
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', resizeCanvas)
+      return () => {
+        window.removeEventListener('resize', resizeCanvas)
+        cancelPendingResize()
+      }
+    }
+
+    const observer = new ResizeObserver(() => resizeCanvas())
+    observer.observe(container)
+    return () => {
+      observer.disconnect()
+      cancelPendingResize()
+    }
+  }, [resizeCanvas])
+
+  useEffect(() => {
+    const seed = seedDataRef.current
+    if (seededRef.current || !seed || !sigRef.current) return
+    sigRef.current.fromDataURL(seed)
+    seededRef.current = true
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- setIsEmpty mirrors the imperative canvas state after load; intentional
+    setIsEmpty(false)
+  }, [])
+
+  const handleBegin = useCallback(() => {
+    isDrawingRef.current = true
+  }, [])
 
   const handleEnd = useCallback(() => {
-    if (sigRef.current && !sigRef.current.isEmpty()) {
-      setIsEmpty(false)
-      onSignatureChange(sigRef.current.toDataURL('image/png'))
+    isDrawingRef.current = false
+    if (pendingResizeRef.current) {
+      pendingResizeRef.current = false
+      if (resizeTimerRef.current != null) clearTimeout(resizeTimerRef.current)
+      // signature_pad throttles touchmove with setTimeout(16ms). Wait it out
+      // so a late _strokeUpdate cannot run against a resized/cleared bitmap.
+      resizeTimerRef.current = setTimeout(() => {
+        resizeTimerRef.current = null
+        if (!isDrawingRef.current) resizeCanvas()
+      }, 32)
     }
-  }, [onSignatureChange])
+    const pad = sigRef.current
+    if (pad && !pad.isEmpty()) {
+      setIsEmpty(false)
+      onSignatureChange(pad.toDataURL('image/png'))
+    }
+  }, [onSignatureChange, resizeCanvas])
 
   const handleClear = useCallback(() => {
-    if (sigRef.current) {
-      sigRef.current.clear()
-      setIsEmpty(true)
-      onSignatureChange(null)
+    if (!sigRef.current) return
+    isDrawingRef.current = false
+    pendingResizeRef.current = false
+    if (resizeTimerRef.current != null) {
+      clearTimeout(resizeTimerRef.current)
+      resizeTimerRef.current = null
     }
+    sigRef.current.clear()
+    seededRef.current = false
+    setIsEmpty(true)
+    onSignatureChange(null)
   }, [onSignatureChange])
 
   if (disabled && initialData) {
@@ -91,9 +160,11 @@ export function SignaturePad({
         <SignatureCanvas
           ref={sigRef}
           penColor="#1C2B1E"
+          clearOnResize={false}
           canvasProps={{
             className: 'absolute inset-0 w-full h-full rounded-[3px] cursor-crosshair',
           }}
+          onBegin={handleBegin}
           onEnd={handleEnd}
         />
       </div>

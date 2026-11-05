@@ -53,6 +53,11 @@ export function ProfessionalSignatureForm({ initialProfile }: ProfessionalSignat
   const [signatureData, setSignatureData] = useState<string | null>(
     initialProfile.signatureData
   )
+  // Remount only on explicit reset (clear / upload). Keying on
+  // `signatureData === null` remounted the pad after the first stroke, which
+  // races signature_pad's throttled touchmove and throws
+  // "Cannot read properties of undefined (reading 'push')".
+  const [padResetKey, setPadResetKey] = useState(0)
   const [professionalTitle, setProfessionalTitle] = useState<string>(
     initialProfile.professionalTitle ?? ''
   )
@@ -119,12 +124,14 @@ export function ProfessionalSignatureForm({ initialProfile }: ProfessionalSignat
         return
       }
       setSignatureData(result)
+      setPadResetKey((key) => key + 1)
     }
     reader.readAsDataURL(file)
   }
 
   function handleClearSignature() {
     setSignatureData(null)
+    setPadResetKey((key) => key + 1)
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -175,9 +182,9 @@ export function ProfessionalSignatureForm({ initialProfile }: ProfessionalSignat
         </p>
 
         <SignaturePad
-          key={signatureData === null ? 'empty' : 'with-data'}
+          key={padResetKey}
           initialData={signatureData}
-          onSignatureChange={(data) => setSignatureData(data)}
+          onSignatureChange={setSignatureData}
         />
 
         <div className="flex flex-wrap items-center gap-2">
