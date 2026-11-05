@@ -1,7 +1,9 @@
 import { z } from 'zod'
-import { brToday } from '@/lib/dates'
+import { brToday, isValidYmd } from '@/lib/dates'
 
-const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (esperado YYYY-MM-DD)')
+// isValidYmd also refuses days that don't exist, like 2026-02-31, which would
+// parse to an Invalid Date.
+const ymd = z.string().refine(isValidYmd, 'Data inválida (esperado YYYY-MM-DD)')
 
 const cents = (v: number) => Number(v.toFixed(2)) === v
 

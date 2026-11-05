@@ -138,9 +138,16 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
     expect(page.data.length).toBeGreaterThan(0)
     expect(page.data.every((m) => m.accountId === cash.id && m.accountName === 'Caixa')).toBe(true)
 
-    // The newest row's running balance is the account's balance.
-    const bankPage = await listCashMovements(CLINIC, { ...PERIOD, accountId: bank.id, page: 1, limit: 50 })
+    // Asked for the account balance (Owner, Financeiro): the newest row's running balance is the account's balance.
+    const bankPage = await listCashMovements(
+      CLINIC,
+      { ...PERIOD, accountId: bank.id, page: 1, limit: 50 },
+      { accountBalance: true },
+    )
     expect(Number(bankPage.data[0].runningBalance)).toBe(await balanceOf(CLINIC, bank.id))
+    // Not asked (receptionist): only the sum of the rows shown, no opening balance.
+    const plainPage = await listCashMovements(CLINIC, { ...PERIOD, accountId: bank.id, page: 1, limit: 50 })
+    expect(Number(plainPage.data[0].runningBalance)).toBe(50 + 30 - 200)
     // 23:00 on Oct 31 in BR is before the opening day: the balance there is not the opening one.
     const beforeOpening = bankPage.data.find((m) => m.movementDate.toISOString() === '2026-11-01T02:00:00.000Z')
     expect(Number(beforeOpening?.runningBalance)).toBe(0)
@@ -158,7 +165,7 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
       code: 'FINANCIAL_ACCOUNT_NOT_FOUND',
     })
     expect(await resolveMovementAccountId(db, CLINIC, { method: 'pix' })).not.toBe(bank.id)
-    expect(await reversalAccountId(db, CLINIC, bank.id, 'pix')).toBe(bank.id)
+    expect(await reversalAccountId(db, CLINIC, bank.id)).toBe(bank.id)
     expect((await listFinancialAccounts(CLINIC)).map((a) => a.id)).not.toContain(bank.id)
     expect(await balanceOf(CLINIC, bank.id)).toBe(830)
   })

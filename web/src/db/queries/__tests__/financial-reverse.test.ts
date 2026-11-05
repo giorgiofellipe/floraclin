@@ -345,7 +345,7 @@ describe('reversePayment outflow link and card payments', () => {
 
     await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
 
-    expect(paymentInflowAccountIdMock).toHaveBeenCalledWith(tx, TENANT, PAYMENT_RECORD_ID, 'cash')
+    expect(paymentInflowAccountIdMock).toHaveBeenCalledWith(tx, TENANT, PAYMENT_RECORD_ID)
     const outflow = log.find((q) => q.op === 'insert' && tableOf(q) === cashMovements)
     expect(outflow?.capture.value).toMatchObject({ type: 'outflow', accountId: 'acct-original' })
   })

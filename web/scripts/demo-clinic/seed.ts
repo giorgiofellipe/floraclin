@@ -109,6 +109,7 @@ import {
   whatsappMessages,
 } from '@/db/schema'
 import { loadInstallmentTerms } from '@/db/queries/financial'
+import { defaultAccountResolver } from '@/db/queries/financial-accounts'
 import { DEFAULT_ANAMNESIS_TEMPLATE } from '@/lib/anamnesis/default-template'
 import { brToday, parseBrDate } from '@/lib/dates'
 import { getStoragePath } from '@/lib/storage'
@@ -823,6 +824,10 @@ async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<PlannedExpenseI
  * (`listCashMovements`, `getLedgerSummary`, `exportLedgerCSV`,
  * `listLedgerReportRows`), so it stays null here exactly as the schema
  * allows.
+ *
+ * Each row goes to the account the app would pick for its method (cash to the
+ * Caixa, everything else to the Conta principal), provisioned on first use
+ * the same way, since `cash_movements.account_id` is NOT NULL.
  */
 async function writeCashMovements(
   tx: Tx,
@@ -830,23 +835,30 @@ async function writeCashMovements(
   pastRecords: PastRecord[],
   expenseInstallmentPlans: PlannedExpenseInstallment[],
 ): Promise<number> {
-  const inflowRows = pastRecords.flatMap(({ entry }) =>
+  const accountFor = defaultAccountResolver(tx, DEMO_TENANT_ID)
+  const paidInstallments = pastRecords.flatMap(({ entry }) =>
     entry.installments
       .filter((installment): installment is typeof installment & { paidAt: string } =>
         installment.status === 'paid' && installment.paidAt !== undefined,
       )
-      .map((installment) => ({
-        tenantId: DEMO_TENANT_ID,
-        type: 'inflow' as const,
-        amount: money(installment.amount),
-        description: `Pagamento: ${entry.procedure.procedureName}`,
-        paymentMethod: installment.paymentMethod ?? null,
-        movementDate: brInstant(installment.paidAt, '12:00'),
-        patientId: patientIdFor(ctx.plan, entry.procedure.patientIndex),
-        recordedBy: ctx.practitionerId,
-      })),
+      .map((installment) => ({ entry, installment })),
   )
+  const inflowRows = []
+  for (const { entry, installment } of paidInstallments) {
+    inflowRows.push({
+      tenantId: DEMO_TENANT_ID,
+      type: 'inflow' as const,
+      amount: money(installment.amount),
+      description: `Pagamento: ${entry.procedure.procedureName}`,
+      paymentMethod: installment.paymentMethod ?? null,
+      movementDate: brInstant(installment.paidAt, '12:00'),
+      patientId: patientIdFor(ctx.plan, entry.procedure.patientIndex),
+      recordedBy: ctx.practitionerId,
+      accountId: await accountFor(installment.paymentMethod),
+    })
+  }
 
+  const expenseAccountId = await accountFor('transfer')
   const outflowRows = expenseInstallmentPlans.map((installment) => ({
     tenantId: DEMO_TENANT_ID,
     type: 'outflow' as const,
@@ -859,6 +871,7 @@ async function writeCashMovements(
     expenseInstallmentId: installment.id,
     expenseCategoryId: installment.categoryId,
     recordedBy: ctx.practitionerId,
+    accountId: expenseAccountId,
   }))
 
   const rows = [...inflowRows, ...outflowRows]

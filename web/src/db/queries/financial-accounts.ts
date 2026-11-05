@@ -29,6 +29,9 @@ export function defaultKindForMethod(method: string | null | undefined): Default
 
 const PROVISIONED_NAMES: Record<DefaultKind, string> = { cash: 'Caixa', bank: 'Conta principal' }
 
+/** Same name 0050/0051 give the account holding movements from before accounts. */
+const LEGACY_ACCOUNT_NAME = 'Geral (antes das contas)'
+
 export interface AccountChoice {
   /** Picked by the user: must be an active account of this clinic. */
   accountId?: string | null
@@ -47,7 +50,7 @@ export interface AccountChoice {
  * how a new clinic is provisioned.
  */
 export async function resolveMovementAccountId(
-  tx: typeof db,
+  tx: Pick<typeof db, 'select' | 'insert'>,
   tenantId: string,
   choice: AccountChoice,
 ): Promise<string> {
@@ -77,7 +80,25 @@ export async function resolveMovementAccountId(
   return provisionDefaultAccount(tx, tenantId, kind)
 }
 
-async function provisionDefaultAccount(tx: typeof db, tenantId: string, kind: DefaultKind): Promise<string> {
+/**
+ * resolveMovementAccountId for many movements with no pick or configured
+ * destination (seed and backfill scripts): the account only depends on the
+ * method's kind, so each kind is resolved once.
+ */
+export function defaultAccountResolver(tx: Pick<typeof db, 'select' | 'insert'>, tenantId: string) {
+  const byKind = new Map<DefaultKind, Promise<string>>()
+  return (method: string | null | undefined): Promise<string> => {
+    const kind = defaultKindForMethod(method)
+    let id = byKind.get(kind)
+    if (!id) {
+      id = resolveMovementAccountId(tx, tenantId, { method })
+      byKind.set(kind, id)
+    }
+    return id
+  }
+}
+
+async function provisionDefaultAccount(tx: Pick<typeof db, 'select' | 'insert'>, tenantId: string, kind: DefaultKind): Promise<string> {
   // uq_financial_accounts_default makes a concurrent first payment a no-op
   // here; the select below then reads the row the other one committed.
   await tx
@@ -96,30 +117,43 @@ async function provisionDefaultAccount(tx: typeof db, tenantId: string, kind: De
 /**
  * The account a reversal goes to: the original movement's, even if it was
  * archived since, so the reversal undoes the money where it landed. An
- * original that old code wrote without an account is attributed to the legacy
- * account by the 0051 catch-up, so the reversal goes there too.
+ * original that old code wrote without an account (between 0050 and 0051) is
+ * attributed to the legacy account by the 0051 catch-up, so the reversal goes
+ * there too, never to a method default: otherwise a fully reversed payment
+ * would leave +amount on legacy and -amount on the bank. A clinic whose first
+ * movement came from old code after 0050 has no legacy account yet, so it is
+ * created here, the same row 0051 would create.
  */
 export async function reversalAccountId(
-  tx: typeof db,
+  tx: Pick<typeof db, 'select' | 'insert'>,
   tenantId: string,
   originalAccountId: string | null | undefined,
-  method: string | null | undefined,
 ): Promise<string> {
   if (originalAccountId) return originalAccountId
+  return ensureLegacyAccount(tx, tenantId)
+}
+
+async function ensureLegacyAccount(tx: Pick<typeof db, 'select' | 'insert'>, tenantId: string): Promise<string> {
+  // uq_financial_accounts_legacy makes a concurrent reversal or 0051 a no-op
+  // here; the select below then reads the row the other one committed.
+  await tx
+    .insert(financialAccounts)
+    .values({ tenantId, kind: 'legacy', name: LEGACY_ACCOUNT_NAME })
+    .onConflictDoNothing()
   const [legacy] = await tx
     .select({ id: financialAccounts.id })
     .from(financialAccounts)
     .where(and(inTenant(tenantId), eq(financialAccounts.kind, 'legacy')))
     .limit(1)
-  return legacy?.id ?? resolveMovementAccountId(tx, tenantId, { method })
+  if (!legacy) throw new Error(`Legacy account for tenant ${tenantId} was not provisioned`)
+  return legacy.id
 }
 
 /** The account of the live inflow a payment record wrote, for its reversal. */
 export async function paymentInflowAccountId(
-  tx: typeof db,
+  tx: Pick<typeof db, 'select' | 'insert'>,
   tenantId: string,
   paymentRecordId: string,
-  method: string | null | undefined,
 ): Promise<string> {
   const [original] = await tx
     .select({ accountId: cashMovements.accountId })
@@ -133,7 +167,7 @@ export async function paymentInflowAccountId(
     )
     .orderBy(desc(cashMovements.recordedAt))
     .limit(1)
-  return reversalAccountId(tx, tenantId, original?.accountId, method)
+  return reversalAccountId(tx, tenantId, original?.accountId)
 }
 
 // ─── BALANCES ────────────────────────────────────────────────────────

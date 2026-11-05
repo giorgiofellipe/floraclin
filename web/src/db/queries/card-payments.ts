@@ -386,7 +386,7 @@ export async function adjustCardRepasse(
 
       // The adjustment corrects the amount and date where the repasse landed,
       // so both new legs stay on the original's account.
-      const accountId = await reversalAccountId(tx, tenantId, original.accountId, original.paymentMethod)
+      const accountId = await reversalAccountId(tx, tenantId, original.accountId)
 
       const [counter] = await tx
         .insert(cashMovements)

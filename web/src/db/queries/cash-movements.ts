@@ -60,18 +60,20 @@ const accountJoin = and(
 
 export async function listCashMovements(
   tenantId: string,
-  filters: LedgerFilterInput
+  filters: LedgerFilterInput,
+  opts: { accountBalance?: boolean } = {},
 ) {
   const whereClause = and(...ledgerConditions(tenantId, filters))
   const limit = filters.limit ?? 50
   const offset = ((filters.page ?? 1) - 1) * limit
 
-  // Unfiltered by account: the running sum of the rows the filters show, as
-  // before. Filtered by account: that account's balance after each movement,
-  // counted the way listFinancialAccounts counts it (opening balance from the
-  // start of its BR day, every movement of the account since, whatever the
-  // other filters hide), so the newest row matches the account's balance.
-  const runningBalance = filters.accountId
+  // By default: the running sum of the rows the filters show, as before.
+  // With accountBalance and an account filter: that account's balance after
+  // each movement, counted the way listFinancialAccounts counts it (opening
+  // balance from the start of its BR day, every movement of the account since,
+  // whatever the other filters hide), so the newest row matches the account's
+  // balance. Only roles that may see account balances ask for it.
+  const runningBalance = filters.accountId && opts.accountBalance
     ? sql<number>`(
         SELECT COALESCE(SUM(CASE WHEN m2.type = 'inflow' THEN m2.amount::numeric ELSE -m2.amount::numeric END), 0)
           + CASE WHEN fa.opening_balance_date IS NULL

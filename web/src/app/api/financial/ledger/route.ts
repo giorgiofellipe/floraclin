@@ -3,6 +3,7 @@ import { getAuthContext } from '@/lib/auth'
 import { listCashMovements, getLedgerSummary } from '@/db/queries/cash-movements'
 import { ledgerFilterSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
+import { canManageAccounts } from '@/lib/financial/account-roles'
 
 export async function GET(request: Request) {
   try {
@@ -31,7 +32,10 @@ export async function GET(request: Request) {
     }
 
     const [movementsResult, summary] = await Promise.all([
-      listCashMovements(ctx.tenantId, parsed.data),
+      // A receptionist reads the ledger but not account balances (the
+      // accounts API hides them too), so their running sum stays the sum of
+      // the rows they see, without the opening balance or hidden movements.
+      listCashMovements(ctx.tenantId, parsed.data, { accountBalance: canManageAccounts(ctx.role) }),
       getLedgerSummary(ctx.tenantId, parsed.data),
     ])
 

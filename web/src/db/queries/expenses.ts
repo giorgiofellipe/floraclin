@@ -388,7 +388,6 @@ export async function revertExpenseInstallmentPayment(
           tx,
           tenantId,
           row.movement_account_id ? String(row.movement_account_id) : null,
-          prevPaymentMethod,
         ),
       })
       .returning({ id: cashMovements.id })

@@ -60,7 +60,7 @@ describe('expense payments and accounts', () => {
 
     await revertExpenseInstallmentPayment(TENANT, INSTALLMENT_ID, USER_ID)
 
-    expect(reversalAccountIdMock).toHaveBeenCalledWith(tx, TENANT, 'acct-drawer', 'cash')
+    expect(reversalAccountIdMock).toHaveBeenCalledWith(tx, TENANT, 'acct-drawer')
     const counter = log.find((q) => q.op === 'insert' && tableOf(q) === cashMovements)
     expect(valuesOfLogged(counter!)).toMatchObject({ type: 'inflow', paymentMethod: null, accountId: 'acct-original' })
   })

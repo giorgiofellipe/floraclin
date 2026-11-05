@@ -104,15 +104,37 @@ describe('reversalAccountId', () => {
     const { reversalAccountId } = await import('../financial-accounts')
     const { tx, log } = routedTx(() => [])
 
-    expect(await reversalAccountId(tx as never, TENANT, BANK, 'pix')).toBe(BANK)
+    expect(await reversalAccountId(tx as never, TENANT, BANK)).toBe(BANK)
     expect(log).toHaveLength(0)
   })
 
   it('sends the reversal of a movement old code wrote without an account to the legacy account', async () => {
     const { reversalAccountId } = await import('../financial-accounts')
-    const { tx } = routedTx(() => [{ id: LEGACY }])
+    const { tx, log } = routedTx((q) => (q.op === 'select' ? [{ id: LEGACY }] : []))
 
-    expect(await reversalAccountId(tx as never, TENANT, null, 'pix')).toBe(LEGACY)
+    expect(await reversalAccountId(tx as never, TENANT, null)).toBe(LEGACY)
+    // Never the method's default: 0051 puts the original on legacy, so the
+    // reversal must land there too or a fully reversed payment leaves +x / -x.
+    expect(log.map((q) => q.op)).toEqual(['insert', 'select'])
+    expect(log[0].capture.value).toEqual({ tenantId: TENANT, kind: 'legacy', name: 'Geral (antes das contas)' })
+    expect(log[0].capture.calls?.map(([m]) => m)).toContain('onConflictDoNothing')
+    expect(whereParams(log[1].capture)).toEqual(expect.arrayContaining([TENANT, 'legacy']))
+  })
+
+  it("creates the legacy account for a clinic whose first movement came from old code, instead of a bank default", async () => {
+    const { reversalAccountId } = await import('../financial-accounts')
+    let created = false
+    const { tx, log } = routedTx((q) => {
+      if (q.op === 'insert') {
+        created = true
+        return []
+      }
+      return created ? [{ id: LEGACY }] : []
+    })
+
+    expect(await reversalAccountId(tx as never, TENANT, null)).toBe(LEGACY)
+    expect(log.filter((q) => q.op === 'insert')).toHaveLength(1)
+    expect(log[0].capture.value).toMatchObject({ kind: 'legacy' })
   })
 })
 

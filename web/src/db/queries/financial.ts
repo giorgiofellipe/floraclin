@@ -1000,7 +1000,7 @@ export async function reversePayment(
             movementDate: new Date(),
             patientId: entry?.patientId,
             recordedBy: userId,
-            accountId: await paymentInflowAccountId(tx, tenantId, record.id, record.paymentMethod),
+            accountId: await paymentInflowAccountId(tx, tenantId, record.id),
           })
           .returning({ id: cashMovements.id })
 
