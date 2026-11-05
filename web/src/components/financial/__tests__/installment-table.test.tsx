@@ -437,8 +437,7 @@ describe('InstallmentTable "Emitir NFS-e" without NFS-e configured', () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
     await screen.findByText('Parcela 1/1')
     fireEvent.click(screen.getByTestId('installment-expand-payments'))
-    await userEvent.click(await screen.findByTestId('nfse-menu'))
-    await userEvent.click(await screen.findByText('Emitir NFS-e'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Emitir NFS-e' }))
   }
 
   it('sends the owner to the NFS-e settings', async () => {
