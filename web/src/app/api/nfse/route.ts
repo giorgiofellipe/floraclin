@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { and, eq, inArray, sql } from 'drizzle-orm'
-import { findMunicipalityCode } from '@bullcode/fiscal'
 import { db } from '@/db/client'
 import { maskCEP, maskCPF } from '@/lib/masks'
 import { withTransaction } from '@/lib/tenant'
@@ -14,10 +13,10 @@ import {
   patients,
   paymentRecords,
   procedureRecords,
+  tenants,
 } from '@/db/schema'
 import { handleApiError } from '@/lib/api-error'
 import { createAuditLog } from '@/lib/audit'
-import { isValidCep, isValidCpf } from '@/lib/br-documents'
 import { brToday } from '@/lib/dates'
 import { BusinessError } from '@/lib/errors'
 import { requireRole } from '@/lib/auth'
@@ -25,14 +24,13 @@ import { requireWrite } from '@/lib/write-access'
 import { competenceIsPastMonth, defaultCompetenceDate } from '@/lib/nfse/competence'
 import { NFSE_MAX_PER_REQUEST, nfseEnvironment } from '@/lib/nfse/config'
 import { createDocuments, processDocuments, updateRetryIntent } from '@/lib/nfse/emission'
+import { resolveNfseTaker } from '@/lib/nfse/taker-address'
 import type { NfseProcessResult } from '@/lib/nfse/types'
 
 export const maxDuration = 300
 
 const EMIT_ROLES = ['owner', 'receptionist', 'financial'] as const
 const TAKER_EDIT_ROLES = ['owner', 'receptionist']
-
-type TakerField = 'cpf' | 'zip' | 'street' | 'number' | 'neighborhood' | 'city' | 'state'
 
 function notConfigured() {
   return NextResponse.json(
@@ -43,19 +41,6 @@ function notConfigured() {
 
 function businessResponse(error: BusinessError, status = 409) {
   return NextResponse.json({ error: error.message, code: error.code }, { status })
-}
-
-function missingFields(patient: { cpf: string | null; address: unknown }): TakerField[] {
-  const a = (patient.address ?? {}) as Record<string, string | undefined>
-  const missing: TakerField[] = []
-  if (!isValidCpf(patient.cpf ?? '')) missing.push('cpf')
-  if (!isValidCep(a.zip ?? '')) missing.push('zip')
-  if (!a.street?.trim()) missing.push('street')
-  if (!a.number?.trim()) missing.push('number')
-  if (!a.neighborhood?.trim()) missing.push('neighborhood')
-  if (!a.city?.trim() || (a.state && !findMunicipalityCode(a.city, a.state))) missing.push('city')
-  if (!a.state?.trim()) missing.push('state')
-  return missing
 }
 
 function currentTaker(patient: { cpf: string | null; address: unknown }) {
@@ -93,7 +78,7 @@ export async function GET(request: Request) {
     if (!settings?.configured) return notConfigured()
 
     const patientIds = [...new Set(records.map((r) => r.patientId))]
-    const [patientRows, serviceRows] = await Promise.all([
+    const [patientRows, serviceRows, [clinic]] = await Promise.all([
       db
         .select({ id: patients.id, fullName: patients.fullName, cpf: patients.cpf, email: patients.email, address: patients.address })
         .from(patients)
@@ -114,6 +99,7 @@ export async function GET(request: Request) {
           eq(appointments.id, sql`COALESCE(${financialEntries.appointmentId}, ${procedureRecords.appointmentId})`),
         )
         .where(and(eq(installments.tenantId, ctx.tenantId), inArray(paymentRecords.id, ids))),
+      db.select({ address: tenants.address }).from(tenants).where(eq(tenants.id, ctx.tenantId)),
     ])
 
     const today = brToday()
@@ -131,12 +117,19 @@ export async function GET(request: Request) {
     const canEditTaker = TAKER_EDIT_ROLES.includes(ctx.role)
     const grouped = patientRows.map((patient) => {
       const own = records.filter((r) => r.patientId === patient.id)
+      const taker = resolveNfseTaker({
+        cpf: patient.cpf,
+        patientAddress: patient.address,
+        clinicAddress: clinic?.address,
+        clinicAddressFallback: settings.clinicAddressFallback,
+      })
       return {
         patientId: patient.id,
         patientName: patient.fullName,
         paymentRecordIds: own.map((r) => r.id),
         total: own.reduce((sum, r) => sum + Number(r.amount), 0),
-        missing: missingFields(patient),
+        missing: taker.ok ? [] : taker.missing,
+        addressSource: taker.source,
         email: patient.email,
         canEditTaker,
         current: canEditTaker ? currentTaker(patient) : null,
@@ -215,7 +208,9 @@ export async function POST(request: Request) {
             .where(and(eq(patients.tenantId, ctx.tenantId), eq(patients.id, taker.patientId)))
           const next = {
             cpf: maskCPF(taker.cpf),
-            address: { ...((previous?.address as object | null) ?? {}), ...taker.address, zip: maskCEP(taker.address.zip) },
+            ...(taker.address && {
+              address: { ...((previous?.address as object | null) ?? {}), ...taker.address, zip: maskCEP(taker.address.zip) },
+            }),
           }
           await tx
             .update(patients)

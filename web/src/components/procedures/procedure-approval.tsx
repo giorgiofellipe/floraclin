@@ -24,7 +24,8 @@ import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import { diagramsToPoints } from '@/components/face-diagram/points'
 import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
-import type { PaymentMethod } from '@/types'
+import type { NfseIntake, PaymentMethod } from '@/types'
+import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import type { WizardOverrides } from '@/components/service-wizard/types'
 import { ApprovalSummaryCard } from './approval/approval-summary-card'
 import { WizardCart } from '@/components/service-wizard/wizard-cart'
@@ -131,6 +132,7 @@ export function ProcedureApproval({
   const [pending, setPending] = useState<PendingSignatures | null>(null)
 
   const [isApproving, setIsApproving] = useState(false)
+  const { promptAfterPayment } = useNfsePrompt()
   const [approveError, setApproveError] = useState<string | null>(null)
   const [approved, setApproved] = useState(false)
   const [cardNow, setCardNow] = useState(false)
@@ -307,6 +309,7 @@ export function ProcedureApproval({
               financialEntryId: string
             }
             paymentError?: string
+            nfse?: NfseIntake
           }
         | { success: false; error: string }
 
@@ -321,6 +324,7 @@ export function ProcedureApproval({
           description: 'A cobrança ficou pendente no Financeiro.',
         })
       }
+      promptAfterPayment(json.nfse)
 
       setApproved(true)
       markClean()
@@ -371,6 +375,7 @@ export function ProcedureApproval({
     wizardOverrides,
     onApproved,
     markClean,
+    promptAfterPayment,
   ])
 
   const handleApprove = useCallback(() => { void runApprove('button') }, [runApprove])

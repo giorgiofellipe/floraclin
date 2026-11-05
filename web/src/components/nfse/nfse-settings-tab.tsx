@@ -87,6 +87,7 @@ interface FormState {
   issWithheld: boolean
   emissionMode: NfseEmissionMode
   emailPatient: boolean
+  clinicAddressFallback: boolean
 }
 
 function rateText(value: number | null): string {
@@ -107,6 +108,7 @@ function toFormState(data: NfseSettingsPublic | null, suggestedCode: string | nu
     issWithheld: data?.issWithheld ?? false,
     emissionMode: data?.emissionMode ?? 'ask',
     emailPatient: data?.emailPatient ?? false,
+    clinicAddressFallback: data?.clinicAddressFallback ?? false,
   }
 }
 
@@ -132,6 +134,7 @@ function toInput(form: FormState): NfseFiscalSettingsInput {
     issWithheld: form.issWithheld,
     emissionMode: form.emissionMode,
     emailPatient: form.emailPatient,
+    clinicAddressFallback: form.clinicAddressFallback,
   }
 }
 
@@ -351,6 +354,15 @@ function FiscalSettingsForm({
             onCheckedChange={(checked) => patch({ emailPatient: checked })}
           />
           <span className="text-sm text-charcoal">Enviar a NFS-e por email ao paciente</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <Switch
+            checked={form.clinicAddressFallback}
+            onCheckedChange={(checked) => patch({ clinicAddressFallback: checked })}
+          />
+          <span className="text-sm text-charcoal">
+            Se o paciente não tiver endereço cadastrado, usar o endereço da clínica
+          </span>
         </div>
       </div>
 

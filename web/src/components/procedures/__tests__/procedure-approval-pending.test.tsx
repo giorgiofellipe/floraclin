@@ -12,6 +12,7 @@ vi.mock('../approval/service-contract-section', () => ({ ServiceContractSection:
 vi.mock('../approval/consent-status-list', () => ({ ConsentStatusList: () => null }))
 
 import { ProcedureApproval } from '../procedure-approval'
+import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 const procedure = {
   id: 'rec-1',
@@ -50,12 +51,14 @@ beforeEach(() => {
 
 function renderApproval(onPending: (labels: string[]) => void) {
   render(
-    <ProcedureApproval
-      procedure={procedure}
-      patient={{ id: 'pat-1', fullName: 'Ana' }}
-      tenant={{ id: 't-1', name: 'Clínica' }}
-      onPendingSignaturesChange={onPending}
-    />,
+    <NfsePromptProvider>
+      <ProcedureApproval
+        procedure={procedure}
+        patient={{ id: 'pat-1', fullName: 'Ana' }}
+        tenant={{ id: 't-1', name: 'Clínica' }}
+        onPendingSignaturesChange={onPending}
+      />
+    </NfsePromptProvider>,
   )
 }
 

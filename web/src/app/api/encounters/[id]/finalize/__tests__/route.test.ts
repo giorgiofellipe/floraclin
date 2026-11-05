@@ -97,6 +97,16 @@ describe('POST /api/encounters/[id]/finalize card payment', () => {
     expect((await res.json()).paymentError).toBeUndefined()
   })
 
+  it('returns the payment for the NFS-e prompt when the clinic asks after each payment', async () => {
+    vi.mocked(recordPayment).mockResolvedValue({
+      nfse: { mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] },
+    } as never)
+
+    const res = await call({ cardPayment: { terminalId: TERMINAL_ID, expectedRate: 8.99 } })
+
+    expect((await res.json()).nfse).toEqual({ mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] })
+  })
+
   it('does not charge when the clinic did not take the card payment now', async () => {
     await call({})
     expect(recordPayment).not.toHaveBeenCalled()

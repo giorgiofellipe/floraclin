@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BulkActionBar } from '../bulk-action-bar'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
+import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 vi.mock('@/hooks/queries/use-installment-quote', () => ({
   useInstallmentQuote: vi.fn(),
@@ -91,7 +92,7 @@ function createWrapper() {
   return function Wrapper({ children }: { children: React.ReactNode }) {
     return (
       <QueryClientProvider client={queryClient}>
-        {children}
+        <NfsePromptProvider>{children}</NfsePromptProvider>
       </QueryClientProvider>
     )
   }

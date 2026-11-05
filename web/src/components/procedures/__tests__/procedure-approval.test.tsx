@@ -20,6 +20,7 @@ vi.mock('../approval/service-contract-section', () => ({ ServiceContractSection:
 vi.mock('../approval/consent-status-list', () => ({ ConsentStatusList: () => null }))
 
 import { ProcedureApproval } from '../procedure-approval'
+import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 const cart = {
   templateId: null,
@@ -71,14 +72,16 @@ beforeEach(() => {
 
 async function renderApproval() {
   render(
-    <ProcedureApproval
-      procedure={procedure}
-      cart={cart}
-      draftRecordIds={['rec-1']}
-      encounterId="enc-1"
-      patient={{ id: 'pat-1', fullName: 'Ana' }}
-      tenant={{ id: 't-1', name: 'Clínica' }}
-    />,
+    <NfsePromptProvider>
+      <ProcedureApproval
+        procedure={procedure}
+        cart={cart}
+        draftRecordIds={['rec-1']}
+        encounterId="enc-1"
+        patient={{ id: 'pat-1', fullName: 'Ana' }}
+        tenant={{ id: 't-1', name: 'Clínica' }}
+      />
+    </NfsePromptProvider>,
   )
   const approve = await screen.findByRole('button', { name: /Aprovar Procedimento/ })
   await waitFor(() => expect(approve).toBeEnabled())

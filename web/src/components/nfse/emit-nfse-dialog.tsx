@@ -57,9 +57,10 @@ const EMPTY_TAKER: TakerForm = {
   state: '',
 }
 
-function toTakerInput(patientId: string, form: TakerForm): NfseTakerInput {
+function toTakerInput(patient: NfsePreviewPatient, form: TakerForm): NfseTakerInput {
+  if (usesClinicAddress(patient)) return { patientId: patient.patientId, cpf: form.cpf }
   return {
-    patientId,
+    patientId: patient.patientId,
     cpf: form.cpf,
     address: {
       zip: form.zip,
@@ -73,10 +74,15 @@ function toTakerInput(patientId: string, form: TakerForm): NfseTakerInput {
   }
 }
 
-function takerComplete(form: TakerForm): boolean {
+function takerComplete(patient: NfsePreviewPatient, form: TakerForm): boolean {
+  if (usesClinicAddress(patient)) return Boolean(form.cpf)
   return Boolean(
     form.cpf && form.zip && form.street.trim() && form.number.trim() && form.neighborhood.trim() && form.city.trim() && form.state.trim(),
   )
+}
+
+function usesClinicAddress(patient: NfsePreviewPatient): boolean {
+  return patient.addressSource === 'clinic'
 }
 
 function initialTaker(patient: NfsePreviewPatient): TakerForm {
@@ -142,7 +148,7 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
   const sendEmail = hasEmail && (sendEmailChoice ?? preview.settings.emailPatient)
   const formOf = (p: NfsePreviewPatient) => takers[p.patientId] ?? initialTaker(p)
   const blocked = (p: NfsePreviewPatient) => needsTaker(p) && !p.canEditTaker
-  const ready = preview.patients.filter((p) => !blocked(p) && (!needsTaker(p) || takerComplete(formOf(p))))
+  const ready = preview.patients.filter((p) => !blocked(p) && (!needsTaker(p) || takerComplete(p, formOf(p))))
   const readyIds = ready.flatMap((p) => p.paymentRecordIds)
   const serviceDate = formatBrDate(parseBrDate(preview.defaultCompetence))
   const todayDate = formatBrDate(parseBrDate(brToday()))
@@ -154,7 +160,7 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
   async function handleEmit() {
     const takerInputs = ready
       .filter(needsTaker)
-      .map((p) => toTakerInput(p.patientId, formOf(p)))
+      .map((p) => toTakerInput(p, formOf(p)))
     try {
       const data = await emit.mutateAsync({
         paymentRecordIds: readyIds,
@@ -179,6 +185,9 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
               <p className="text-sm font-medium text-charcoal">
                 {patient.patientName}: {formatCurrency(patient.total)}
               </p>
+              {usesClinicAddress(patient) && (
+                <p className="text-xs text-mid">Paciente sem endereço cadastrado: a nota usa o endereço da clínica.</p>
+              )}
               {blocked(patient) && (
                 <p className="text-xs text-amber-700">
                   Peça a quem tem acesso ao cadastro para completar CPF e endereço.
@@ -195,51 +204,55 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
                       onChange={(e) => setField(patient, 'cpf', e.target.value)}
                     />
                   </div>
-                  <div className="col-span-3 space-y-1">
-                    <Label className="text-xs">CEP</Label>
-                    <MaskedInput
-                      mask={maskCEP}
-                      value={form.zip}
-                      aria-invalid={invalid('zip')}
-                      onChange={(e) => setField(patient, 'zip', e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-4 space-y-1">
-                    <Label className="text-xs">Rua</Label>
-                    <Input value={form.street} aria-invalid={invalid('street')} onChange={(e) => setField(patient, 'street', e.target.value)} />
-                  </div>
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">Número</Label>
-                    <Input value={form.number} aria-invalid={invalid('number')} onChange={(e) => setField(patient, 'number', e.target.value)} />
-                  </div>
-                  <div className="col-span-3 space-y-1">
-                    <Label className="text-xs">Complemento</Label>
-                    <Input
-                      value={form.complement}
-                      onChange={(e) => setField(patient, 'complement', e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-3 space-y-1">
-                    <Label className="text-xs">Bairro</Label>
-                    <Input
-                      value={form.neighborhood}
-                      aria-invalid={invalid('neighborhood')}
-                      onChange={(e) => setField(patient, 'neighborhood', e.target.value)}
-                    />
-                  </div>
-                  <div className="col-span-4 space-y-1">
-                    <Label className="text-xs">Cidade</Label>
-                    <Input value={form.city} aria-invalid={invalid('city')} onChange={(e) => setField(patient, 'city', e.target.value)} />
-                  </div>
-                  <div className="col-span-2 space-y-1">
-                    <Label className="text-xs">UF</Label>
-                    <Input
-                      maxLength={2}
-                      value={form.state}
-                      aria-invalid={invalid('state')}
-                      onChange={(e) => setField(patient, 'state', e.target.value)}
-                    />
-                  </div>
+                  {!usesClinicAddress(patient) && (
+                    <>
+                      <div className="col-span-3 space-y-1">
+                        <Label className="text-xs">CEP</Label>
+                        <MaskedInput
+                          mask={maskCEP}
+                          value={form.zip}
+                          aria-invalid={invalid('zip')}
+                          onChange={(e) => setField(patient, 'zip', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-4 space-y-1">
+                        <Label className="text-xs">Rua</Label>
+                        <Input value={form.street} aria-invalid={invalid('street')} onChange={(e) => setField(patient, 'street', e.target.value)} />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">Número</Label>
+                        <Input value={form.number} aria-invalid={invalid('number')} onChange={(e) => setField(patient, 'number', e.target.value)} />
+                      </div>
+                      <div className="col-span-3 space-y-1">
+                        <Label className="text-xs">Complemento</Label>
+                        <Input
+                          value={form.complement}
+                          onChange={(e) => setField(patient, 'complement', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-3 space-y-1">
+                        <Label className="text-xs">Bairro</Label>
+                        <Input
+                          value={form.neighborhood}
+                          aria-invalid={invalid('neighborhood')}
+                          onChange={(e) => setField(patient, 'neighborhood', e.target.value)}
+                        />
+                      </div>
+                      <div className="col-span-4 space-y-1">
+                        <Label className="text-xs">Cidade</Label>
+                        <Input value={form.city} aria-invalid={invalid('city')} onChange={(e) => setField(patient, 'city', e.target.value)} />
+                      </div>
+                      <div className="col-span-2 space-y-1">
+                        <Label className="text-xs">UF</Label>
+                        <Input
+                          maxLength={2}
+                          value={form.state}
+                          aria-invalid={invalid('state')}
+                          onChange={(e) => setField(patient, 'state', e.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
             </div>

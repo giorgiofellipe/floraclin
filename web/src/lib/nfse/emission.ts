@@ -1,4 +1,3 @@
-import { findMunicipalityCode } from '@bullcode/fiscal'
 import { dpsId } from '@bullcode/fiscal/nfse'
 import { and, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
@@ -32,12 +31,12 @@ import {
 } from '@/db/queries/nfse'
 import { appointments, financialEntries, installments, nfseDocuments, paymentRecords, procedureRecords } from '@/db/schema'
 import { createAuditLog } from '@/lib/audit'
-import { isValidCep, isValidCpf, onlyDigits } from '@/lib/br-documents'
 import { brToday } from '@/lib/dates'
 import { BusinessError } from '@/lib/errors'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { defaultCompetenceDate } from './competence'
 import { NFSE_DPS_SERIES, nfseEnvironment } from './config'
+import { resolveNfseTaker, type NfseTakerField } from './taker-address'
 import { createNfseGateway, NfseGatewayError } from './gateway'
 import { PATIENT_EMAIL_MISSING, sendNfseEmail } from './nfse-email'
 import { resolveServiceCodes } from './presets'
@@ -167,6 +166,16 @@ export async function createDocuments(
   )
 }
 
+const TAKER_FIELD_LABELS: Record<NfseTakerField, string> = {
+  cpf: 'CPF',
+  zip: 'CEP',
+  street: 'logradouro',
+  number: 'número',
+  neighborhood: 'bairro',
+  city: 'cidade',
+  state: 'UF',
+}
+
 type SnapshotResult = { ok: true; snapshot: NfseSnapshot } | { ok: false; code: string; message: string }
 
 async function buildSnapshot(
@@ -174,19 +183,16 @@ async function buildSnapshot(
   loaded: LoadedDocument,
   settings: NfseSettingsWithSecrets,
 ): Promise<SnapshotResult> {
-  const { patient, entry, installment, installmentCount } = loaded
-  const address = (patient.address ?? {}) as Record<string, string | undefined>
-  const cityCode = address.city && address.state ? findMunicipalityCode(address.city, address.state) : null
-
-  const missing: string[] = []
-  if (!isValidCpf(patient.cpf ?? '')) missing.push('CPF')
-  if (!isValidCep(address.zip ?? '')) missing.push('CEP')
-  if (!address.street?.trim()) missing.push('logradouro')
-  if (!address.number?.trim()) missing.push('número')
-  if (!address.neighborhood?.trim()) missing.push('bairro')
-  if (!cityCode) missing.push('cidade')
-  if (missing.length > 0) {
-    return { ok: false, code: 'missing_taker_data', message: `Complete o cadastro do paciente: ${missing.join(', ')}.` }
+  const { patient, clinicAddress, entry, installment, installmentCount } = loaded
+  const taker = resolveNfseTaker({
+    cpf: patient.cpf,
+    patientAddress: patient.address,
+    clinicAddress,
+    clinicAddressFallback: settings.clinicAddressFallback,
+  })
+  if (!taker.ok) {
+    const labels = [...new Set(taker.missing.map((field) => TAKER_FIELD_LABELS[field]))]
+    return { ok: false, code: 'missing_taker_data', message: `Complete o cadastro do paciente: ${labels.join(', ')}.` }
   }
 
   let service
@@ -220,19 +226,11 @@ async function buildSnapshot(
     issWithheld: settings.issWithheld,
     service,
     taker: {
-      cpf: onlyDigits(patient.cpf ?? ''),
+      cpf: taker.cpf,
       name: patient.fullName,
       email: patient.email || null,
-      address: {
-        zip: onlyDigits(address.zip ?? ''),
-        street: address.street!.trim(),
-        number: address.number!.trim(),
-        complement: address.complement?.trim() || null,
-        neighborhood: address.neighborhood!.trim(),
-        city: address.city!,
-        state: address.state!,
-      },
-      cityCode: cityCode!,
+      address: taker.address,
+      cityCode: taker.cityCode,
     },
     description:
       installmentCount > 1

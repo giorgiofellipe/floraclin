@@ -39,6 +39,7 @@ const fiscalBody = {
   issWithheld: false,
   emissionMode: 'ask',
   emailPatient: true,
+  clinicAddressFallback: false,
 }
 
 function json(method: string, body?: unknown) {
@@ -147,12 +148,12 @@ describeIntegration('NFS-e certificate and settings API (integration, requires t
   it('saves valid settings and suggests the municipality from the clinic address', async () => {
     await putCertificate(upload())
 
-    const put = await putSettings(json('PUT', fiscalBody))
+    const put = await putSettings(json('PUT', { ...fiscalBody, clinicAddressFallback: true }))
     const get = await getSettings(json('GET'))
 
     expect(put.status).toBe(200)
     const body = await get.json()
-    expect(body.data.configured).toBe(true)
+    expect(body.data).toMatchObject({ configured: true, clinicAddressFallback: true })
     expect(body.data.municipalityName).toBe('São Paulo')
     expect(body.suggestedMunicipalityCode).toBe('3550308')
   })

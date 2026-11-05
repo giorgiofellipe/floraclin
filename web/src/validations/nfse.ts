@@ -35,7 +35,7 @@ export const nfseEmitSchema = z.object({
       z.object({
         patientId: z.guid(),
         cpf: z.string().refine(isValidCpf, 'CPF inválido'),
-        address: takerAddressSchema,
+        address: takerAddressSchema.optional(),
       }),
     )
     .max(NFSE_MAX_PER_REQUEST)
@@ -87,6 +87,7 @@ export const nfseFiscalSettingsSchema = z
     issWithheld: z.boolean(),
     emissionMode: z.enum(['ask', 'always']),
     emailPatient: z.boolean(),
+    clinicAddressFallback: z.boolean(),
   })
   .superRefine((value, ctx) => {
     if (value.simplesNacionalOption === 3) {

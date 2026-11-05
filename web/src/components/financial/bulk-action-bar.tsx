@@ -27,7 +27,7 @@ import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
-import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
+import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import type { PaymentMethod } from '@/types'
 
 interface BulkActionBarProps {
@@ -77,7 +77,7 @@ export function BulkActionBar({
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
-  const [emitIds, setEmitIds] = useState<string[] | null>(null)
+  const { openEmit } = useNfsePrompt()
 
   const queryClient = useQueryClient()
   const bulkPay = useBulkPay()
@@ -114,7 +114,7 @@ export function BulkActionBar({
         if (ids.length > NFSE_MAX_PER_REQUEST) {
           toast.info(`A NFS-e dos outros ${ids.length - NFSE_MAX_PER_REQUEST} pagamentos pode ser emitida na tabela de parcelas.`)
         }
-        setEmitIds(ids.slice(0, NFSE_MAX_PER_REQUEST))
+        openEmit(ids.slice(0, NFSE_MAX_PER_REQUEST))
       }
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
@@ -156,21 +156,10 @@ export function BulkActionBar({
     }
   }
 
-  const emitDialog = emitIds && (
-    <EmitNfseDialog
-      paymentRecordIds={emitIds}
-      open
-      onOpenChange={(open) => {
-        if (!open) setEmitIds(null)
-      }}
-    />
-  )
-
-  if (selectedCount === 0) return emitDialog || null
+  if (selectedCount === 0) return null
 
   return (
     <>
-      {emitDialog}
       <div
         data-testid="bulk-action-bar"
         className={cn(

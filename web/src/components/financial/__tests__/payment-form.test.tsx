@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
 import { PaymentForm } from '../payment-form'
+import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 const mockCreate = vi.fn()
 
@@ -72,12 +73,14 @@ vi.mock('@/components/ui/select', () => ({
 
 function renderForm(onSuccess = vi.fn()) {
   render(
-    <PaymentForm
-      open
-      onClose={() => {}}
-      onSuccess={onSuccess}
-      defaultPatient={{ id: 'pat-1', fullName: 'Maria' }}
-    />,
+    <NfsePromptProvider>
+      <PaymentForm
+        open
+        onClose={() => {}}
+        onSuccess={onSuccess}
+        defaultPatient={{ id: 'pat-1', fullName: 'Maria' }}
+      />
+    </NfsePromptProvider>,
   )
   fireEvent.change(screen.getByPlaceholderText('Ex: Aplicação de toxina botulínica'), {
     target: { value: 'Harmonização' },
