@@ -101,9 +101,15 @@ async function graphFetch(path: string, token: string, options?: RequestInit) {
 // point, so non-inbox senders (cron, webhooks, consent/anamnesis links,
 // queued-message drain) cannot bypass the block. Queued messages simply
 // stay pending and deliver after the tenant resubscribes.
+//
+// The same goes for a clinic whose owner has not confirmed the sign-up
+// e-mail: the shared number would otherwise message any phone typed in on an
+// unproven address's word. Queued messages wait for the confirmation.
 async function requireSendAllowed(tenantId: string) {
   const { requireActiveSubscription } = await import('@/lib/plans')
+  const { requireTenantEmailConfirmed } = await import('@/lib/email-confirmation-gate')
   await requireActiveSubscription(tenantId)
+  await requireTenantEmailConfirmed(tenantId)
 }
 
 function sentMessageId(data: { messages?: { id?: string }[] }): string {

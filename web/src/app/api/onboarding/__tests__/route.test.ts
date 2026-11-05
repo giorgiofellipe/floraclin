@@ -33,6 +33,7 @@ vi.mock('@/db/queries/admin-tenants', () => ({
   findAvailableSlug: vi.fn(async () => 'clinica-bela'),
   generateSlug: vi.fn(),
 }))
+vi.mock('@/db/queries/booking-slugs', () => ({ isBookingSlugFree: vi.fn(async () => true) }))
 vi.mock('@/lib/lifecycle-sender', () => ({ scheduleLifecycleWelcome: vi.fn() }))
 vi.mock('@/db/queries/products', () => ({ listProducts: vi.fn(async () => []), createProduct: vi.fn() }))
 vi.mock('@/db/queries/consent', () => ({
@@ -54,6 +55,8 @@ import {
   updateTenantSettings,
 } from '@/db/queries/tenants'
 import { findAvailableSlug } from '@/db/queries/admin-tenants'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
+import { db } from '@/db/client'
 import { createProduct } from '@/db/queries/products'
 import { createConsentTemplate, listConsentTemplates } from '@/db/queries/consent'
 import { createClinicalDocumentTemplate, listClinicalDocumentTemplates } from '@/db/queries/clinical-documents'
@@ -64,7 +67,6 @@ import { sendNewSignupNotification } from '@/lib/email'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { createAuditLog } from '@/lib/audit'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
-import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
 import { POST } from '../route'
 
 function postOnboarding(clinic: Record<string, unknown>) {
@@ -77,6 +79,7 @@ function postOnboarding(clinic: Record<string, unknown>) {
 beforeEach(() => {
   vi.clearAllMocks()
   vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {} } as never)
+  vi.mocked(isBookingSlugFree).mockResolvedValue(true)
   updateSet.mockImplementation(() => ({ where: updateWhere }))
   vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
   vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
@@ -102,23 +105,23 @@ function expectNothingWrittenAfterTheClinicSave() {
 }
 
 describe('POST /api/onboarding', () => {
-  // Regression: a taken booking link failed onboarding with a generic 500.
-  it('answers 409 with a clear message when the slug is taken, and goes no further', async () => {
+  // Regression: another clinic taking the slug between the check and the save failed onboarding with a generic 500.
+  it('answers 409 asking for a retry when the slug is taken during the save, and goes no further', async () => {
     vi.mocked(saveOnboardingClinic).mockRejectedValue(
       new Error('Failed query', { cause: { code: '23505', constraint_name: 'tenants_slug_unique' } }),
     )
 
-    const res = await postOnboarding({ name: 'Clinica Bela', slug: 'clinica-bela', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+    const res = await postOnboarding({ name: 'Clinica Bela', phone: '(11) 98888-7777' })
 
     expect(res.status).toBe(409)
-    expect((await res.json()).error).toBe('Este link já está em uso. Escolha outro.')
+    expect((await res.json()).error).toBe('Não foi possível concluir agora. Tente novamente.')
     expectNothingWrittenAfterTheClinicSave()
   })
 
   it('answers 404 and writes nothing when the clinic is missing', async () => {
     vi.mocked(getTenant).mockResolvedValue(null)
 
-    const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+    const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
 
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ success: false })
@@ -127,7 +130,7 @@ describe('POST /api/onboarding', () => {
   })
 
   describe('when onboarding was already completed', () => {
-    const realClinic = { name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS }
+    const realClinic = { name: 'Clínica Bella', phone: '(11) 98888-7777' }
     const postWithEverything = () =>
       POST(new Request('http://localhost/api/onboarding', {
         method: 'POST',
@@ -187,7 +190,7 @@ describe('POST /api/onboarding', () => {
   ])('answers 400 and changes nothing for %s', async (_label, phone) => {
     vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: { clinic_name_placeholder: true } } as never)
 
-    const res = await postOnboarding({ name: 'Clínica Bella', ...(phone === undefined ? {} : { phone }), workingHours: DEFAULT_WORKING_HOURS })
+    const res = await postOnboarding({ name: 'Clínica Bella', ...(phone === undefined ? {} : { phone }) })
 
     expect(res.status).toBe(400)
     expect((await res.json()).error).toBe('Informe o telefone da clínica com DDD')
@@ -197,22 +200,6 @@ describe('POST /api/onboarding', () => {
     expect(markOnboardingCompleted).not.toHaveBeenCalled()
     expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
     expect(notifyDiscord).not.toHaveBeenCalled()
-  })
-
-  // Regression: an emptied address was skipped, so the one autosaved before stayed.
-  it('clears the stored address when every field was emptied', async () => {
-    updateWhere.mockResolvedValue(undefined)
-    vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, lifecycleNoticeAt: new Date() } as never)
-
-    const res = await postOnboarding({
-      name: 'Clínica Bella',
-      phone: '(11) 98888-7777',
-      address: { street: '', city: '' },
-      workingHours: DEFAULT_WORKING_HOURS,
-    })
-
-    expect(res.status).toBe(200)
-    expect(saveOnboardingClinic).toHaveBeenCalledWith('tenant-1', expect.objectContaining({ address: null }))
   })
 
   describe('a clinic created on arrival after Google sign-up', () => {
@@ -226,14 +213,18 @@ describe('POST /api/onboarding', () => {
         settings: { clinic_name_placeholder: true },
       } as never)
 
-      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
 
       expect(res.status).toBe(200)
       expect(saveOnboardingClinic).toHaveBeenCalledWith('tenant-1', expect.objectContaining({
         name: 'Clínica Bella',
         phone: '(11) 98888-7777',
       }))
-      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null, clinic_name_placeholder: false })
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {
+        onboarding_draft: null,
+        clinic_name_placeholder: false,
+        clinic_slug_placeholder: false,
+      })
       expect(updateTenantSettings).not.toHaveBeenCalled()
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
@@ -260,7 +251,7 @@ describe('POST /api/onboarding', () => {
         where: 'lifecycleNoticeAt' in values ? vi.fn().mockRejectedValue(new Error('connection reset')) : updateWhere,
       }))
 
-      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
 
       expect(res.status).toBe(500)
       expect(markOnboardingCompleted).not.toHaveBeenCalled()
@@ -278,7 +269,7 @@ describe('POST /api/onboarding', () => {
         lifecycleNoticeAt: null,
       } as never)
 
-      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
 
       expect(res.status).toBe(200)
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
@@ -289,7 +280,7 @@ describe('POST /api/onboarding', () => {
     it('leaves a clinic that saw the notice before alone: its welcome already went out', async () => {
       vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, lifecycleNoticeAt: new Date() } as never)
 
-      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777', workingHours: DEFAULT_WORKING_HOURS })
+      const res = await postOnboarding({ name: 'Clínica Bella', phone: '(11) 98888-7777' })
 
       expect(res.status).toBe(200)
       expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', { onboarding_draft: null })
@@ -309,18 +300,18 @@ describe('POST /api/onboarding', () => {
       vi.unstubAllEnvs()
     })
 
-    const realClinic = {
-      name: 'Clínica Bella',
-      phone: '(11) 98888-7777',
-      address: { city: 'São Paulo', state: 'SP' },
-      workingHours: DEFAULT_WORKING_HOURS,
-    }
+    const realClinic = { name: 'Clínica Bella', phone: '(11) 98888-7777' }
 
     it.each([
       ['a Google clinic created on arrival', { clinic_name_placeholder: true }],
       ['an e-mail clinic named at sign-up', {}],
     ])('posts "Cadastro concluído" once with the real data for %s', async (_label, settings) => {
-      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings, createdAt: fourMinutesAgo() } as never)
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings,
+        createdAt: fourMinutesAgo(),
+        address: { city: 'São Paulo', state: 'SP' },
+      } as never)
 
       const res = await postOnboarding(realClinic)
 
@@ -370,6 +361,7 @@ describe('POST /api/onboarding', () => {
       expect(updateTenantSettings).toHaveBeenCalledWith('tenant-1', {
         onboarding_completed: true,
         clinic_name_placeholder: false,
+        clinic_slug_placeholder: false,
       })
       expect(notifyDiscord).not.toHaveBeenCalled()
     })
@@ -399,6 +391,171 @@ describe('POST /api/onboarding', () => {
         area: 'onboarding',
         step: 'notify_completed',
       }))
+    })
+  })
+
+  describe('the slim first step and "Configurar depois"', () => {
+    const fourMinutesAgo = () => new Date(Date.now() - 4 * 60_000 - 5_000)
+    const defaults = {
+      procedureTypes: [{ name: 'Toxina Botulínica', category: 'botox', estimatedDurationMin: 30 }],
+      selectedProducts: [{ name: 'Botox', category: 'botox', activeIngredient: '', defaultUnit: 'U' }],
+    }
+    const post = (body: Record<string, unknown>) =>
+      POST(new Request('http://localhost/api/onboarding', { method: 'POST', body: JSON.stringify(body) }))
+
+    beforeEach(() => {
+      updateWhere.mockResolvedValue(undefined)
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        settings: {},
+        createdAt: fourMinutesAgo(),
+        address: { city: 'Curitiba', state: 'PR' },
+      } as never)
+    })
+
+    // Regression guard: workingHours was required, so a two-field step 1 would get a 400.
+    it('accepts just the name and phone', async () => {
+      const res = await post({ clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' }, ...defaults })
+
+      expect(res.status).toBe(200)
+      expect(saveOnboardingClinic).toHaveBeenCalledWith('tenant-1', {
+        name: 'Clínica Bella',
+        phone: '(11) 98888-7777',
+        slug: 'clinica-bela',
+      })
+    })
+
+    it('still requires the phone', async () => {
+      const res = await post({ clinic: { name: 'Clínica Bella' }, ...defaults, method: 'defaults' })
+      expect(res.status).toBe(400)
+      expect(saveOnboardingClinic).not.toHaveBeenCalled()
+    })
+
+    it('names the city the clinic already has in the team notice', async () => {
+      await post({ clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' }, ...defaults })
+      expect(notifyDiscord).toHaveBeenCalledWith(expect.objectContaining({ city: 'Curitiba', state: 'PR' }))
+    })
+
+    it('runs the same completion for the defaults as for the wizard, told apart only by method', async () => {
+      const clinic = { name: 'Clínica Bella', phone: '(11) 98888-7777' }
+      const sideEffects = () => ({
+        procedureTypes: vi.mocked(createProcedureType).mock.calls,
+        products: vi.mocked(createProduct).mock.calls,
+        completed: vi.mocked(markOnboardingCompleted).mock.calls,
+        discord: vi.mocked(notifyDiscord).mock.calls,
+        lifecycle: vi.mocked(scheduleLifecycleWelcome).mock.calls,
+        events: vi.mocked(trackServerEvent).mock.calls,
+        audit: vi.mocked(createAuditLog).mock.calls,
+      })
+
+      await post({ clinic, ...defaults })
+      const wizard = structuredClone(sideEffects())
+      vi.clearAllMocks()
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
+      vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
+      vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
+      vi.mocked(listConsentTemplates).mockResolvedValue({ general: [{ id: 'c' }] } as never)
+      vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([{ id: 'd' }] as never)
+      ownerLookup.mockResolvedValue([{ fullName: 'Ana Souza', email: 'ana@b.com' }])
+      await post({ clinic, ...defaults, method: 'defaults' })
+      const viaDefaults = sideEffects()
+
+      expect(wizard.events).toEqual([
+        ['onboarding_completed', { distinctId: 'user-1', tenantId: 'tenant-1' }, { procedure_types_count: 1, products_count: 1, method: 'wizard' }],
+      ])
+      expect(viaDefaults.events).toEqual([
+        ['onboarding_completed', { distinctId: 'user-1', tenantId: 'tenant-1' }, { procedure_types_count: 1, products_count: 1, method: 'defaults' }],
+      ])
+      expect(viaDefaults.discord).toHaveLength(1)
+      expect(viaDefaults.lifecycle).toEqual(wizard.lifecycle)
+      expect(viaDefaults.lifecycle).toHaveLength(1)
+      expect(viaDefaults.procedureTypes).toEqual(wizard.procedureTypes)
+      expect(viaDefaults.products).toEqual(wizard.products)
+      expect(viaDefaults.completed).toEqual(wizard.completed)
+      expect(viaDefaults.audit[0][0].changes?.onboarding.new).toMatchObject({ method: 'defaults' })
+    })
+
+    it('still answers 409 for a clinic that already finished, via the defaults too', async () => {
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: { onboarding_completed: true } } as never)
+      const res = await post({ clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' }, ...defaults, method: 'defaults' })
+      expect(res.status).toBe(409)
+      expect(saveOnboardingClinic).not.toHaveBeenCalled()
+      expect(trackServerEvent).not.toHaveBeenCalled()
+    })
+
+    it('refuses an unknown method', async () => {
+      const res = await post({ clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' }, ...defaults, method: 'magic' })
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('the booking slug the clinic got at sign-up', () => {
+    const clinic = { name: 'Clínica Bella Estética', phone: '(11) 98888-7777' }
+    const savedSlug = () => vi.mocked(saveOnboardingClinic).mock.calls[0][1].slug
+
+    beforeEach(() => {
+      updateWhere.mockResolvedValue(undefined)
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', slug: 'bella', settings: {} } as never)
+    })
+
+    // Catches onboarding replacing a link the clinic may already have shared with one from the final name.
+    it('keeps it when it is still free', async () => {
+      const res = await postOnboarding(clinic)
+
+      expect(res.status).toBe(200)
+      expect(isBookingSlugFree).toHaveBeenCalledWith(db, 'bella', 'tenant-1')
+      expect(savedSlug()).toBe('bella')
+      expect(findAvailableSlug).not.toHaveBeenCalled()
+    })
+
+    // Catches keeping a slug another clinic holds or has reserved from a recent link change.
+    it('derives a new one from the name when it is taken or reserved', async () => {
+      vi.mocked(isBookingSlugFree).mockResolvedValue(false)
+
+      const res = await postOnboarding(clinic)
+
+      expect(res.status).toBe(200)
+      expect(isBookingSlugFree).toHaveBeenCalledWith(db, 'bella', 'tenant-1')
+      expect(savedSlug()).toBe('clinica-bela')
+    })
+
+    // Catches keeping a slug built from the Google stand-in name the owner never chose.
+    it('derives a new one when the clinic still carries the Google sign-up stand-in name', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'clinica-de-ana',
+        settings: { clinic_name_placeholder: true },
+      } as never)
+
+      await postOnboarding(clinic)
+
+      expect(savedSlug()).toBe('clinica-bela')
+    })
+
+    // Catches the usual Google path: autosave clears the name flag as soon as
+    // the real name is typed, long before this save.
+    it('derives a new one after autosave cleared the stand-in name flag, and clears the slug flag', async () => {
+      vi.mocked(getTenant).mockResolvedValue({
+        id: 'tenant-1',
+        slug: 'clinica-de-ana',
+        settings: { clinic_name_placeholder: false, clinic_slug_placeholder: true },
+      } as never)
+
+      await postOnboarding(clinic)
+
+      expect(savedSlug()).toBe('clinica-bela')
+      expect(markOnboardingCompleted).toHaveBeenCalledWith('tenant-1', {
+        onboarding_draft: null,
+        clinic_slug_placeholder: false,
+      })
+    })
+
+    // Catches an old wizard bundle's slug replacing the sign-up link, or one another clinic has reserved.
+    it('ignores a slug an old wizard still sends', async () => {
+      const res = await postOnboarding({ ...clinic, slug: 'bella-estetica' })
+
+      expect(res.status).toBe(200)
+      expect(savedSlug()).toBe('bella')
     })
   })
 })

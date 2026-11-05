@@ -32,6 +32,12 @@ function rawTokenFor(identifier: string, expires: Date): string {
   return crypto.createHmac('sha256', secret).update(`${identifier}:${expires.getTime()}`).digest('hex')
 }
 
+/** The raw token behind a stored row, or null when it was issued under another NEXTAUTH_SECRET. */
+function rebuiltToken(identifier: string, row: { expires: Date; token: string }): string | null {
+  const raw = rawTokenFor(identifier, row.expires)
+  return hashToken(raw) === row.token ? raw : null
+}
+
 export function confirmEmailUrl(email: string, rawToken: string): string {
   return `${getAppUrl()}/api/auth/confirm?email=${encodeURIComponent(email)}&token=${rawToken}`
 }
@@ -92,31 +98,90 @@ export async function issueConfirmationToken(
 }
 
 /**
- * Rebuilds the outstanding link instead of rotating it, so a reminder never
- * kills the link in an earlier email. A link a password change revoked is
- * replaced, since confirmEmailWithToken would refuse it.
+ * A link that still has at least this long to live is resent as is rather
+ * than replaced, so the button in an earlier email keeps working.
  */
-export async function getOrIssueConfirmationUrl(email: string): Promise<string> {
+export const MIN_LINK_VALIDITY_MS = 6 * 60 * 60 * 1000
+
+/**
+ * The outstanding link, unless a password change revoked it (the same rule
+ * confirmEmailWithToken applies), since that link would be refused.
+ */
+function linkNotRevoked(email: string) {
+  return sql`not exists (
+    select 1 from ${users}
+    where lower(${users.email}) = ${email.toLowerCase()}
+      and ${users.passwordChangedAt} is not null
+      and (${verificationTokens.lastSentAt} is null or ${users.passwordChangedAt} > ${verificationTokens.lastSentAt})
+  )`
+}
+
+/**
+ * Rebuilds the outstanding link instead of rotating it, so a resend never
+ * kills the link in an earlier email (unless it has under `minRemainingMs`
+ * left, or a password change revoked it, in which case a new one is issued).
+ *
+ * With `cooldownMs` the call is a throttled resend and returns null when the
+ * last send is more recent than that. Reusing the link stamps `lastSentAt`
+ * in the same conditional UPDATE, so two simultaneous callers cannot both
+ * pass; the fallback issue carries the same cooldown.
+ */
+export async function getOrIssueConfirmationUrl(email: string, minRemainingMs?: number): Promise<string>
+export async function getOrIssueConfirmationUrl(
+  email: string,
+  minRemainingMs: number,
+  cooldownMs: number,
+): Promise<string | null>
+export async function getOrIssueConfirmationUrl(
+  email: string,
+  minRemainingMs = 0,
+  cooldownMs?: number,
+): Promise<string | null> {
   const identifier = confirmIdentifier(email)
-  const [row] = await db
-    .select({ expires: verificationTokens.expires })
-    .from(verificationTokens)
+  const outstanding = and(
+    eq(verificationTokens.identifier, identifier),
+    // A link about to lapse is replaced: a reminder whose button dies
+    // minutes after it arrives is no reminder.
+    gt(verificationTokens.expires, new Date(Date.now() + minRemainingMs)),
+    linkNotRevoked(email),
+  )
+
+  if (cooldownMs === undefined) {
+    const [row] = await db
+      .select({ expires: verificationTokens.expires, token: verificationTokens.token })
+      .from(verificationTokens)
+      .where(outstanding)
+      .limit(1)
+    const reusable = row && rebuiltToken(identifier, row)
+    if (reusable) return confirmEmailUrl(email, reusable)
+    // Without a cooldown the upsert always writes, so this is never null.
+    return confirmEmailUrl(email, (await issueConfirmationToken(email))!)
+  }
+
+  const now = new Date()
+  const [reused] = await db
+    .update(verificationTokens)
+    .set({ lastSentAt: now })
     .where(
       and(
-        eq(verificationTokens.identifier, identifier),
-        gt(verificationTokens.expires, new Date()),
-        sql`not exists (
-          select 1 from ${users}
-          where lower(${users.email}) = ${email.toLowerCase()}
-            and ${users.passwordChangedAt} > ${verificationTokens.lastSentAt}
-        )`,
+        outstanding,
+        or(
+          isNull(verificationTokens.lastSentAt),
+          lt(verificationTokens.lastSentAt, new Date(now.getTime() - cooldownMs)),
+        ),
       ),
     )
-    .limit(1)
+    .returning({ expires: verificationTokens.expires, token: verificationTokens.token })
+  if (reused) {
+    // This update already took the cooldown slot, so the replacement is issued without one.
+    const raw = rebuiltToken(identifier, reused) ?? (await issueConfirmationToken(email))!
+    return confirmEmailUrl(email, raw)
+  }
 
-  if (row) return confirmEmailUrl(email, rawTokenFor(identifier, row.expires))
-  // Without a cooldown the upsert always writes, so this is never null.
-  return confirmEmailUrl(email, (await issueConfirmationToken(email))!)
+  // Either throttled (the upsert's cooldown refuses it too) or there is no
+  // live link to reuse.
+  const raw = await issueConfirmationToken(email, cooldownMs)
+  return raw ? confirmEmailUrl(email, raw) : null
 }
 
 export interface ConfirmedUser {

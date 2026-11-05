@@ -45,7 +45,16 @@ export async function POST(request: Request) {
     const now = new Date()
     await db
       .update(users)
-      .set({ passwordHash: hash, passwordChangedAt: now, updatedAt: now })
+      // The reset link reached this inbox, which proves the address as much
+      // as the confirmation e-mail does. Without it an invited or
+      // admin-created owner who set a password this way would count as
+      // unconfirmed (email-confirmation-gate.ts) and lose WhatsApp sends.
+      .set({
+        passwordHash: hash,
+        passwordChangedAt: now,
+        updatedAt: now,
+        emailVerified: sql`coalesce(${users.emailVerified}, ${now.toISOString()}::timestamptz)`,
+      })
       .where(sql`lower(${users.email}) = ${email.toLowerCase()}`)
 
     return NextResponse.json({ success: true })

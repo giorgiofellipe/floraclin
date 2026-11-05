@@ -1,5 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
-import { seedForOnboarding } from './helpers/test-db'
+import { resetConfirmationState, seedForOnboarding, seedUnconfirmedSignup } from './helpers/test-db'
 
 /**
  * Onboarding E2E Tests
@@ -42,7 +42,7 @@ test.describe('Onboarding', () => {
     skipIfNotOnboarding(page)
 
     // Welcome header visible
-    await expect(page.locator('text=Bem-vindo ao')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByRole('heading', { name: 'Bem-vindo(a) ao FloraClin' })).toBeVisible({ timeout: 10000 })
 
     // Step 1 content visible
     await expect(page.locator('text=Dados da Clínica')).toBeVisible()
@@ -56,15 +56,30 @@ test.describe('Onboarding', () => {
     await expect(page.getByTestId('onboarding-prev')).not.toBeVisible()
   })
 
-  test('should show clinic form with pre-filled name and booking link', async ({ page }) => {
+  test('should ask only for the clinic name and phone on step 1', async ({ page }) => {
     await loginTestUser(page)
     skipIfNotOnboarding(page)
 
     await expect(page.locator('text=Dados da Clínica')).toBeVisible({ timeout: 10000 })
 
-    // Booking link preview should be visible
-    await expect(page.locator('text=Link de agendamento online')).toBeVisible()
-    await expect(page.locator('text=floraclin.com.br/c/')).toBeVisible()
+    await expect(page.getByLabel('Nome da clínica *')).toBeVisible()
+    await expect(page.getByLabel('Telefone *')).toBeVisible()
+    // Address, hours and the booking link moved to Settings.
+    await expect(page.locator('text=floraclin.com.br/c/')).toHaveCount(0)
+    await expect(page.locator('input[type="time"]')).toHaveCount(0)
+    await expect(page.getByTestId('onboarding-use-defaults')).toBeVisible()
+  })
+
+  test('should keep Próximo on screen on a phone', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 664 })
+    await loginTestUser(page)
+    skipIfNotOnboarding(page)
+
+    const next = page.getByTestId('onboarding-next')
+    await expect(next).toBeInViewport({ timeout: 10000 })
+    // 16px or more, or iOS zooms the page when a field is focused.
+    await expect(page.getByLabel('Nome da clínica *')).toHaveCSS('font-size', '16px')
+    await expect(page.getByLabel('Telefone *')).toHaveCSS('font-size', '16px')
   })
 
   test('should navigate to step 2 — Procedimentos', async ({ page }) => {
@@ -158,6 +173,9 @@ test.describe('Onboarding', () => {
 
     // Wait for redirect to dashboard (onboarding API + redirect)
     await page.waitForURL(/\/dashboard/, { timeout: 30000 })
+    // Pointed at the first patient once; the parameter is dropped from the URL.
+    await expect(page.getByTestId('first-patient-hint')).toBeVisible({ timeout: 10000 })
+    await expect(page).toHaveURL(/\/dashboard$/)
   })
 
   test('should not redirect to onboarding after completion', async ({ page }) => {
@@ -169,5 +187,63 @@ test.describe('Onboarding', () => {
     // If onboarding was completed in previous test, should be on dashboard
     // If running standalone (fresh DB), this might still be on onboarding
     // Both are valid outcomes depending on test isolation
+  })
+})
+
+// ─── Confirmation link ────────────────────────────────────────────────
+
+test.describe('Confirmation link', () => {
+  test.describe.configure({ mode: 'serial' })
+
+  test.beforeEach(async () => {
+    await seedForOnboarding()
+  })
+
+  test.afterEach(async () => {
+    await resetConfirmationState()
+  })
+
+  test('opened in the browser that signed up, confirms and goes straight on to the setup', async ({ page }) => {
+    const { email, password, confirmPath } = await seedUnconfirmedSignup()
+
+    // A real Auth.js session (signup signs in the same way): the confirm link
+    // only skips the tap for the session of the address it carries.
+    await page.goto('/login')
+    await page.getByTestId('login-email').fill(email)
+    await page.getByTestId('login-password').fill(password)
+    await page.getByTestId('login-submit').click()
+    await page.waitForURL(/\/(dashboard|onboarding)/, { timeout: 30000 })
+    await page.goto('/onboarding')
+    // The confirmation banner waits for the dashboard: none on the setup.
+    await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
+
+    await page.goto(confirmPath)
+
+    await page.waitForURL(/\/onboarding$/, { timeout: 30000 })
+    await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+    await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
+  })
+
+  test('opened in a browser with no session, asks for one tap and then goes on to the setup', async ({ browser, baseURL }) => {
+    const { confirmPath } = await seedUnconfirmedSignup()
+    // A fresh context: no session cookie and none of the config's headers,
+    // like the mail app's in-app browser.
+    const context = await browser.newContext({ baseURL })
+    const page = await context.newPage()
+
+    try {
+      await page.goto(confirmPath)
+
+      await page.waitForURL(/\/confirm-email$/, { timeout: 30000 })
+      await expect(page.getByText('Falta só um toque')).toBeVisible({ timeout: 10000 })
+      await page.getByTestId('confirm-email-submit').click()
+
+      await page.waitForURL(/\/onboarding$/, { timeout: 30000 })
+      await expect(page.getByTestId('onboarding-next')).toBeVisible({ timeout: 10000 })
+      await expect(page.getByTestId('email-confirmation-banner')).toHaveCount(0)
+    } finally {
+      await context.close()
+    }
   })
 })

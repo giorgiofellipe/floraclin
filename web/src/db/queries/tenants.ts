@@ -171,28 +171,17 @@ export async function markOnboardingCompleted(
 }
 
 /**
- * The final onboarding save of the clinic's slug and details, only while
- * onboarding is still open: false when another save completed it first, and
- * nothing was written. A taken slug throws the `tenants_slug_unique` violation.
+ * The final onboarding save, only while onboarding is still open: false when
+ * another save completed it first, and nothing was written. A taken slug
+ * throws the `tenants_slug_unique` violation.
  */
 export async function saveOnboardingClinic(
   tenantId: string,
-  clinic: Pick<UpdateTenantInput, 'name' | 'phone' | 'email' | 'workingHours'> & {
-    slug: string
-    address?: TenantAddress | null
-  },
+  clinic: Pick<UpdateTenantInput, 'name' | 'phone'> & { slug: string },
 ): Promise<boolean> {
   const rows = await db
     .update(tenants)
-    .set({
-      slug: clinic.slug,
-      name: clinic.name,
-      phone: clinic.phone || null,
-      email: clinic.email || null,
-      ...(clinic.address !== undefined && { address: clinic.address || null }),
-      workingHours: clinic.workingHours,
-      updatedAt: new Date(),
-    })
+    .set({ slug: clinic.slug, name: clinic.name, phone: clinic.phone || null, updatedAt: new Date() })
     .where(onboardingOpen(tenantId))
     .returning({ id: tenants.id })
   return rows.length > 0
@@ -206,7 +195,7 @@ export async function saveOnboardingClinic(
  */
 export async function saveOnboardingProgress(
   tenantId: string,
-  clinic: Partial<Pick<UpdateTenantInput, 'name' | 'phone' | 'email' | 'workingHours'>> & { address?: TenantAddress | null },
+  clinic: Partial<Pick<UpdateTenantInput, 'name' | 'phone'>>,
   settings: Record<string, unknown>,
 ): Promise<{ saved: boolean; noticeStamped: boolean }> {
   const saved = await db

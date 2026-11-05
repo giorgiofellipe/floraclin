@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { adminSearchSchema, createTenantSchema } from '@/validations/admin'
-import { listAllTenants, createTenantWithOwner } from '@/db/queries/admin-tenants'
+import { ADMIN_SLUG_TAKEN, listAllTenants, createTenantWithOwner } from '@/db/queries/admin-tenants'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function GET(request: Request) {
   try {
@@ -41,6 +42,9 @@ export async function POST(request: Request) {
     const tenant = await createTenantWithOwner(parsed.data)
     return NextResponse.json({ success: true, data: tenant })
   } catch (error) {
+    if (error instanceof BusinessError && error.code === ADMIN_SLUG_TAKEN) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
     return handleApiError(error, request)
   }
 }

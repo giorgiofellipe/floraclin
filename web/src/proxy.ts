@@ -51,7 +51,6 @@ export default auth((req) => {
       const tenantId = session?.tenantId as string | null
 
       if (!tenantId) return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
-      if (session?.emailVerified === false) return NextResponse.redirect(new URL('/confirm-email', req.url))
       // Already signed in on this browser (a link copied out of an in-app
       // browser, say): go where the link was going rather than the dashboard.
       const destination = pathname === '/login' ? safeCallbackPath(req.nextUrl.searchParams.get(CALLBACK_URL_PARAM)) : null
@@ -98,15 +97,12 @@ export default auth((req) => {
     return NextResponse.redirect(new URL('/signup/clinic-details', req.url))
   }
 
-  // Email not confirmed yet. Replaces the manual approval gate: the wait is
-  // now the user's own inbox rather than someone clicking approve.
-  //
-  // Gated on an explicit `false`, never on falsy. Undefined means the token
-  // predates the claim, and those are cleared by the version check above
-  // before they ever reach this line.
-  if (session?.emailVerified === false) {
-    return NextResponse.redirect(new URL('/confirm-email', req.url))
-  }
+  // An unconfirmed address is not gated here. The owner sets up the clinic
+  // and uses the app straight away; what reaches third parties (WhatsApp,
+  // team invites, checkout) is refused server-side until the address is
+  // confirmed, see lib/email-confirmation-gate.ts. The token's emailVerified
+  // claim is not refreshed after a confirmation in another browser, so it
+  // must not decide anything.
 
   return NextResponse.next()
 })

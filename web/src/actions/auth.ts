@@ -1,7 +1,6 @@
 'use server'
 
 import { signIn, signOut } from '@/lib/auth-config'
-import { redirect } from 'next/navigation'
 import { AuthError } from 'next-auth'
 import { CALLBACK_URL_PARAM, safeCallbackPath } from '@/lib/callback-url'
 
@@ -87,10 +86,4 @@ export async function loginWithMagicLink(formData: FormData) {
     }
     throw error // Re-throw non-auth errors (like redirect)
   }
-}
-
-export async function switchTenantAction(tenantId: string) {
-  const { setActiveTenant } = await import('@/lib/auth')
-  await setActiveTenant(tenantId)
-  redirect('/dashboard')
 }

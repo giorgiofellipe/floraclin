@@ -39,6 +39,8 @@ export interface AuthContext {
   email: string
   fullName: string
   isPlatformAdmin: boolean
+  /** Read from the database: the token's claim goes stale after a confirmation in another browser. */
+  emailVerified: boolean
 }
 
 export interface PaginationParams {

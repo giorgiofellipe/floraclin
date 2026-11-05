@@ -144,6 +144,65 @@ describe('without consent (cookieless)', () => {
   })
 })
 
+describe('the onboarding drop-off events', () => {
+  // Regression guard: an event missing from CLIENT_EVENT_NAMES is dropped by
+  // before_send without consent, i.e. for nearly everyone.
+  it('are sent without consent, cookieless, with only the dictionary properties', async () => {
+    const client = await loadClient()
+    const { sent } = await start(client, false)
+
+    client.track('onboarding_field_interacted', {
+      step_index: 0,
+      step_name: 'clinic',
+      field: 'name',
+      interaction: 'input',
+      // A value sneaked past the types must not leave the browser.
+      ...({ value: 'Clínica Bella' } as object),
+    })
+    client.track(
+      'onboarding_step_abandoned',
+      { step_index: 0, step_name: 'clinic', time_on_step_ms: 1200, trigger: 'pagehide' },
+      { transport: 'sendBeacon' },
+    )
+    client.track(
+      'onboarding_step_backgrounded',
+      { step_index: 0, step_name: 'clinic', time_on_step_ms: 900 },
+      { transport: 'sendBeacon' },
+    )
+    await flush()
+
+    expect(sent.map((e) => e.event)).toEqual([
+      'onboarding_field_interacted',
+      'onboarding_step_abandoned',
+      'onboarding_step_backgrounded',
+    ])
+    expect(sent[0].properties).toMatchObject({ field: 'name', interaction: 'input' })
+    expect(JSON.stringify(sent[0].properties)).not.toContain('Bella')
+    expect(sent[1].properties).toMatchObject({ time_on_step_ms: 1200, trigger: 'pagehide' })
+    expect(sent[2].properties).toMatchObject({ step_index: 0, step_name: 'clinic', time_on_step_ms: 900 })
+    expect(phCookies()).toEqual([])
+  })
+
+  it('hands the abandon event to posthog-js with the beacon transport', async () => {
+    const client = await loadClient()
+    const { posthog } = await start(client, false)
+    const capture = vi.spyOn(posthog, 'capture')
+
+    client.track(
+      'onboarding_step_abandoned',
+      { step_index: 1, step_name: 'procedures', time_on_step_ms: 5, trigger: 'pagehide' },
+      { transport: 'sendBeacon' },
+    )
+    await flush()
+
+    expect(capture).toHaveBeenCalledWith(
+      'onboarding_step_abandoned',
+      expect.any(Object),
+      expect.objectContaining({ transport: 'sendBeacon' }),
+    )
+  })
+})
+
 describe('granting consent', () => {
   it('switches on persistence, autocapture, pageviews, heatmaps and session replay (inputs masked)', async () => {
     const client = await loadClient()

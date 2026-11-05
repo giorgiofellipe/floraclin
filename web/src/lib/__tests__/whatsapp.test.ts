@@ -239,6 +239,23 @@ describe('credits on the shared number', () => {
     expect(attachMetaMessageIdMock).toHaveBeenCalledWith('spend-1', 'wamid.123')
   })
 
+  // An owner can use the app before confirming the sign-up address. The
+  // shared number must not message the phones typed in until then.
+  it.each([
+    ['text', () => sendTextMessage('tenant-1', CREDIT, '5511999999999', 'Olá')],
+    ['template', () => sendTemplateMessage('tenant-1', CREDIT, '5511999999999', 'tpl', 'pt_BR')],
+    ['media', () => sendMediaMessage('tenant-1', CREDIT, '5511999999999', 'image', 'https://example.com/a.jpg')],
+  ])('sends no %s message, and charges nothing, while the owner has not confirmed the address', async (_kind, send) => {
+    const { EmailConfirmationRequiredError } = await import('../email-confirmation-gate')
+    getSendableTemplateMock.mockResolvedValue({ name: 'tpl', language: 'pt_BR', category: 'UTILITY', purposeKey: null })
+    vi.mocked(db.select).mockReturnValueOnce(chain([{ emailVerified: null, passwordHash: 'hash' }]) as never)
+
+    await expect(send()).rejects.toBeInstanceOf(EmailConfirmationRequiredError)
+
+    expect(global.fetch).not.toHaveBeenCalled()
+    expect(spendCreditsMock).not.toHaveBeenCalled()
+  })
+
   it.each([
     ['text', () => sendTextMessage('tenant-1', CREDIT, '5511999999999', 'Olá')],
     ['media', () => sendMediaMessage('tenant-1', CREDIT, '5511999999999', 'image', 'https://example.com/a.jpg')],

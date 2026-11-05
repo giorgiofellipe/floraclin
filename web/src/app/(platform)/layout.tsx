@@ -21,6 +21,7 @@ import { TrialEndingModal } from '@/components/layout/trial-ending-modal'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
+import { EmailConfirmationBanner } from '@/components/layout/email-confirmation-banner'
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthContext()
@@ -150,6 +151,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
           subscriptionSource={subscription?.source}
         />
+        {auth.emailVerified === false && <EmailConfirmationBanner email={auth.email} />}
         <InstallBanner />
         <main className="flex-1 p-4 md:p-6">{children}</main>
         <PlatformFooter>

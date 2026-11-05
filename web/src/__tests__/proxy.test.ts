@@ -70,9 +70,17 @@ function run(pathname: string, s: Record<string, unknown> | null) {
 beforeEach(() => vi.clearAllMocks())
 
 describe('proxy: email confirmation gate', () => {
-  it('sends an unconfirmed user to /confirm-email', () => {
-    const res = run('/dashboard', session({ emailVerified: false }))
-    expect(locationOf(res)).toContain('/confirm-email')
+  // Unconfirmed owners set up the clinic before confirming; the gate moved
+  // to the server-side sends. A stale `false` claim (confirmed since, in
+  // another browser) bounced people back to /confirm-email.
+  it('lets an unconfirmed user into the app', () => {
+    expect(locationOf(run('/dashboard', session({ emailVerified: false })))).toBeNull()
+    expect(locationOf(run('/onboarding', session({ emailVerified: false })))).toBeNull()
+  })
+
+  it('sends an unconfirmed user on /login or /signup into the app, not to /confirm-email', () => {
+    expect(locationOf(run('/login', session({ emailVerified: false })))).toContain('/dashboard')
+    expect(locationOf(run('/signup', session({ emailVerified: false })))).toContain('/dashboard')
   })
 
   it('lets an unconfirmed user reach /confirm-email itself', () => {

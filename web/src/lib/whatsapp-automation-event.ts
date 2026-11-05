@@ -5,6 +5,7 @@ import { getTemplateForTenant } from '@/lib/whatsapp'
 import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
 import { buildTemplateParams, missingTemplateKeys } from '@/lib/whatsapp-blueprints'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
+import { EmailConfirmationRequiredError, isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
@@ -37,6 +38,8 @@ export async function runEventAutomation(
     const tenant = await getTenant(tenantId)
     if (!tenant || !isWhatsAppEnabled(tenant.settings as Record<string, unknown> | null)) return
     if (!(await isSubscriptionActive(tenantId))) return
+    // Every send would be refused (requireSendAllowed) until the owner confirms the address.
+    if (await isTenantAwaitingEmailConfirmation(tenantId)) return
 
     const automations = await listAutomations(tenantId)
     if (!automations.some((a) => a.trigger === trigger && a.enabled)) return
@@ -74,6 +77,7 @@ export async function runEventAutomation(
           })
           return
         }
+        if (err instanceof EmailConfirmationRequiredError) return
         report(err, { ref: message.ref })
       }
     }

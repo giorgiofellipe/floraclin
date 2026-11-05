@@ -194,7 +194,7 @@
     }
   },
   "onboarding": {
-    "welcome": "Bem-vindo ao FloraClin!",
+    "welcome": "Bem-vindo(a) ao FloraClin!",
     "step1": "Dados da clínica",
     "step2": "Horário de funcionamento",
     "step3": "Tipos de procedimento",

@@ -2,12 +2,27 @@ import { db } from '@/db/client'
 import { rowsFromExecuteResult } from '@/db/queries/admin-tenants'
 import { sql, type SQL } from 'drizzle-orm'
 
+/** The ~1 hour "confirme seu e-mail" reminder. The key predates the 24 hour one, so it keeps its name. */
 export const SIGNUP_CONFIRM_REMINDER_KEY = 'signup_confirm_reminder'
+/** The ~24 hour one, the last. */
+export const SIGNUP_CONFIRM_FINAL_REMINDER_KEY = 'signup_confirm_reminder_24h'
 export const SIGNUP_FINISH_REMINDER_KEY = 'signup_finish_reminder'
 
 const REMINDER_MIN_AGE = '1 hour'
+// Where the first confirm reminder stops and the last starts: a run that
+// missed the first one (an outage) does not send both at once.
+const FINAL_CONFIRM_REMINDER_AGE = '24 hours'
 // Also caps retries of a failed send.
 const REMINDER_MAX_AGE = '7 days'
+/** The last confirm reminder waits at least this long after the first one went out. */
+export const FINAL_CONFIRM_REMINDER_GAP = '12 hours'
+
+interface AgeWindow {
+  /** Sent once the clinic is at least this old. */
+  from: string
+  /** And no longer once it is this old. */
+  until: string
+}
 
 export interface SignupReminderRecipient {
   tenantId: string
@@ -21,7 +36,7 @@ interface RecipientRow {
   owner_email: string
 }
 
-async function findRecipients(messageKey: string, ownerClause: SQL) {
+async function findRecipients(messageKey: string, ownerClause: SQL, age: AgeWindow) {
   const result = await db.execute(sql`
     select t.id as tenant_id, t.name as tenant_name, o.email as owner_email
     from floraclin.tenants t
@@ -33,8 +48,8 @@ async function findRecipients(messageKey: string, ownerClause: SQL) {
     ) o on true
     where t.status = 'active'
       and t.deleted_at is null
-      and t.created_at <= now() - ${REMINDER_MIN_AGE}::interval
-      and t.created_at > now() - ${REMINDER_MAX_AGE}::interval
+      and t.created_at <= now() - ${age.from}::interval
+      and t.created_at > now() - ${age.until}::interval
       and not exists (
         select 1 from floraclin.tenant_lifecycle_messages m
         where m.tenant_id = t.id and m.message_key = ${messageKey} and m.channel = 'email'
@@ -53,11 +68,39 @@ async function findRecipients(messageKey: string, ownerClause: SQL) {
   )
 }
 
+// Signed up with a password and never confirmed. Google and magic-link
+// accounts (no password) and members added by an admin or an invite (no
+// password either) are confirmed by how they sign in, and never get these.
+const UNCONFIRMED_OWNER = sql`and o.password_hash is not null and o.email_verified is null`
+
+/** For the ~1 hour reminder: clinics between 1 and 24 hours old. */
 export function findConfirmReminderRecipients(): Promise<SignupReminderRecipient[]> {
-  return findRecipients(
-    SIGNUP_CONFIRM_REMINDER_KEY,
-    sql`and o.password_hash is not null and o.email_verified is null`,
-  )
+  return findRecipients(SIGNUP_CONFIRM_REMINDER_KEY, UNCONFIRMED_OWNER, {
+    from: REMINDER_MIN_AGE,
+    until: FINAL_CONFIRM_REMINDER_AGE,
+  })
+}
+
+// A first reminder sent (or still being sent) under FINAL_CONFIRM_REMINDER_GAP
+// ago holds the last one back: one sent at 23 hours waits until 35. A failed
+// first one reached nobody and holds nothing back. completed_at is when it
+// went out; claimed_at stands in while it is in flight.
+const FIRST_CONFIRM_REMINDER_GAP = sql`and not exists (
+    select 1 from floraclin.tenant_lifecycle_messages f
+    where f.tenant_id = t.id and f.message_key = ${SIGNUP_CONFIRM_REMINDER_KEY} and f.channel = 'email'
+      and f.status <> 'failed'
+      and coalesce(f.completed_at, f.claimed_at) > now() - ${FINAL_CONFIRM_REMINDER_GAP}::interval
+  )`
+
+/**
+ * For the ~24 hour reminder: clinics between 24 hours and 7 days old, at least
+ * FINAL_CONFIRM_REMINDER_GAP after the first reminder.
+ */
+export function findFinalConfirmReminderRecipients(): Promise<SignupReminderRecipient[]> {
+  return findRecipients(SIGNUP_CONFIRM_FINAL_REMINDER_KEY, sql`${UNCONFIRMED_OWNER} ${FIRST_CONFIRM_REMINDER_GAP}`, {
+    from: FINAL_CONFIRM_REMINDER_AGE,
+    until: REMINDER_MAX_AGE,
+  })
 }
 
 // Clinics with lifecycle_notice_at set are reached by the trial lifecycle instead.
@@ -67,6 +110,7 @@ export function findFinishReminderRecipients(): Promise<SignupReminderRecipient[
     sql`and o.email_verified is not null
         and t.lifecycle_notice_at is null
         and coalesce(t.settings, '{}'::jsonb) -> 'onboarding_completed' is distinct from 'true'::jsonb`,
+    { from: REMINDER_MIN_AGE, until: REMINDER_MAX_AGE },
   )
 }
 

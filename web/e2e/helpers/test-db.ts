@@ -1,4 +1,6 @@
 import postgres from 'postgres'
+import { createHash, randomBytes } from 'crypto'
+import bcrypt from 'bcryptjs'
 import { readFileSync, readdirSync } from 'fs'
 import { join } from 'path'
 
@@ -220,6 +222,57 @@ export async function seedForOnboarding() {
     await seedTrialSubscription(sql)
 
     console.log('✓ Database seeded for onboarding (incomplete)')
+  } finally {
+    await sql.end()
+  }
+}
+
+const TEST_USER_EMAIL = 'test@floraclin.test'
+
+/**
+ * Makes the test user an owner who signed up with a password and has not
+ * confirmed the address yet, with a live confirmation link. Only the token's
+ * hash is stored, as the app does; the link is returned as a relative URL.
+ * Call after seedForOnboarding, and undo with resetConfirmationState.
+ */
+export async function seedUnconfirmedSignup() {
+  const sql = getTestDb()
+  const password = 'Senha-E2E-123'
+  const rawToken = randomBytes(32).toString('hex')
+  const identifier = `confirm:${TEST_USER_EMAIL}`
+
+  try {
+    await sql`
+      UPDATE floraclin.users
+      SET password_hash = ${await bcrypt.hash(password, 10)}, email_verified = NULL, password_changed_at = NULL
+      WHERE id = ${TEST_USER_ID}
+    `
+    await sql`DELETE FROM floraclin.verification_tokens WHERE identifier = ${identifier}`
+    await sql`
+      INSERT INTO floraclin.verification_tokens (identifier, token, expires, last_sent_at)
+      VALUES (${identifier}, ${createHash('sha256').update(rawToken).digest('hex')}, now() + interval '24 hours', now())
+    `
+  } finally {
+    await sql.end()
+  }
+
+  return {
+    email: TEST_USER_EMAIL,
+    password,
+    confirmPath: `/api/auth/confirm?email=${encodeURIComponent(TEST_USER_EMAIL)}&token=${rawToken}`,
+  }
+}
+
+/** Puts the test user back the way seedForOnboarding leaves it: no password, not confirmed, no link. */
+export async function resetConfirmationState() {
+  const sql = getTestDb()
+  try {
+    await sql`
+      UPDATE floraclin.users
+      SET password_hash = NULL, email_verified = NULL, password_changed_at = NULL
+      WHERE id = ${TEST_USER_ID}
+    `
+    await sql`DELETE FROM floraclin.verification_tokens WHERE identifier = ${`confirm:${TEST_USER_EMAIL}`}`
   } finally {
     await sql.end()
   }

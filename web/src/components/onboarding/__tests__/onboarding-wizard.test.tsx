@@ -71,7 +71,6 @@ describe('OnboardingWizard', () => {
         <OnboardingWizard
           tenantName="My Clinic"
           tenantPhone={null}
-          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -86,7 +85,6 @@ describe('OnboardingWizard', () => {
         <OnboardingWizard
           tenantName="My Clinic"
           tenantPhone={null}
-          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -106,7 +104,6 @@ describe('OnboardingWizard', () => {
           <OnboardingWizard
             tenantName="My Clinic"
             tenantPhone={null}
-            tenantEmail={null}
             existingProcedureTypes={[]}
             existingProducts={[]}
           />,
@@ -122,7 +119,6 @@ describe('OnboardingWizard', () => {
         <OnboardingWizard
           tenantName="My Clinic"
           tenantPhone={null}
-          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -136,8 +132,9 @@ describe('OnboardingWizard', () => {
     // Step 2 → 3 (Products)
     await user.click(screen.getByTestId('onboarding-next'))
     // The ProductsStep component renders an h2 titled "Produtos"
+    // Loaded on demand (next/dynamic), so it appears a tick later.
     expect(
-      screen.getByRole('heading', { name: /^Produtos$/, level: 2 }),
+      await screen.findByRole('heading', { name: /^Produtos$/, level: 2 }),
     ).toBeInTheDocument()
 
     // Step 3 → 4 (Team)
@@ -155,7 +152,6 @@ describe('OnboardingWizard', () => {
         <OnboardingWizard
           tenantName="My Clinic"
           tenantPhone={null}
-          tenantEmail={null}
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -191,11 +187,11 @@ describe('OnboardingWizard', () => {
       expect(p).not.toHaveProperty('origin')
       expect(p).not.toHaveProperty('isCustom')
     }
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
   })
 
   it.each([
-    ['a taken booking link', () => Response.json({ error: 'Link em uso' }, { status: 409 }), 'Link em uso', { reason: 'slug_taken', status: 409 }],
+    ['a slug taken during the save', () => Response.json({ error: 'Tente novamente' }, { status: 409 }), 'Tente novamente', { reason: 'slug_taken', status: 409 }],
     ['invalid data', () => Response.json({ error: 'Dados de onboarding inválidos' }, { status: 400 }), 'Dados de onboarding inválidos', { reason: 'validation', status: 400 }],
     [
       'an expired trial',
@@ -217,7 +213,7 @@ describe('OnboardingWizard', () => {
     )
     render(
       wrap(
-        <OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />,
+        <OnboardingWizard tenantName="My Clinic" tenantPhone={null} existingProcedureTypes={[]} existingProducts={[]} />,
       ),
     )
     await user.click(screen.getByTestId('onboarding-next'))
@@ -232,7 +228,8 @@ describe('OnboardingWizard', () => {
   })
 
   // Regression: finishing onboarding erased the signup phone, so lifecycle WhatsApp messages were skipped.
-  it('keeps the tenant phone and email when the owner finishes without editing them', async () => {
+  // The e-mail, address, hours and slug are not sent, so the server keeps what the clinic has.
+  it('keeps the tenant phone and sends only the name and phone when the owner finishes without editing them', async () => {
     const user = userEvent.setup()
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
 
@@ -241,7 +238,6 @@ describe('OnboardingWizard', () => {
         <OnboardingWizard
           tenantName="My Clinic"
           tenantPhone="(47) 98844-3635"
-          tenantEmail="contato@clinica.com.br"
           existingProcedureTypes={[]}
           existingProducts={[]}
         />,
@@ -257,8 +253,9 @@ describe('OnboardingWizard', () => {
     const [, init] = onboardingPost(fetchMock)
     const body = JSON.parse((init as RequestInit).body as string)
 
-    expect(body.clinic).toMatchObject({ phone: '(47) 98844-3635', email: 'contato@clinica.com.br' })
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    expect(body.clinic).toEqual({ name: 'My Clinic', phone: '(47) 98844-3635' })
+    expect(body.method).toBe('wizard')
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
   })
 
   // Regression: after finishing, Back returned to the finished wizard.
@@ -268,7 +265,7 @@ describe('OnboardingWizard', () => {
       Response.json(isCompletedCheck(url, init) ? { completed: false } : { success: true }),
     )
     render(
-      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} existingProcedureTypes={[]} existingProducts={[]} />),
     )
 
     await user.click(screen.getByTestId('onboarding-next'))
@@ -276,7 +273,7 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
     await user.click(screen.getByTestId('onboarding-complete'))
 
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard'))
+    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
     expect(router.push).not.toHaveBeenCalled()
   })
 
@@ -289,7 +286,7 @@ describe('OnboardingWizard', () => {
       return Response.json({})
     })
     render(
-      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} existingProcedureTypes={[]} existingProducts={[]} />),
     )
 
     await user.click(screen.getByTestId('onboarding-next'))
@@ -302,15 +299,15 @@ describe('OnboardingWizard', () => {
     expect(vi.mocked(track)).not.toHaveBeenCalledWith('onboarding_submit_failed', expect.anything())
   })
 
-  it('stays on the wizard with the message when the booking link is taken', async () => {
+  it('stays on the wizard with the message when the slug is taken during the save', async () => {
     const user = userEvent.setup()
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (url, init) => {
       if (isCompletedCheck(url, init)) return Response.json({ completed: false })
-      if (url === '/api/onboarding') return Response.json({ error: 'Este link já está em uso. Escolha outro.' }, { status: 409 })
+      if (url === '/api/onboarding') return Response.json({ error: 'Não foi possível concluir agora. Tente novamente.' }, { status: 409 })
       return Response.json({})
     })
     render(
-      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+      wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} existingProcedureTypes={[]} existingProducts={[]} />),
     )
 
     await user.click(screen.getByTestId('onboarding-next'))
@@ -318,67 +315,9 @@ describe('OnboardingWizard', () => {
     await user.click(screen.getByTestId('onboarding-next'))
     await user.click(screen.getByTestId('onboarding-complete'))
 
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Este link já está em uso. Escolha outro.'))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Não foi possível concluir agora. Tente novamente.'))
     expect(vi.mocked(track)).toHaveBeenCalledWith('onboarding_submit_failed', expect.objectContaining({ reason: 'slug_taken', status: 409 }))
     expect(router.replace).not.toHaveBeenCalled()
-  })
-
-  // Regression: the link field showed the plain name slug another clinic held, and finishing onboarding failed.
-  it('shows the free booking slug the server suggests for the clinic name', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) =>
-      new Response(
-        JSON.stringify(String(input).startsWith('/api/slug-check') ? { available: true, slug: 'my-clinic-1' } : {}),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    )
-
-    render(
-      wrap(
-        <OnboardingWizard
-          tenantName="My Clinic"
-          tenantPhone={null}
-          tenantEmail={null}
-          existingProcedureTypes={[]}
-          existingProducts={[]}
-        />,
-      ),
-    )
-
-    expect(await screen.findByDisplayValue('my-clinic-1')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenCalledWith('/api/slug-check?name=My%20Clinic')
-  })
-
-  // Regression: the owner could finish with a custom link another clinic held, and onboarding failed.
-  it('blocks finishing while the custom booking link is taken', async () => {
-    const user = userEvent.setup()
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      const url = String(input)
-      const body = url.includes('slug=') ? { available: false } : { available: true, slug: 'my-clinic' }
-      return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
-    })
-
-    render(
-      wrap(
-        <OnboardingWizard
-          tenantName="My Clinic"
-          tenantPhone={null}
-          tenantEmail={null}
-          existingProcedureTypes={[]}
-          existingProducts={[]}
-        />,
-      ),
-    )
-
-    const slugInput = await screen.findByDisplayValue('my-clinic')
-    await user.clear(slugInput)
-    await user.type(slugInput, 'taken-link')
-    expect(await screen.findByText('Este link já está em uso. Escolha outro.')).toBeInTheDocument()
-
-    await user.click(screen.getByTestId('onboarding-next'))
-    await user.click(screen.getByTestId('onboarding-next'))
-    await user.click(screen.getByTestId('onboarding-next'))
-
-    expect(screen.getByTestId('onboarding-complete')).toBeDisabled()
   })
 
   describe('after a one-step Google sign-up (clinic created with a stand-in name, no phone)', () => {
@@ -388,7 +327,6 @@ describe('OnboardingWizard', () => {
           <OnboardingWizard
             tenantName=""
             tenantPhone={null}
-            tenantEmail={null}
             existingProcedureTypes={[]}
             existingProducts={[]}
             phoneRequired
@@ -399,7 +337,7 @@ describe('OnboardingWizard', () => {
 
     it('asks for the clinic name from an empty field and the phone as required', () => {
       renderFresh()
-      expect(screen.getByLabelText('Nome da Clínica *')).toHaveValue('')
+      expect(screen.getByLabelText('Nome da clínica *')).toHaveValue('')
       expect(screen.getByLabelText('Telefone *')).toBeRequired()
       expect(screen.getByText(/dicas da FloraClin por WhatsApp/)).toBeInTheDocument()
     })
@@ -407,7 +345,7 @@ describe('OnboardingWizard', () => {
     it('does not move on without a phone with DDD', async () => {
       const user = userEvent.setup()
       renderFresh()
-      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Nome da clínica *'), 'Clínica Bella')
       await user.type(screen.getByLabelText('Telefone *'), '9888')
       await user.click(screen.getByTestId('onboarding-next'))
 
@@ -424,7 +362,7 @@ describe('OnboardingWizard', () => {
       await user.click(screen.getByTestId('onboarding-next'))
       expect(toast.error).toHaveBeenCalledWith('Nome da clínica é obrigatório')
 
-      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Nome da clínica *'), 'Clínica Bella')
       await user.type(screen.getByLabelText('Telefone *'), '11988887777')
       await user.click(screen.getByTestId('onboarding-next'))
       await user.click(screen.getByTestId('onboarding-next'))
@@ -444,7 +382,7 @@ describe('OnboardingWizard', () => {
       )
       renderFresh()
       await user.click(screen.getByTestId('onboarding-next'))
-      await user.type(screen.getByLabelText('Nome da Clínica *'), 'Clínica Bella')
+      await user.type(screen.getByLabelText('Nome da clínica *'), 'Clínica Bella')
       await user.type(screen.getByLabelText('Telefone *'), '9888')
       await user.click(screen.getByTestId('onboarding-next'))
       await user.clear(screen.getByLabelText('Telefone *'))
@@ -455,7 +393,9 @@ describe('OnboardingWizard', () => {
       await user.click(screen.getByTestId('onboarding-complete'))
 
       const clinic = { step_index: 0, step_name: 'clinic' }
-      expect(vi.mocked(track).mock.calls).toEqual([
+      // Field interactions are covered on their own below.
+      const stepEvents = vi.mocked(track).mock.calls.filter(([event]) => event !== 'onboarding_field_interacted')
+      expect(stepEvents).toEqual([
         ['onboarding_step_viewed', clinic],
         ['onboarding_step_validation_error', { ...clinic, fields: ['name'] }],
         ['onboarding_step_validation_error', { ...clinic, fields: ['phone'] }],
@@ -486,7 +426,6 @@ describe('OnboardingWizard', () => {
           <OnboardingWizard
             tenantName=""
             tenantPhone={null}
-            tenantEmail={null}
             existingProcedureTypes={[]}
             existingProducts={[]}
             phoneRequired
@@ -526,7 +465,6 @@ describe('OnboardingWizard', () => {
       selectedProductNames: [],
       productsTouched: false,
       customProducts: [],
-      customSlug: '',
     })
 
     async function goToTeamStepAndFinish(user: ReturnType<typeof userEvent.setup>) {
@@ -567,6 +505,33 @@ describe('OnboardingWizard', () => {
       expect(lastSavedBody(fetchMock).draft.step).toBe(3)
     })
 
+    // Regression: an unconfirmed owner got an invite form whose every send failed with 403 email_unconfirmed.
+    it('holds invites until the e-mail is confirmed, offers a resend, and still finishes', async () => {
+      const user = userEvent.setup()
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => Response.json({ success: true }))
+      renderWizard({
+        tenantName: 'Clínica Bella',
+        tenantPhone: '(11) 98888-7777',
+        draft: atTeamStepDraft(),
+        unconfirmedEmail: 'ana@clinica.test',
+      })
+      await user.click(screen.getByTestId('onboarding-next'))
+
+      expect(screen.getByText('Confirme seu e-mail para convidar sua equipe.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Convidar membro da equipe/ })).toBeDisabled()
+
+      await user.click(screen.getByRole('button', { name: 'Reenviar link' }))
+      await waitFor(() =>
+        expect(fetchMock).toHaveBeenCalledWith('/api/auth/confirm/resend', expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ email: 'ana@clinica.test' }),
+        })),
+      )
+
+      await user.click(screen.getByTestId('onboarding-complete'))
+      await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/dashboard?primeiro_paciente=1'))
+    })
+
     // A later step without a saved phone would only fail at the final submit.
     it('opens at the clinic step when its phone was never saved', () => {
       vi.spyOn(globalThis, 'fetch').mockImplementation(okResponse)
@@ -576,7 +541,6 @@ describe('OnboardingWizard', () => {
         selectedProductNames: [],
         productsTouched: false,
         customProducts: [],
-        customSlug: '',
       })
 
       renderWizard({ tenantName: 'Clínica Bella', tenantPhone: null, draft })
@@ -633,7 +597,7 @@ describe('OnboardingWizard', () => {
 
     function renderWizard() {
       return render(
-        wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} tenantEmail={null} existingProcedureTypes={[]} existingProducts={[]} />),
+        wrap(<OnboardingWizard tenantName="My Clinic" tenantPhone={null} existingProcedureTypes={[]} existingProducts={[]} />),
       )
     }
 

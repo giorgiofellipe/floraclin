@@ -39,7 +39,7 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     expect(rows).toHaveLength(1)
     const [tenant] = await db.select().from(tenants).where(eq(tenants.id, rows[0].tenantId))
     expect(tenant.phone).toBeNull()
-    expect(tenant.settings).toEqual({ clinic_name_placeholder: true })
+    expect(tenant.settings).toEqual({ clinic_name_placeholder: true, clinic_slug_placeholder: true })
     // No lifecycle notice was shown on this path: onboarding stamps it.
     expect(tenant.lifecycleNoticeAt).toBeNull()
   })

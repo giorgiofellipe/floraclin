@@ -2,19 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/db/client'
 import { users, tenantUsers, tenants } from '@/db/schema'
 import { eq, and, isNull, sql } from 'drizzle-orm'
-import { confirmEmailUrl, issueConfirmationToken } from '@/lib/confirm-email'
+import { getOrIssueConfirmationUrl, MIN_LINK_VALIDITY_MS } from '@/lib/confirm-email'
+import { CONFIRM_RESEND_COOLDOWN_MS } from '@/lib/confirm-resend-cooldown'
 import { sendConfirmationEmail } from '@/lib/email'
 import { handleApiError } from '@/lib/api-error'
 import { reportSideEffectFailure } from '@/lib/observability'
-
-/**
- * One resend per 60 seconds per identifier. Vercel runs several instances of
- * this route concurrently, so the gate has to be a single conditional
- * UPDATE, not a read followed by a write: a read-then-write lets two
- * instances both pass the check before either commits, and both send an
- * email.
- */
-const RESEND_COOLDOWN_MS = 60 * 1000
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 
 export async function POST(request: NextRequest) {
   try {
@@ -37,16 +30,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true })
     }
 
-    // One atomic upsert does both the throttle and the issue. The previous
-    // shape claimed the row, then deleted it while re-issuing, which left a
-    // window where a concurrent caller found no row, concluded there was
-    // nothing to throttle against, and sent a second email.
-    const rawToken = await issueConfirmationToken(normalizedEmail, RESEND_COOLDOWN_MS)
+    // Resends the link already in the inbox rather than rotating it: a new
+    // token would kill the button in every earlier email, and the owner may
+    // well click the older one. The throttle is part of the same conditional
+    // write, so two instances cannot both pass it and send twice.
+    const confirmUrl = await getOrIssueConfirmationUrl(normalizedEmail, MIN_LINK_VALIDITY_MS, CONFIRM_RESEND_COOLDOWN_MS)
 
     // Throttled. Same response as every other case on purpose: a 429 here
     // would say "this address has an unconfirmed account", which is exactly
     // the fact an anonymous caller must not be able to probe for.
-    if (!rawToken) {
+    if (!confirmUrl) {
       return NextResponse.json({ success: true })
     }
 
@@ -54,10 +47,10 @@ export async function POST(request: NextRequest) {
       .select({ tenantName: tenants.name })
       .from(tenantUsers)
       .innerJoin(tenants, and(eq(tenants.id, tenantUsers.tenantId), isNull(tenants.deletedAt)))
-      .where(and(eq(tenantUsers.userId, user.id), eq(tenantUsers.isActive, true)))
+      .innerJoin(users, eq(users.id, tenantUsers.userId))
+      .where(and(eq(tenantUsers.userId, user.id), eq(tenantUsers.isActive, true), membershipUsableBeforeConfirmation()))
       .limit(1)
 
-    const confirmUrl = confirmEmailUrl(normalizedEmail, rawToken)
     try {
       await sendConfirmationEmail(normalizedEmail, confirmUrl, membership?.tenantName ?? 'FloraClin')
     } catch (err) {

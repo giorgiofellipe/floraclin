@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server'
 import { requirePlatformAdmin } from '@/lib/auth'
 import { updateTenantSchema } from '@/validations/admin'
-import { getTenantDetail, updateTenantAdmin } from '@/db/queries/admin-tenants'
+import { ADMIN_SLUG_TAKEN, getTenantDetail, updateTenantAdmin } from '@/db/queries/admin-tenants'
 import { getLifecycleHistory } from '@/db/queries/lifecycle'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function GET(
   request: Request,
@@ -30,7 +31,7 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await requirePlatformAdmin()
+    const admin = await requirePlatformAdmin()
 
     const { id } = await params
     const body = await request.json()
@@ -42,7 +43,7 @@ export async function PUT(
       )
     }
 
-    const tenant = await updateTenantAdmin(id, parsed.data)
+    const tenant = await updateTenantAdmin(id, parsed.data, admin.userId)
 
     if (!tenant) {
       return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
@@ -50,6 +51,9 @@ export async function PUT(
 
     return NextResponse.json({ success: true, data: tenant })
   } catch (error) {
+    if (error instanceof BusinessError && error.code === ADMIN_SLUG_TAKEN) {
+      return NextResponse.json({ error: error.message }, { status: 409 })
+    }
     return handleApiError(error, request)
   }
 }
