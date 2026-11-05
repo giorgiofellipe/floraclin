@@ -53,7 +53,7 @@ describe('POST /api/financial with a card payment', () => {
     const body = await res.json()
 
     expect(res.status).toBe(200)
-    expect(body).toEqual({ success: true, data: ENTRY })
+    expect(body).toEqual({ success: true, data: ENTRY, nfse: { mode: null, documentIds: [], promptPaymentRecordIds: [] } })
     expect(recordPayment).toHaveBeenCalledWith('tenant-1', 'user-1', {
       installmentId: 'inst-1',
       amount: 3000,
@@ -61,6 +61,16 @@ describe('POST /api/financial with a card payment', () => {
       card: cardBody.card,
       expectedTotalDue: 3000,
     })
+  })
+
+  it('returns the payment for the NFS-e prompt when the clinic asks after each payment', async () => {
+    vi.mocked(recordPayment).mockResolvedValue({
+      nfse: { mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] },
+    } as never)
+
+    const body = await (await callPost(cardBody)).json()
+
+    expect(body.nfse).toEqual({ mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] })
   })
 
   it('keeps the charge and reports the message when the payment fails with a BusinessError', async () => {

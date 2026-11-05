@@ -10,6 +10,7 @@ import {
   patients,
   paymentRecords,
   procedureRecords,
+  tenants,
 } from '@/db/schema'
 import { decryptSecret, encryptSecret } from '@/lib/crypto'
 import type {
@@ -71,6 +72,7 @@ function toPublic(row: PublicSettingsRow): NfseSettingsPublic {
     issWithheld: row.issWithheld,
     emissionMode: row.emissionMode,
     emailPatient: row.emailPatient,
+    clinicAddressFallback: row.clinicAddressFallback,
     configured: row.configuredAt !== null,
   }
 }
@@ -143,6 +145,7 @@ export async function saveFiscalSettings(
           ? sql`CASE WHEN ${nfseSettings.emissionMode} = 'always' THEN ${nfseSettings.alwaysEnabledAt} ELSE now() END`
           : null,
       emailPatient: input.emailPatient,
+      clinicAddressFallback: input.clinicAddressFallback,
       configuredAt: new Date(),
       updatedBy: userId,
       updatedAt: new Date(),
@@ -417,6 +420,7 @@ export async function loadDocumentForProcessing(id: string) {
       installment: installments,
       entry: financialEntries,
       patient: patients,
+      clinicAddress: tenants.address,
       performedAt: procedureRecords.performedAt,
       appointmentDate: appointments.date,
     })
@@ -428,6 +432,7 @@ export async function loadDocumentForProcessing(id: string) {
     )
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
     .innerJoin(patients, eq(patients.id, nfseDocuments.patientId))
+    .innerJoin(tenants, eq(tenants.id, nfseDocuments.tenantId))
     .leftJoin(procedureRecords, eq(procedureRecords.id, financialEntries.procedureRecordId))
     .leftJoin(
       appointments,

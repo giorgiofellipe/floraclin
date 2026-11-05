@@ -34,6 +34,7 @@ export interface NfseFiscalSettingsInput {
   issWithheld: boolean
   emissionMode: NfseEmissionMode
   emailPatient: boolean
+  clinicAddressFallback: boolean
 }
 
 export interface NfseSettingsPublic extends NfseFiscalSettingsInput {

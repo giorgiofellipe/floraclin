@@ -22,6 +22,7 @@ import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layou
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
 import { EmailConfirmationBanner } from '@/components/layout/email-confirmation-banner'
+import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
   const auth = await getAuthContext()
@@ -121,6 +122,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       recap={recap}
       trialEndsAt={trialEndsAt}
     >
+    <NfsePromptProvider>
     <div className="min-h-screen bg-[#F4F6F8]">
       <AnalyticsProvider userId={auth.userId} tenantId={auth.tenantId} enabled={!auth.isPlatformAdmin} />
       <Sidebar
@@ -165,6 +167,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
       <ExpiredPaywall />
       <TrialEndingModal />
     </div>
+    </NfsePromptProvider>
     </SubscriptionAccessProvider>
   )
 }

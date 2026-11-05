@@ -30,6 +30,7 @@ import { ProcedureExecution } from '@/components/procedures/procedure-execution'
 import type { CardPaymentChoice, StepResult, WizardOverrides } from './types'
 import { buildFinalizeBody } from './build-finalize-body'
 import type { ProcedureStatus } from '@/types'
+import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import type { ProcedureWithDetails } from '@/db/queries/procedures'
 import type { DiagramWithPoints } from '@/db/queries/face-diagrams'
 import type { ProductApplicationRecord } from '@/db/queries/product-applications'
@@ -128,6 +129,7 @@ export function ServiceWizard({
 }: ServiceWizardProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const { promptAfterPayment } = useNfsePrompt()
   const [sourceDiagramGroupId, setSourceDiagramGroupId] = useState<string | null>(
     initialDiagramGroupId ?? null,
   )
@@ -594,6 +596,7 @@ export function ServiceWizard({
           description: 'A cobrança ficou pendente no Financeiro.',
         })
       }
+      promptAfterPayment(payload?.nfse)
       updateProcedureStatus('approved')
       updateStepTimestamp('approval', new Date())
       toast.success('Procedimento aprovado.')
@@ -618,6 +621,7 @@ export function ServiceWizard({
     updateStepTimestamp,
     nextStep,
     queryClient,
+    promptAfterPayment,
   ])
 
   // ─── Next handler ──────────────────────────────────────────────

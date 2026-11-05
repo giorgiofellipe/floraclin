@@ -1684,6 +1684,7 @@ export const nfseSettings = floraclinSchema.table('nfse_settings', {
   emissionMode: varchar('emission_mode', { length: 10 }).$type<NfseEmissionMode>().notNull().default('ask'), // CHECK in migration
   alwaysEnabledAt: timestamp('always_enabled_at', { withTimezone: true }),
   emailPatient: boolean('email_patient').notNull().default(false),
+  clinicAddressFallback: boolean('clinic_address_fallback').notNull().default(false),
   configuredAt: timestamp('configured_at', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

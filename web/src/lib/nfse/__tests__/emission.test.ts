@@ -100,6 +100,7 @@ const fiscal = {
   issWithheld: false,
   emissionMode: 'ask' as const,
   emailPatient: false,
+  clinicAddressFallback: false,
 }
 
 const storedSnapshot = {
@@ -491,6 +492,24 @@ describeIntegration('nfse emission (integration, requires test DB)', () => {
       expect((await processDocument(id, 'auto')).status).toBe('failed')
       expect((await processDocument(id, 'manual')).status).toBe('issued')
       expect(mocks.gateway.emit).toHaveBeenCalledWith(expect.objectContaining({ taker: expect.objectContaining({ cpf: '52998224725' }) }))
+    })
+
+    it('emits with the clinic address when the patient has none and the fallback is on', async () => {
+      const clinicAddress = { street: 'Rua XV de Novembro', number: '50', neighborhood: 'Centro', city: 'Curitiba', state: 'PR', zip: '80020-310' }
+      await db.update(tenants).set({ address: clinicAddress }).where(eq(tenants.id, TENANT))
+      await db.update(patients).set({ address: null }).where(eq(patients.id, PATIENT))
+      await saveFiscalSettings(TENANT, USER, { ...fiscal, clinicAddressFallback: true })
+      const id = await insertDoc(PAY_1)
+
+      expect((await processDocument(id)).status).toBe('issued')
+      expect(mocks.gateway.emit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          taker: expect.objectContaining({
+            address: { zip: '80020310', street: 'Rua XV de Novembro', number: '50', complement: null, neighborhood: 'Centro', city: 'Curitiba', state: 'PR' },
+            cityCode: '4106902',
+          }),
+        }),
+      )
     })
 
     it('fails with not_configured without calling Sefin', async () => {

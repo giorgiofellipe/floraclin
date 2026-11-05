@@ -47,7 +47,8 @@ export interface CreateFinancialEntryPayload {
 export function useCreateFinancialEntry() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (data: CreateFinancialEntryPayload) => mutateJson('/api/financial', 'POST', data),
+    mutationFn: (data: CreateFinancialEntryPayload) =>
+      mutateJson('/api/financial', 'POST', data) as Promise<{ paymentError?: string; nfse?: NfseIntake }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
       queryClient.invalidateQueries({ queryKey: ['financial', 'revenue'] })

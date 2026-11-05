@@ -20,6 +20,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useCreateFinancialEntry } from '@/hooks/mutations/use-financial-mutations'
 import { useFinancialSettings } from '@/hooks/queries/use-financial-settings'
+import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import { formatCurrency, formatDate } from '@/lib/utils'
 import { addDays } from 'date-fns'
 import { brToday, toLocalYmd } from '@/lib/dates'
@@ -54,6 +55,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]> | null>(null)
   const createFinancialEntry = useCreateFinancialEntry()
+  const { promptAfterPayment } = useNfsePrompt()
   const isPending = createFinancialEntry.isPending
   const { data: settingsResponse } = useFinancialSettings()
   const settings = settingsResponse?.settings
@@ -173,6 +175,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
               toast.error(created.paymentError, { description: 'A cobrança foi criada como pendente.' })
             }
             onSuccess()
+            promptAfterPayment(created?.nfse)
           } catch (err) {
             setError(err instanceof Error ? err.message : 'Erro ao criar cobrança')
           }

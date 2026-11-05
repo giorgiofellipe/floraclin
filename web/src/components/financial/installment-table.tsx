@@ -18,10 +18,9 @@ import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { round2 } from '@/lib/financial/penalties'
 import type { CardPaymentSummary } from '@/lib/financial/card-repasses'
 import { PartialPaymentDialog } from './partial-payment-dialog'
-import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
+import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import { NfsePaymentChip } from '@/components/nfse/nfse-payment-chip'
 import type { NfseDocumentSummary } from '@/lib/nfse/types'
-import type { NfseIntake } from '@/types'
 import {
   BanknoteIcon,
   Undo2Icon,
@@ -124,7 +123,7 @@ export function InstallmentTable({
   const [reverseDialogPayment, setReverseDialogPayment] = useState<PaymentRecord | null>(null)
   const [reversalReason, setReversalReason] = useState('')
   const [cancelNfse, setCancelNfse] = useState(true)
-  const [emitIds, setEmitIds] = useState<string[] | null>(null)
+  const { promptAfterPayment, openEmit, openNotConfigured } = useNfsePrompt()
   const { data: nfseStatus } = useNfseStatus()
   const reversePayment = useReversePayment()
 
@@ -145,8 +144,9 @@ export function InstallmentTable({
   const entryStatus: string = entryData?.status ?? 'pending'
   const isEntryCancelled = entryStatus === 'cancelled' || entryStatus === 'renegotiated'
 
-  function handleNfse(nfse: NfseIntake) {
-    if (nfse.promptPaymentRecordIds.length > 0) setEmitIds(nfse.promptPaymentRecordIds)
+  function handleEmit(paymentRecordId: string) {
+    if (nfseStatus?.configured) openEmit([paymentRecordId])
+    else openNotConfigured()
   }
 
   if (isLoading) {
@@ -348,9 +348,9 @@ export function InstallmentTable({
 
                         <NfsePaymentChip
                           payment={pr}
-                          canEmit={nfseStatus?.configured === true && !isEntryCancelled}
+                          canEmit={nfseStatus?.canEmit === true && !isEntryCancelled}
                           canCancel={nfseStatus?.canCancel === true}
-                          onEmit={(id) => setEmitIds([id])}
+                          onEmit={handleEmit}
                         />
 
                         {/* Reverse button */}
@@ -467,17 +467,7 @@ export function InstallmentTable({
           defaultPaymentMethod={entryData?.paymentMethod ?? undefined}
           defaultCardInstallmentCount={entryData?.cardInstallmentCount ?? undefined}
           onSuccess={onPaymentComplete}
-          onNfse={handleNfse}
-        />
-      )}
-
-      {emitIds && (
-        <EmitNfseDialog
-          paymentRecordIds={emitIds}
-          open
-          onOpenChange={(open) => {
-            if (!open) setEmitIds(null)
-          }}
+          onNfse={promptAfterPayment}
         />
       )}
     </>

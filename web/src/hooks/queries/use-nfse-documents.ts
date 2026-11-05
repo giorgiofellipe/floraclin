@@ -2,10 +2,9 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { NfseAddress, NfseCancelReason, NfseCompetenceChoice, NfseProcessResult } from '@/lib/nfse/types'
+import type { NfseAddressSource, NfseTakerField } from '@/lib/nfse/taker-address'
 import { queryKeys } from './query-keys'
 import { NfseApiError } from './use-nfse-settings'
-
-export type NfseTakerField = 'cpf' | 'zip' | 'street' | 'number' | 'neighborhood' | 'city' | 'state'
 
 export interface NfsePreviewPatient {
   patientId: string
@@ -13,6 +12,7 @@ export interface NfsePreviewPatient {
   paymentRecordIds: string[]
   total: number
   missing: NfseTakerField[]
+  addressSource: NfseAddressSource
   current: Record<'cpf' | 'zip' | 'street' | 'number' | 'complement' | 'neighborhood' | 'city' | 'state', string> | null
   email: string | null
   canEditTaker: boolean
@@ -28,7 +28,7 @@ export interface NfsePreview {
 export interface NfseTakerInput {
   patientId: string
   cpf: string
-  address: NfseAddress
+  address?: NfseAddress
 }
 
 async function request<T>(url: string, init: RequestInit | undefined, fallback: string): Promise<T> {
@@ -47,7 +47,7 @@ export function useNfseStatus() {
     queryKey: queryKeys.nfse.status,
     queryFn: async () =>
       (
-        await request<{ data: { configured: boolean; canCancel: boolean } }>(
+        await request<{ data: { configured: boolean; canEmit: boolean; canCancel: boolean } }>(
           '/api/nfse/status',
           undefined,
           'Erro ao carregar a configuração da NFS-e',
