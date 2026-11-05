@@ -96,3 +96,13 @@ export interface NfseProcessResult {
   errorCode?: string
   errorMessage?: string
 }
+
+export interface NfseEmissionResult extends NfseProcessResult {
+  paymentRecordId: string
+  nfseNumber: string | null
+  patientName: string
+  value: number
+  email: string | null
+  emailRequested: boolean
+  emailSent: boolean
+}

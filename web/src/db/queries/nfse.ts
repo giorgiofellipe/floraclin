@@ -17,7 +17,9 @@ import type {
   NfseCancelReason,
   NfseCertificateInfo,
   NfseDocumentSummary,
+  NfseEmissionResult,
   NfseEnvironment,
+  NfseProcessResult,
   NfseFiscalSettingsInput,
   NfseSettingsPublic,
   NfseSettingsWithSecrets,
@@ -451,6 +453,44 @@ export async function getDocument(tenantId: string, id: string): Promise<NfseDoc
     .where(and(eq(nfseDocuments.tenantId, tenantId), eq(nfseDocuments.id, id)))
     .limit(1)
   return row ?? null
+}
+
+export async function describeEmissionResults(
+  tenantId: string,
+  results: NfseProcessResult[],
+): Promise<NfseEmissionResult[]> {
+  if (results.length === 0) return []
+  const rows = await db
+    .select({
+      id: nfseDocuments.id,
+      paymentRecordId: nfseDocuments.paymentRecordId,
+      nfseNumber: nfseDocuments.nfseNumber,
+      value: nfseDocuments.value,
+      emailRequested: nfseDocuments.emailRequested,
+      emailSentAt: nfseDocuments.emailSentAt,
+      patientName: patients.fullName,
+      email: patients.email,
+    })
+    .from(nfseDocuments)
+    .innerJoin(patients, eq(patients.id, nfseDocuments.patientId))
+    .where(and(eq(nfseDocuments.tenantId, tenantId), inArray(nfseDocuments.id, results.map((r) => r.id))))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  return results.flatMap((result) => {
+    const row = byId.get(result.id)
+    if (!row) return []
+    return [
+      {
+        ...result,
+        paymentRecordId: row.paymentRecordId,
+        nfseNumber: row.nfseNumber,
+        patientName: row.patientName,
+        value: Number(row.value),
+        email: row.email || null,
+        emailRequested: row.emailRequested,
+        emailSent: row.emailSentAt !== null,
+      },
+    ]
+  })
 }
 
 export async function listDocumentsForPaymentRecords(

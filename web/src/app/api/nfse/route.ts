@@ -5,7 +5,7 @@ import { db } from '@/db/client'
 import { maskCEP, maskCPF } from '@/lib/masks'
 import { withTransaction } from '@/lib/tenant'
 import { nfseEmitSchema } from '@/validations/nfse'
-import { getDocument, getNfseSettings, listPaymentRecordsForEmission } from '@/db/queries/nfse'
+import { describeEmissionResults, getDocument, getNfseSettings, listPaymentRecordsForEmission } from '@/db/queries/nfse'
 import {
   appointments,
   financialEntries,
@@ -296,7 +296,7 @@ export async function POST(request: Request) {
       }),
     )
 
-    return NextResponse.json({ data: results })
+    return NextResponse.json({ data: await describeEmissionResults(ctx.tenantId, results) })
   } catch (error) {
     return handleApiError(error, request)
   }
