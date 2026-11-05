@@ -175,7 +175,6 @@ export function ProfessionalSignatureForm({ initialProfile }: ProfessionalSignat
         </p>
 
         <SignaturePad
-          key={signatureData === null ? 'empty' : 'with-data'}
           initialData={signatureData}
           onSignatureChange={(data) => setSignatureData(data)}
         />

@@ -4,6 +4,7 @@ import { useRef, useCallback, useEffect, useState } from 'react'
 import SignatureCanvas from 'react-signature-canvas'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { installStrokeDataGuard } from './signature-pad-guard'
 
 interface SignaturePadProps {
   onSignatureChange: (data: string | null) => void
@@ -20,43 +21,90 @@ export function SignaturePad({
 }: SignaturePadProps) {
   const sigRef = useRef<SignatureCanvas | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const [isEmpty, setIsEmpty] = useState(true)
+  const isDrawingRef = useRef(false)
+  const pendingResizeRef = useRef(false)
+  const [isEmpty, setIsEmpty] = useState(!initialData)
+
+  const resizeCanvas = useCallback(() => {
+    if (!containerRef.current || !sigRef.current) return
+    if (isDrawingRef.current) {
+      pendingResizeRef.current = true
+      return
+    }
+
+    const canvas = sigRef.current.getCanvas()
+    const rect = containerRef.current.getBoundingClientRect()
+    if (rect.width < 1 || rect.height < 1) return
+
+    const nextWidth = Math.round(rect.width)
+    const nextHeight = Math.round(rect.height)
+    if (canvas.width === nextWidth && canvas.height === nextHeight) return
+
+    const snapshot = sigRef.current.isEmpty()
+      ? null
+      : sigRef.current.toDataURL('image/png')
+    canvas.width = nextWidth
+    canvas.height = nextHeight
+    const restoreFrom = snapshot ?? initialData
+    if (restoreFrom) {
+      sigRef.current.fromDataURL(restoreFrom)
+    }
+  }, [initialData])
 
   useEffect(() => {
-    if (initialData && sigRef.current) {
+    const pad = sigRef.current
+    if (!pad) return
+    return installStrokeDataGuard(pad.getSignaturePad())
+  }, [])
+
+  useEffect(() => {
+    if (!sigRef.current) return
+    if (initialData) {
+      if (isDrawingRef.current) return
       sigRef.current.fromDataURL(initialData)
       // eslint-disable-next-line react-hooks/set-state-in-effect -- setIsEmpty mirrors the imperative canvas state after load; intentional
       setIsEmpty(false)
+    } else if (!sigRef.current.isEmpty()) {
+      sigRef.current.clear()
+      setIsEmpty(true)
     }
   }, [initialData])
 
-  // Resize canvas to fit container
   useEffect(() => {
-    const resizeCanvas = () => {
-      if (!containerRef.current || !sigRef.current) return
-      const canvas = sigRef.current.getCanvas()
-      const rect = containerRef.current.getBoundingClientRect()
-      canvas.width = rect.width
-      canvas.height = rect.height
-      if (initialData) {
-        sigRef.current.fromDataURL(initialData)
-      }
-    }
-
     resizeCanvas()
+    const container = containerRef.current
+    const observer =
+      container && typeof ResizeObserver !== 'undefined'
+        ? new ResizeObserver(() => resizeCanvas())
+        : null
+    if (container && observer) observer.observe(container)
     window.addEventListener('resize', resizeCanvas)
-    return () => window.removeEventListener('resize', resizeCanvas)
-  }, [initialData])
+    return () => {
+      observer?.disconnect()
+      window.removeEventListener('resize', resizeCanvas)
+    }
+  }, [resizeCanvas])
+
+  const handleBegin = useCallback(() => {
+    isDrawingRef.current = true
+  }, [])
 
   const handleEnd = useCallback(() => {
+    isDrawingRef.current = false
     if (sigRef.current && !sigRef.current.isEmpty()) {
       setIsEmpty(false)
       onSignatureChange(sigRef.current.toDataURL('image/png'))
     }
-  }, [onSignatureChange])
+    if (pendingResizeRef.current) {
+      pendingResizeRef.current = false
+      resizeCanvas()
+    }
+  }, [onSignatureChange, resizeCanvas])
 
   const handleClear = useCallback(() => {
     if (sigRef.current) {
+      isDrawingRef.current = false
+      pendingResizeRef.current = false
       sigRef.current.clear()
       setIsEmpty(true)
       onSignatureChange(null)
@@ -91,9 +139,14 @@ export function SignaturePad({
         <SignatureCanvas
           ref={sigRef}
           penColor="#1C2B1E"
+          // Android Chrome fires window.resize when the toolbar hides; the
+          // wrapper's default clearOnResize calls clear() mid-stroke and
+          // signature_pad 2.3.2 then throws on touchmove (FLORACLIN-1X).
+          clearOnResize={false}
           canvasProps={{
             className: 'absolute inset-0 w-full h-full rounded-[3px] cursor-crosshair',
           }}
+          onBegin={handleBegin}
           onEnd={handleEnd}
         />
       </div>
