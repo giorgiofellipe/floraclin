@@ -295,6 +295,26 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       expect(await docsFor([PAY_1])).toHaveLength(0)
     })
 
+    it('describes each note for the result screen: number, patient, value and email outcome', async () => {
+      const res = await emit(post('/api/nfse', emitBody({ sendEmail: true })))
+
+      expect(res.status).toBe(200)
+      const [doc] = await docsFor([PAY_1])
+      expect((await res.json()).data).toEqual([
+        {
+          id: doc.id,
+          status: 'issued',
+          paymentRecordId: PAY_1,
+          nfseNumber: '7',
+          patientName: 'Maria Souza',
+          value: Number(doc.value),
+          email: 'maria@example.com',
+          emailRequested: true,
+          emailSent: true,
+        },
+      ])
+    })
+
     it('retries a failed row instead of inserting', async () => {
       const [failed] = await db
         .insert(nfseDocuments)
@@ -315,7 +335,7 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       const res = await emit(post('/api/nfse', emitBody()))
 
       expect(res.status).toBe(200)
-      expect((await res.json()).data).toEqual([{ id: failed.id, status: 'issued' }])
+      expect((await res.json()).data).toMatchObject([{ id: failed.id, status: 'issued' }])
       const rows = await docsFor([PAY_1])
       expect(rows).toHaveLength(1)
       expect(rows[0].status).toBe('issued')

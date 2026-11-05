@@ -1,7 +1,7 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { NfseAddress, NfseCancelReason, NfseCompetenceChoice, NfseProcessResult } from '@/lib/nfse/types'
+import type { NfseAddress, NfseCancelReason, NfseCompetenceChoice, NfseEmissionResult } from '@/lib/nfse/types'
 import type { NfseAddressSource, NfseTakerField } from '@/lib/nfse/taker-address'
 import { queryKeys } from './query-keys'
 import { NfseApiError } from './use-nfse-settings'
@@ -90,7 +90,7 @@ export function useEmitNfse() {
       sendEmail: boolean
       takers?: NfseTakerInput[]
     }) =>
-      (await request<{ data: NfseProcessResult[] }>('/api/nfse', postJson(input), 'Erro ao emitir a NFS-e')).data,
+      (await request<{ data: NfseEmissionResult[] }>('/api/nfse', postJson(input), 'Erro ao emitir a NFS-e')).data,
     onSettled: invalidate,
   })
 }
