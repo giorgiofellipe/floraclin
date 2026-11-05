@@ -43,6 +43,31 @@ function businessResponse(error: BusinessError, status = 409) {
   return NextResponse.json({ error: error.message, code: error.code }, { status })
 }
 
+async function clinicAddressStandsIn(
+  tenantId: string,
+  takers: { patientId: string; cpf: string }[],
+  clinicAddressFallback: boolean,
+): Promise<boolean> {
+  const [rows, [clinic]] = await Promise.all([
+    db
+      .select({ id: patients.id, address: patients.address })
+      .from(patients)
+      .where(and(eq(patients.tenantId, tenantId), inArray(patients.id, takers.map((t) => t.patientId)))),
+    db.select({ address: tenants.address }).from(tenants).where(eq(tenants.id, tenantId)),
+  ])
+  return takers.every((taker) => {
+    const patient = rows.find((row) => row.id === taker.patientId)
+    return (
+      resolveNfseTaker({
+        cpf: taker.cpf,
+        patientAddress: patient?.address,
+        clinicAddress: clinic?.address,
+        clinicAddressFallback,
+      }).source === 'clinic'
+    )
+  })
+}
+
 function currentTaker(patient: { cpf: string | null; address: unknown }) {
   const a = (patient.address ?? {}) as Record<string, string | null | undefined>
   const get = (key: string) => a[key] ?? ''
@@ -180,7 +205,8 @@ export async function POST(request: Request) {
         { status: 409 },
       )
     }
-    if (!(await getNfseSettings(ctx.tenantId))?.configured) return notConfigured()
+    const settings = await getNfseSettings(ctx.tenantId)
+    if (!settings?.configured) return notConfigured()
 
     if (takers.length > 0) {
       if (!TAKER_EDIT_ROLES.includes(ctx.role)) {
@@ -190,6 +216,13 @@ export async function POST(request: Request) {
       if (takers.some((t) => !selected.has(t.patientId))) {
         return NextResponse.json(
           { error: 'Paciente fora da seleção.', code: 'TAKER_NOT_SELECTED' },
+          { status: 400 },
+        )
+      }
+      const cpfOnly = takers.filter((t) => !t.address)
+      if (cpfOnly.length > 0 && !(await clinicAddressStandsIn(ctx.tenantId, cpfOnly, settings.clinicAddressFallback))) {
+        return NextResponse.json(
+          { error: 'Complete o endereço do paciente.', code: 'TAKER_ADDRESS_REQUIRED' },
           { status: 400 },
         )
       }

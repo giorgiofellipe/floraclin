@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { nfseSettings, tenants } from '@/db/schema'
 import { ForbiddenError } from '@/lib/errors'
@@ -156,6 +156,18 @@ describeIntegration('NFS-e certificate and settings API (integration, requires t
     expect(body.data).toMatchObject({ configured: true, clinicAddressFallback: true })
     expect(body.data.municipalityName).toBe('São Paulo')
     expect(body.suggestedMunicipalityCode).toBe('3550308')
+  })
+
+  it('says whether the clinic address is complete enough to stand in for a patient', async () => {
+    const before = await (await getSettings(json('GET'))).json()
+    await db
+      .update(tenants)
+      .set({ address: { street: 'Av. Paulista', number: '1000', neighborhood: 'Bela Vista', city: 'São Paulo', state: 'SP', zip: '01310-100' } })
+      .where(eq(tenants.id, auth.tenantId))
+    const after = await (await getSettings(json('GET'))).json()
+
+    expect(before.clinicAddressComplete).toBe(false)
+    expect(after.clinicAddressComplete).toBe(true)
   })
 
   it('removes the certificate and settings', async () => {

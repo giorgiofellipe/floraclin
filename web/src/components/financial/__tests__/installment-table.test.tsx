@@ -1,9 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { InstallmentTable } from '../installment-table'
-import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
+import { createWrapper } from '@/tests/test-utils'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
 
@@ -54,14 +53,16 @@ const mockInstallments = [
   },
 ]
 
+let mockRole = 'owner'
+
 beforeEach(() => {
+  mockRole = 'owner'
   vi.spyOn(globalThis, 'fetch').mockResolvedValue({
     ok: true,
     json: async () => ({ installments: mockInstallments }),
   } as Response)
 })
 
-let mockRole = 'owner'
 vi.mock('@/components/layout/subscription-access', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/components/layout/subscription-access')>()
   return { ...actual, useSubscriptionAccess: () => ({ ...actual.useSubscriptionAccess(), role: mockRole }) }
@@ -72,19 +73,6 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
 }))
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        <NfsePromptProvider>{children}</NfsePromptProvider>
-      </QueryClientProvider>
-    )
-  }
-}
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
@@ -415,7 +403,7 @@ describe('InstallmentTable "Emitir NFS-e" without NFS-e configured', () => {
   function mockUnconfigured() {
     vi.spyOn(globalThis, 'fetch').mockClear().mockImplementation(async (url) => {
       if (String(url).includes('/api/nfse/status')) {
-        return { ok: true, json: async () => ({ data: { configured: false, canCancel: false } }) } as Response
+        return { ok: true, json: async () => ({ data: { configured: false, canEmit: true, canCancel: false } }) } as Response
       }
       return {
         ok: true,
@@ -454,7 +442,6 @@ describe('InstallmentTable "Emitir NFS-e" without NFS-e configured', () => {
   }
 
   it('sends the owner to the NFS-e settings', async () => {
-    mockRole = 'owner'
     await clickEmit()
 
     expect(await screen.findByText('NFS-e não configurada')).toBeInTheDocument()

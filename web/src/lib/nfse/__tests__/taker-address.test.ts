@@ -12,6 +12,9 @@ describe('resolveNfseTaker', () => {
     ['an empty patient address asks for it when the fallback is off', CPF, null, CLINIC, false, { ok: false, source: 'patient', missing: ['zip', 'street', 'number', 'neighborhood', 'city', 'state'] }],
     ['a partial patient address asks to complete it, never mixing in the clinic', CPF, { ...PATIENT, number: '' }, CLINIC, true, { ok: false, source: 'patient', missing: ['number'] }],
     ['an incomplete clinic address asks for the patient address', CPF, {}, { ...CLINIC, zip: '' }, true, { ok: false, source: 'patient', missing: ['zip', 'street', 'number', 'neighborhood', 'city', 'state'] }],
+    ['a patient address with only the UF is not empty, so the clinic does not stand in', CPF, { state: 'SP' }, CLINIC, true, { ok: false, source: 'patient', missing: ['zip', 'street', 'number', 'neighborhood', 'city'] }],
+    ['a patient address with only a complement is not empty, so the clinic does not stand in', CPF, { complement: 'Sala 2' }, CLINIC, true, { ok: false, source: 'patient' }],
+    ['a lowercase UF is sent uppercase', CPF, { ...PATIENT, state: 'sp' }, CLINIC, false, { ok: true, address: { state: 'SP' } }],
     ['the CPF stays required with the clinic address', null, null, CLINIC, true, { ok: false, source: 'clinic', missing: ['cpf'] }],
   ])('%s', (_name, cpf, patientAddress, clinicAddress, clinicAddressFallback, expected) => {
     expect(resolveNfseTaker({ cpf, patientAddress, clinicAddress, clinicAddressFallback })).toMatchObject(expected)

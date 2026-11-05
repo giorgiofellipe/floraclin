@@ -191,8 +191,8 @@ async function buildSnapshot(
     clinicAddressFallback: settings.clinicAddressFallback,
   })
   if (!taker.ok) {
-    const labels = [...new Set(taker.missing.map((field) => TAKER_FIELD_LABELS[field]))]
-    return { ok: false, code: 'missing_taker_data', message: `Complete o cadastro do paciente: ${labels.join(', ')}.` }
+    const labels = taker.missing.map((field) => TAKER_FIELD_LABELS[field]).join(', ')
+    return { ok: false, code: 'missing_taker_data', message: `Complete o cadastro do paciente: ${labels}.` }
   }
 
   let service

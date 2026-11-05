@@ -72,4 +72,12 @@ describe('EmitNfseDialog', () => {
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
     expect(JSON.parse(String(post?.[1]?.body)).takers).toEqual([{ patientId: 'p1', cpf: '390.533.447-05' }])
   })
+
+  it('tells a role that cannot edit the patient to ask only for the CPF when the clinic address stands in', async () => {
+    mockPreview(false, { missing: ['cpf'], addressSource: 'clinic', canEditTaker: false })
+    renderDialog()
+
+    expect(await screen.findByText('Peça a quem tem acesso ao cadastro para completar o CPF.')).toBeInTheDocument()
+    expect(screen.queryByText(/completar CPF e endereço/)).not.toBeInTheDocument()
+  })
 })

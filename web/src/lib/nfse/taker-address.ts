@@ -26,8 +26,14 @@ function missingAddressFields(a: StoredAddress): Exclude<NfseTakerField, 'cpf'>[
   return missing
 }
 
+const ADDRESS_KEYS = ['zip', 'street', 'number', 'complement', 'neighborhood', 'city', 'state'] as const
+
 function isEmpty(a: StoredAddress): boolean {
-  return !a.zip?.trim() && !a.street?.trim() && !a.number?.trim() && !a.neighborhood?.trim() && !a.city?.trim()
+  return ADDRESS_KEYS.every((key) => !a[key]?.trim())
+}
+
+export function isCompleteAddress(address: unknown): boolean {
+  return missingAddressFields(asAddress(address)).length === 0
 }
 
 /**
@@ -42,7 +48,7 @@ export function resolveNfseTaker(input: {
 }): NfseTakerResolution {
   const patient = asAddress(input.patientAddress)
   const clinic = asAddress(input.clinicAddress)
-  const useClinic = input.clinicAddressFallback && isEmpty(patient) && missingAddressFields(clinic).length === 0
+  const useClinic = input.clinicAddressFallback && isEmpty(patient) && isCompleteAddress(clinic)
   const source: NfseAddressSource = useClinic ? 'clinic' : 'patient'
   const chosen = useClinic ? clinic : patient
 
@@ -61,7 +67,7 @@ export function resolveNfseTaker(input: {
       complement: chosen.complement?.trim() || null,
       neighborhood: chosen.neighborhood!.trim(),
       city: chosen.city!.trim(),
-      state: chosen.state!.trim(),
+      state: chosen.state!.trim().toUpperCase(),
     },
     cityCode: findMunicipalityCode(chosen.city!, chosen.state!)!,
   }

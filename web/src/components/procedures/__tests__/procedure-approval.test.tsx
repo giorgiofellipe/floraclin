@@ -20,7 +20,6 @@ vi.mock('../approval/service-contract-section', () => ({ ServiceContractSection:
 vi.mock('../approval/consent-status-list', () => ({ ConsentStatusList: () => null }))
 
 import { ProcedureApproval } from '../procedure-approval'
-import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 const cart = {
   templateId: null,
@@ -72,16 +71,14 @@ beforeEach(() => {
 
 async function renderApproval() {
   render(
-    <NfsePromptProvider>
-      <ProcedureApproval
-        procedure={procedure}
-        cart={cart}
-        draftRecordIds={['rec-1']}
-        encounterId="enc-1"
-        patient={{ id: 'pat-1', fullName: 'Ana' }}
-        tenant={{ id: 't-1', name: 'Clínica' }}
-      />
-    </NfsePromptProvider>,
+    <ProcedureApproval
+      procedure={procedure}
+      cart={cart}
+      draftRecordIds={['rec-1']}
+      encounterId="enc-1"
+      patient={{ id: 'pat-1', fullName: 'Ana' }}
+      tenant={{ id: 't-1', name: 'Clínica' }}
+    />,
   )
   const approve = await screen.findByRole('button', { name: /Aprovar Procedimento/ })
   await waitFor(() => expect(approve).toBeEnabled())
@@ -110,5 +107,29 @@ describe('ProcedureApproval card payment', () => {
 
     await waitFor(() => expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/finalize'))).toBe(true))
     expect(finalizeBody().cardPayment).toEqual({ terminalId: 'term-1', expectedRate: 8.99 })
+  })
+
+  it('opens the NFS-e prompt for the card payment when the clinic asks after each payment', async () => {
+    const defaultFetch = fetchMock.getMockImplementation()!
+    fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+      if (url.includes('/finalize')) {
+        return new Response(
+          JSON.stringify({
+            success: true,
+            data: { encounterId: 'enc-1', patientPackageId: null, procedureRecordIds: ['rec-1'], financialEntryId: 'fe-1' },
+            nfse: { mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] },
+          }),
+          { status: 200 },
+        )
+      }
+      return defaultFetch(url, init)
+    })
+    const approve = await renderApproval()
+    fireEvent.click(screen.getByRole('checkbox'))
+    fireEvent.click(screen.getByText('escolher maquininha'))
+    fireEvent.click(approve)
+
+    expect(await screen.findByText('Confira os dados antes de emitir a nota fiscal.')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/nfse?paymentRecordIds=pr-1')
   })
 })

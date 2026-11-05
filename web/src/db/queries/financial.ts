@@ -32,7 +32,7 @@ import {
 import { BusinessError } from '@/lib/errors'
 import { PATIENT_FINANCIAL_ENTRIES_LIMIT, summarizePatientEntries } from '@/lib/financial/patient-summary'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
-import type { PaymentMethod, FinancialStatus } from '@/types'
+import type { PaymentMethod, FinancialStatus, NfseIntake } from '@/types'
 import { verifyTenantOwnership } from './helpers'
 import {
   cancelCardPaymentTx,
@@ -623,19 +623,13 @@ async function persistReplay(
 
 // ─── NFS-e intake on payment ────────────────────────────────────────
 
-interface NfseIntake {
+interface NfseIntakeSettings {
   mode: NfseEmissionMode
   emailPatient: boolean
   environment: NfseEnvironment
 }
 
-export interface PaymentNfseOutcome {
-  mode: NfseEmissionMode | null
-  documentIds: string[]
-  promptPaymentRecordIds: string[]
-}
-
-const NO_NFSE: PaymentNfseOutcome = { mode: null, documentIds: [], promptPaymentRecordIds: [] }
+const NO_NFSE: NfseIntake = { mode: null, documentIds: [], promptPaymentRecordIds: [] }
 
 /**
  * Read on the global pool before the payment transaction opens, for the same
@@ -643,7 +637,7 @@ const NO_NFSE: PaymentNfseOutcome = { mode: null, documentIds: [], promptPayment
  * configured", including when the read or the environment lookup fails: a
  * payment never waits on NFS-e.
  */
-async function prepareNfseIntake(tenantId: string): Promise<NfseIntake | null> {
+async function prepareNfseIntake(tenantId: string): Promise<NfseIntakeSettings | null> {
   try {
     const settings = await getNfseSettings(tenantId)
     if (!settings?.configured) return null
@@ -662,9 +656,9 @@ async function intakeNfseInTx(
   tx: typeof db,
   tenantId: string,
   userId: string,
-  intake: NfseIntake | null,
+  intake: NfseIntakeSettings | null,
   paymentRecordIds: string[]
-): Promise<PaymentNfseOutcome> {
+): Promise<NfseIntake> {
   if (!intake || paymentRecordIds.length === 0) return { ...NO_NFSE, mode: intake?.mode ?? null }
   if (intake.mode === 'ask') {
     return { mode: 'ask', documentIds: [], promptPaymentRecordIds: paymentRecordIds }

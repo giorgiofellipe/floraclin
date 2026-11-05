@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from 'react'
 import Link from 'next/link'
+import { toast } from 'sonner'
 import {
   Dialog,
   DialogContent,
@@ -13,6 +14,7 @@ import {
 import { Button, buttonVariants } from '@/components/ui/button'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 import { EmitNfseDialog } from '@/components/nfse/emit-nfse-dialog'
+import { NFSE_MAX_PER_REQUEST } from '@/lib/nfse/config'
 import type { NfseIntake } from '@/types'
 
 interface NfsePrompt {
@@ -29,16 +31,20 @@ export function useNfsePrompt(): NfsePrompt {
   return prompt
 }
 
-/** Lives in the platform layout so the emit dialog outlives the screen that
- *  took the payment (a filter can hide the paid entry, a form can close). */
+/** In the platform layout so the emit dialog outlives the screen that took the payment. */
 export function NfsePromptProvider({ children }: { children: ReactNode }) {
-  const { role } = useSubscriptionAccess()
+  const isOwner = useSubscriptionAccess().role === 'owner'
   const [emitIds, setEmitIds] = useState<string[] | null>(null)
   const [notConfiguredOpen, setNotConfiguredOpen] = useState(false)
 
   const openEmit = useCallback((paymentRecordIds: string[]) => setEmitIds(paymentRecordIds), [])
   const promptAfterPayment = useCallback((nfse: NfseIntake | null | undefined) => {
-    if (nfse && nfse.promptPaymentRecordIds.length > 0) setEmitIds(nfse.promptPaymentRecordIds)
+    const ids = nfse?.promptPaymentRecordIds ?? []
+    if (ids.length === 0) return
+    if (ids.length > NFSE_MAX_PER_REQUEST) {
+      toast.info(`A NFS-e dos outros ${ids.length - NFSE_MAX_PER_REQUEST} pagamentos pode ser emitida na tabela de parcelas.`)
+    }
+    setEmitIds(ids.slice(0, NFSE_MAX_PER_REQUEST))
   }, [])
   const openNotConfigured = useCallback(() => setNotConfiguredOpen(true), [])
 
@@ -63,18 +69,17 @@ export function NfsePromptProvider({ children }: { children: ReactNode }) {
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>NFS-e não configurada</DialogTitle>
-            <DialogDescription>Configure a emissão de nota fiscal para emitir NFS-e dos pagamentos.</DialogDescription>
+            <DialogDescription>
+              {isOwner
+                ? 'Configure a emissão de nota fiscal para emitir NFS-e dos pagamentos.'
+                : 'Peça à pessoa responsável pela clínica para configurar a NFS-e em Configurações › Nota fiscal.'}
+            </DialogDescription>
           </DialogHeader>
-          {role !== 'owner' && (
-            <p className="text-sm text-mid">
-              Peça à pessoa responsável pela clínica para configurar a NFS-e em Configurações › Nota fiscal.
-            </p>
-          )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setNotConfiguredOpen(false)}>
               Fechar
             </Button>
-            {role === 'owner' && (
+            {isOwner && (
               <Link
                 href="/configuracoes?tab=nota-fiscal"
                 className={buttonVariants()}

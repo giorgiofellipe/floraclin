@@ -23,9 +23,9 @@ import {
   useEmitNfse,
   useNfsePreview,
   type NfsePreviewPatient,
-  type NfseTakerField,
   type NfseTakerInput,
 } from '@/hooks/queries/use-nfse-documents'
+import type { NfseTakerField } from '@/lib/nfse/taker-address'
 import { NFSE_STATUS_LABELS } from './status-labels'
 import type { NfseCompetenceChoice, NfseProcessResult } from '@/lib/nfse/types'
 
@@ -190,7 +190,9 @@ function EmitNfseForm({ paymentRecordIds, onOpenChange }: Omit<EmitNfseDialogPro
               )}
               {blocked(patient) && (
                 <p className="text-xs text-amber-700">
-                  Peça a quem tem acesso ao cadastro para completar CPF e endereço.
+                  {usesClinicAddress(patient)
+                    ? 'Peça a quem tem acesso ao cadastro para completar o CPF.'
+                    : 'Peça a quem tem acesso ao cadastro para completar CPF e endereço.'}
                 </p>
               )}
               {needsTaker(patient) && patient.canEditTaker && (

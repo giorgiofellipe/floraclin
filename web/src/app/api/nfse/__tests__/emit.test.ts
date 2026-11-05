@@ -344,6 +344,15 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       expect(bare).toMatchObject({ cpf: '390.533.447-05', address: null })
     })
 
+    it('rejects a CPF-only taker when the clinic address does not stand in, saving nothing', async () => {
+      const res = await emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_BARE], takers: [{ patientId: PATIENT_BARE, cpf: '39053344705' }] })))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: 'TAKER_ADDRESS_REQUIRED', error: 'Complete o endereço do paciente.' })
+      const [bare] = await db.select().from(patients).where(eq(patients.id, PATIENT_BARE))
+      expect(bare.cpf).toBeNull()
+      expect(await docsFor([PAY_BARE])).toHaveLength(0)
+    })
+
     it('financial role cannot save taker data', async () => {
       auth.role = 'financial'
       const res = await emit(

@@ -27,9 +27,10 @@ import { z } from 'zod'
 import { eq } from 'drizzle-orm'
 import { requireWrite } from '@/lib/write-access'
 import { InvalidEncounterProcedureError, finalizeEncounter } from '@/lib/encounter-finalize'
-import { recordPayment, type PaymentNfseOutcome } from '@/db/queries/financial'
+import { recordPayment } from '@/db/queries/financial'
 import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
+import type { NfseIntake } from '@/types'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { round2 } from '@/lib/financial/penalties'
 import type { PaymentMethod } from '@/types'
@@ -116,7 +117,7 @@ export async function POST(
     })
 
     let paymentError: string | undefined
-    let nfse: PaymentNfseOutcome | undefined
+    let nfse: NfseIntake | undefined
     if (body.cardPayment) {
       const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
       const amount = round2(Number(totalAmount))
@@ -133,7 +134,8 @@ export async function POST(
           },
         })
         nfse = payment.nfse
-        if (nfse.documentIds.length > 0) after(() => processDocuments(payment.nfse.documentIds))
+        const { documentIds } = nfse
+        if (documentIds.length > 0) after(() => processDocuments(documentIds))
       } catch (error) {
         paymentError = cardPaymentErrorMessage(error, { area: 'encounter-finalize', tenantId: ctx.tenantId })
       }

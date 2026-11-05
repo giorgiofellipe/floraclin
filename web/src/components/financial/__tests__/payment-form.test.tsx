@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
 import { PaymentForm } from '../payment-form'
-import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
+import { renderWithProviders } from '@/tests/test-utils'
 
 const mockCreate = vi.fn()
 
@@ -72,15 +72,13 @@ vi.mock('@/components/ui/select', () => ({
 }))
 
 function renderForm(onSuccess = vi.fn()) {
-  render(
-    <NfsePromptProvider>
-      <PaymentForm
-        open
-        onClose={() => {}}
-        onSuccess={onSuccess}
-        defaultPatient={{ id: 'pat-1', fullName: 'Maria' }}
-      />
-    </NfsePromptProvider>,
+  renderWithProviders(
+    <PaymentForm
+      open
+      onClose={() => {}}
+      onSuccess={onSuccess}
+      defaultPatient={{ id: 'pat-1', fullName: 'Maria' }}
+    />,
   )
   fireEvent.change(screen.getByPlaceholderText('Ex: Aplicação de toxina botulínica'), {
     target: { value: 'Harmonização' },
@@ -143,5 +141,18 @@ describe('PaymentForm card methods', () => {
     expect(toast.error).toHaveBeenCalledWith('Maquininha inativa', {
       description: 'A cobrança foi criada como pendente.',
     })
+  })
+
+  it('opens the NFS-e prompt for the card payment when the clinic asks after each payment', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise(() => {}))
+    mockCreate.mockResolvedValue({ success: true, nfse: { mode: 'ask', documentIds: [], promptPaymentRecordIds: ['pr-1'] } })
+    renderForm()
+    fireEvent.change(methodSelect(), { target: { value: 'debit_card' } })
+    await waitFor(() => expect(screen.getByTestId('payment-form-submit')).not.toBeDisabled())
+    fireEvent.click(screen.getByTestId('payment-form-submit'))
+
+    expect(await screen.findByText('Confira os dados antes de emitir a nota fiscal.')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.map(([url]) => url)).toContain('/api/nfse?paymentRecordIds=pr-1')
+    fetchMock.mockRestore()
   })
 })

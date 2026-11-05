@@ -144,6 +144,11 @@ export function InstallmentTable({
   const entryStatus: string = entryData?.status ?? 'pending'
   const isEntryCancelled = entryStatus === 'cancelled' || entryStatus === 'renegotiated'
 
+  function handleEmit(paymentRecordId: string) {
+    if (nfseStatus?.configured) openEmit([paymentRecordId])
+    else openNotConfigured()
+  }
+
   if (isLoading) {
     return (
       <div className="flex items-center gap-2 py-6 justify-center">
@@ -343,9 +348,9 @@ export function InstallmentTable({
 
                         <NfsePaymentChip
                           payment={pr}
-                          canEmit={!!nfseStatus && !isEntryCancelled}
+                          canEmit={nfseStatus?.canEmit === true && !isEntryCancelled}
                           canCancel={nfseStatus?.canCancel === true}
-                          onEmit={(id) => (nfseStatus?.configured ? openEmit([id]) : openNotConfigured())}
+                          onEmit={handleEmit}
                         />
 
                         {/* Reverse button */}

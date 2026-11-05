@@ -71,7 +71,7 @@ export function useNfseSettings() {
   return useQuery({
     queryKey: queryKeys.nfse.settings,
     queryFn: () =>
-      request<{ data: NfseSettingsPublic | null; suggestedMunicipalityCode: string | null }>(
+      request<{ data: NfseSettingsPublic | null; suggestedMunicipalityCode: string | null; clinicAddressComplete: boolean }>(
         '/api/nfse/settings',
         undefined,
         'Erro ao carregar as configurações de nota fiscal',

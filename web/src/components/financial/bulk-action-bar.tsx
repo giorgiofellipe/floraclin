@@ -17,7 +17,6 @@ import { DatePicker } from '@/components/ui/date-picker'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useQueryClient } from '@tanstack/react-query'
 import { ApiError, useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
-import { NFSE_MAX_PER_REQUEST } from '@/lib/nfse/config'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { cn } from '@/lib/utils'
 import { ReasonDialog } from './reason-dialog'
@@ -77,7 +76,7 @@ export function BulkActionBar({
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
   const [cancelReason, setCancelReason] = useState('')
   const [uncancelReason, setUncancelReason] = useState('')
-  const { openEmit } = useNfsePrompt()
+  const { promptAfterPayment } = useNfsePrompt()
 
   const queryClient = useQueryClient()
   const bulkPay = useBulkPay()
@@ -109,13 +108,7 @@ export function BulkActionBar({
       setPayDialogOpen(false)
       onClear()
       onSuccess?.()
-      if (result?.nfse && result.nfse.promptPaymentRecordIds.length > 0) {
-        const ids = result.nfse.promptPaymentRecordIds
-        if (ids.length > NFSE_MAX_PER_REQUEST) {
-          toast.info(`A NFS-e dos outros ${ids.length - NFSE_MAX_PER_REQUEST} pagamentos pode ser emitida na tabela de parcelas.`)
-        }
-        openEmit(ids.slice(0, NFSE_MAX_PER_REQUEST))
-      }
+      promptAfterPayment(result?.nfse)
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
         queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })

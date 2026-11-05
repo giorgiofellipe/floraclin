@@ -6,8 +6,6 @@ import type { NfseAddressSource, NfseTakerField } from '@/lib/nfse/taker-address
 import { queryKeys } from './query-keys'
 import { NfseApiError } from './use-nfse-settings'
 
-export type { NfseTakerField }
-
 export interface NfsePreviewPatient {
   patientId: string
   patientName: string
@@ -49,7 +47,7 @@ export function useNfseStatus() {
     queryKey: queryKeys.nfse.status,
     queryFn: async () =>
       (
-        await request<{ data: { configured: boolean; canCancel: boolean } }>(
+        await request<{ data: { configured: boolean; canEmit: boolean; canCancel: boolean } }>(
           '/api/nfse/status',
           undefined,
           'Erro ao carregar a configuração da NFS-e',
