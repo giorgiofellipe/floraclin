@@ -1,7 +1,14 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import type { NfseAddress, NfseCancelReason, NfseCompetenceChoice, NfseEmissionResult } from '@/lib/nfse/types'
+import type {
+  NfseAddress,
+  NfseCancelReason,
+  NfseCompetenceChoice,
+  NfseDocumentListItem,
+  NfseEmissionResult,
+  NfseListStatus,
+} from '@/lib/nfse/types'
 import type { NfseAddressSource, NfseTakerField } from '@/lib/nfse/taker-address'
 import { queryKeys } from './query-keys'
 import { NfseApiError } from './use-nfse-settings'
@@ -70,6 +77,41 @@ export function useNfsePreview(paymentRecordIds: string[], enabled = true) {
       ).data,
     enabled: enabled && paymentRecordIds.length > 0,
     gcTime: 0,
+  })
+}
+
+export interface NfseDocumentsFilters {
+  dateFrom: string
+  dateTo: string
+  status?: NfseListStatus
+  patientId?: string
+}
+
+function documentsParams(filters: NfseDocumentsFilters): URLSearchParams {
+  const params = new URLSearchParams({ dateFrom: filters.dateFrom, dateTo: filters.dateTo })
+  if (filters.status) params.set('status', filters.status)
+  if (filters.patientId) params.set('patientId', filters.patientId)
+  return params
+}
+
+export function nfseDocumentsExportUrl(filters: NfseDocumentsFilters): string {
+  return `/api/nfse/documents/export?${documentsParams(filters)}`
+}
+
+export function useNfseDocuments(filters: NfseDocumentsFilters & { page: number; limit: number }) {
+  return useQuery({
+    queryKey: queryKeys.nfse.documents({ ...filters }),
+    placeholderData: (prev) => prev,
+    queryFn: async () => {
+      const params = documentsParams(filters)
+      params.set('page', String(filters.page))
+      params.set('limit', String(filters.limit))
+      return request<{ data: NfseDocumentListItem[]; total: number; page: number; limit: number; totalPages: number }>(
+        `/api/nfse/documents?${params}`,
+        undefined,
+        'Erro ao carregar as notas fiscais',
+      )
+    },
   })
 }
 

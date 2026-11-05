@@ -3,6 +3,7 @@
 import { lazy, Suspense, useCallback } from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 import { FinancialList } from '@/components/financial/financial-list'
 import { cn } from '@/lib/utils'
 import FinancialLoading from './loading'
@@ -13,6 +14,7 @@ import {
   UsersIcon,
   BarChart3Icon,
   CreditCardIcon,
+  ReceiptTextIcon,
 } from 'lucide-react'
 
 const ExpenseList = lazy(() =>
@@ -31,6 +33,9 @@ const PractitionerPLView = lazy(() =>
     default: m.PractitionerPLView,
   }))
 )
+const NfseDocumentsList = lazy(() =>
+  import('@/components/nfse/nfse-documents-list').then((m) => ({ default: m.NfseDocumentsList }))
+)
 const RevenueChart = lazy(() =>
   import('@/components/financial/revenue-chart').then((m) => ({ default: m.RevenueChart }))
 )
@@ -42,12 +47,15 @@ const TABS = [
   { value: 'card-repasses', label: 'Repasses', icon: CreditCardIcon },
   { value: 'practitioner-pl', label: 'Por Profissional', icon: UsersIcon },
   { value: 'overview', label: 'Visão Geral', icon: BarChart3Icon },
+  { value: 'notas-fiscais', label: 'Notas fiscais', icon: ReceiptTextIcon },
 ] as const
 
 type TabValue = (typeof TABS)[number]['value']
 
-function isValidTab(value: string | null): value is TabValue {
-  return TABS.some((t) => t.value === value)
+const NFSE_ROLES = ['owner', 'receptionist', 'financial']
+
+function visibleTabs(role: string) {
+  return TABS.filter((tab) => tab.value !== 'notas-fiscais' || NFSE_ROLES.includes(role))
 }
 
 function TabFallback() {
@@ -64,9 +72,11 @@ export function FinanceiroPageClient() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const pathname = usePathname()
+  const { role } = useSubscriptionAccess()
+  const tabs = visibleTabs(role)
 
   const tabParam = searchParams.get('tab')
-  const activeTab: TabValue = isValidTab(tabParam) ? tabParam : 'receivables'
+  const activeTab: TabValue = tabs.find((t) => t.value === tabParam)?.value ?? 'receivables'
 
   const handleTabChange = useCallback(
     (tab: string) => {
@@ -94,7 +104,7 @@ export function FinanceiroPageClient() {
     <div className="space-y-4">
       {/* Tab navigation */}
       <div className="flex items-center gap-1 rounded-lg bg-white p-1 shadow-sm border border-[#E8ECEF]" data-testid="financial-tabs">
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const Icon = tab.icon
           const isActive = activeTab === tab.value
           return (
@@ -144,6 +154,12 @@ export function FinanceiroPageClient() {
         {activeTab === 'practitioner-pl' && (
           <Suspense fallback={<TabFallback />}>
             <PractitionerPLView />
+          </Suspense>
+        )}
+
+        {activeTab === 'notas-fiscais' && (
+          <Suspense fallback={<TabFallback />}>
+            <NfseDocumentsList />
           </Suspense>
         )}
 
