@@ -53,11 +53,18 @@ describe('parseOfxAmountToCents', () => {
     ['12', 1200],
     ['+7.05', 705],
     ['100.500', 10050], // trailing zero beyond cents is harmless
+    ['1,234,567', 123456700],
+    ['-12.345.678,90', -1234567890],
   ])('%s -> %d', (raw, cents) => {
     expect(parseOfxAmountToCents(raw)).toBe(cents)
   })
 
   it.each(['', 'abc', '1.234', '12.345', '1e3', '--5', '1,2,3x'])('rejects %j', (raw) => {
+    expect(parseOfxAmountToCents(raw)).toBeNull()
+  })
+
+  // Malformed thousands groups are refused, never read as another amount.
+  it.each(['1,2,3', '1.2.3,45', '1.234.56', '12,34.56', '1234.567,89', '1.234,567,89', '1..234', ',123.45'])('rejects malformed grouping %j', (raw) => {
     expect(parseOfxAmountToCents(raw)).toBeNull()
   })
 
@@ -181,9 +188,28 @@ describe('identity and fingerprint', () => {
     expect(lineIdentityKey(base)).not.toBe(lineIdentityKey({ ...base, fitid: '999' }))
   })
 
+  it('keeps a reused FITID with another payer, cheque or type apart', () => {
+    expect(lineIdentityKey(base)).not.toBe(lineIdentityKey({ ...base, memo: 'PIX MARIA' }))
+    expect(lineIdentityKey({ ...base, checkNumber: '101' })).not.toBe(lineIdentityKey({ ...base, checkNumber: '102' }))
+    expect(lineIdentityKey({ ...base, type: 'DEBIT' })).not.toBe(lineIdentityKey({ ...base, type: 'FEE' }))
+  })
+
+  it('keeps cheques without FITID apart in identity and fingerprint', () => {
+    const cheque = { ...base, fitid: null, memo: 'CHEQUE', amountCents: -2500 }
+    expect(lineIdentityKey({ ...cheque, checkNumber: '101' })).not.toBe(lineIdentityKey({ ...cheque, checkNumber: '102' }))
+    expect(lineFingerprint({ ...cheque, checkNumber: '101' })).not.toBe(lineFingerprint({ ...cheque, checkNumber: '102' }))
+  })
+
   it('hashes a statement independent of nothing but its content', () => {
     const t = parseOfx(SGML).transactions
     expect(statementHash(t)).toBe(statementHash(parseOfx(SGML).transactions))
     expect(statementHash(t)).not.toBe(statementHash(t.slice(1)))
+  })
+
+  it('tells statements apart by cheque number, type and memo', () => {
+    const [line] = parseOfx(SGML).transactions
+    expect(statementHash([line])).not.toBe(statementHash([{ ...line, checkNumber: '102' }]))
+    expect(statementHash([line])).not.toBe(statementHash([{ ...line, type: 'DEP' }]))
+    expect(statementHash([line])).not.toBe(statementHash([{ ...line, memo: `${line.memo} BOB` }]))
   })
 })

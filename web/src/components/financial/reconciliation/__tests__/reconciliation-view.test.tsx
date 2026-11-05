@@ -103,8 +103,8 @@ describe('ReconciliationView', () => {
   it('splits one credit across two movements and blocks totals above the line', async () => {
     state.lines = [line({ amountCents: 30000 })]
     state.candidates = [
-      { id: 'm1', description: 'Repasse 1/2', type: 'inflow', amount: '180.00', paymentMethod: null, movementDate: '2026-10-31T15:00:00Z', remainingCents: 18000, dayDistance: 0, bookkeepingPair: false },
-      { id: 'm2', description: 'Repasse 2/2', type: 'inflow', amount: '150.00', paymentMethod: null, movementDate: '2026-10-31T15:00:00Z', remainingCents: 15000, dayDistance: 0, bookkeepingPair: false },
+      { id: 'm1', description: 'Repasse 1/2', type: 'inflow', amount: '180.00', paymentMethod: null, movementDate: '2026-10-31T15:00:00Z', remainingCents: 18000, dayDistance: 0, reversalPair: false },
+      { id: 'm2', description: 'Repasse 2/2', type: 'inflow', amount: '150.00', paymentMethod: null, movementDate: '2026-10-31T15:00:00Z', remainingCents: 15000, dayDistance: 0, reversalPair: false },
     ]
     render(<ReconciliationView />)
     fireEvent.click(screen.getByText('Conciliar'))

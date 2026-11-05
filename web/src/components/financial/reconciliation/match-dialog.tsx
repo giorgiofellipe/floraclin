@@ -39,10 +39,9 @@ export function MatchDialog({ line, onClose }: { line: StatementLineView | null;
 
 function MatchForm({ line, onClose }: { line: StatementLineView; onClose: () => void }) {
   const [search, setSearch] = useState('')
-  const [showPairs, setShowPairs] = useState(false)
   // movementId -> amount typed (masked). Selecting a movement proposes the most it can take.
   const [chosen, setChosen] = useState<Record<string, string>>({})
-  const { data: candidates, isLoading } = useMatchCandidates(line.id, search, showPairs)
+  const { data: candidates, isLoading } = useMatchCandidates(line.id, search)
   const allocate = useAllocateLine()
 
   const credit = line.amountCents > 0
@@ -92,10 +91,6 @@ function MatchForm({ line, onClose }: { line: StatementLineView; onClose: () => 
 
       <div className="space-y-3">
         <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por descrição" aria-label="Buscar movimentação" />
-        <label className="flex items-center gap-2 text-sm text-mid">
-          <Checkbox checked={showPairs} onCheckedChange={(v) => setShowPairs(Boolean(v))} />
-          Mostrar correções contábeis (pagamento estornado e seu estorno)
-        </label>
 
         <div className="max-h-72 space-y-1 overflow-y-auto" data-testid="match-candidates">
           {isLoading && <Loader2Icon className="mx-auto h-4 w-4 animate-spin text-mid" />}
@@ -116,7 +111,7 @@ function MatchForm({ line, onClose }: { line: StatementLineView; onClose: () => 
                   <div className="text-xs text-mid">
                     {brDay(c.movementDate)} · disponível {formatCurrency(c.remainingCents / 100)}
                     {c.dayDistance > 0 && ` · ${c.dayDistance} dia(s) de diferença`}
-                    {c.bookkeepingPair && ' · correção contábil'}
+                    {c.reversalPair && ' · pagamento estornado ou estorno'}
                   </div>
                 </div>
                 {picked && (

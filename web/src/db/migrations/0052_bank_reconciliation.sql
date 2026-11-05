@@ -4,7 +4,8 @@
 -- deploy that uses it; old code never reads or writes these tables. Idempotent: re-running is a no-op.
 --
 -- bank_statement_imports         one row per accepted upload (the same statement twice is refused)
--- bank_statement_lines           immutable statement lines; only the ignore / review columns ever change
+-- bank_statement_lines           immutable statement lines; only the ignore / review columns ever change,
+--                                and created_expense_id is set once when a debit becomes an expense
 -- bank_reconciliation_allocations  explicit cents linking a line to a ledger movement; undone, never deleted
 --
 -- The database, not only the app, refuses what would corrupt a reconciliation: a trigger locks the line
@@ -58,11 +59,13 @@ CREATE TABLE IF NOT EXISTS "floraclin"."bank_statement_lines" (
 	"ignored_at" timestamp with time zone,
 	"ignored_by" uuid,
 	"ignore_reason" varchar(255),
+	"created_expense_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "bank_statement_lines_tenant_id_id_key" UNIQUE ("tenant_id", "id"),
 	CONSTRAINT "bank_statement_lines_account_fk" FOREIGN KEY ("tenant_id", "account_id") REFERENCES "floraclin"."financial_accounts"("tenant_id", "id"),
 	CONSTRAINT "bank_statement_lines_import_fk" FOREIGN KEY ("tenant_id", "import_id") REFERENCES "floraclin"."bank_statement_imports"("tenant_id", "id"),
 	CONSTRAINT "bank_statement_lines_suspect_fk" FOREIGN KEY ("tenant_id", "suspected_duplicate_of") REFERENCES "floraclin"."bank_statement_lines"("tenant_id", "id"),
+	CONSTRAINT "bank_statement_lines_created_expense_fk" FOREIGN KEY ("created_expense_id") REFERENCES "floraclin"."expenses"("id"),
 	CONSTRAINT "bank_statement_lines_amount_check" CHECK ("amount_cents" <> 0),
 	CONSTRAINT "bank_statement_lines_occurrence_check" CHECK ("occurrence" >= 1),
 	CONSTRAINT "bank_statement_lines_ignore_check" CHECK (("ignored_at" IS NULL) = ("ignore_reason" IS NULL) AND ("ignored_at" IS NULL) = ("ignored_by" IS NULL))
@@ -71,6 +74,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_statement_lines_identity" ON "floracl
 CREATE INDEX IF NOT EXISTS "idx_bank_statement_lines_account_date" ON "floraclin"."bank_statement_lines" ("tenant_id", "account_id", "posted_date");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_bank_statement_lines_fingerprint" ON "floraclin"."bank_statement_lines" ("tenant_id", "account_id", "fingerprint");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_bank_statement_lines_import" ON "floraclin"."bank_statement_lines" ("import_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_bank_statement_lines_fitid" ON "floraclin"."bank_statement_lines" ("tenant_id", "account_id", "fitid") WHERE "fitid" IS NOT NULL;--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "uq_bank_statement_lines_created_expense" ON "floraclin"."bank_statement_lines" ("created_expense_id");--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "floraclin"."bank_reconciliation_allocations" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tenant_id" uuid NOT NULL,
@@ -173,6 +178,11 @@ BEGIN
      OR NEW.suspected_duplicate_of IS DISTINCT FROM OLD.suspected_duplicate_of
      OR NEW.created_at <> OLD.created_at THEN
     RAISE EXCEPTION 'bank statement lines are immutable' USING ERRCODE = '23514';
+  END IF;
+  -- The expense created from a line is recorded once and kept, even after the
+  -- match is undone, so the same debit can never create a second expense.
+  IF OLD.created_expense_id IS NOT NULL AND NEW.created_expense_id IS DISTINCT FROM OLD.created_expense_id THEN
+    RAISE EXCEPTION 'the expense created from a statement line cannot change' USING ERRCODE = '23514';
   END IF;
   IF NEW.ignored_at IS NOT NULL AND OLD.ignored_at IS NULL THEN
     PERFORM 1 FROM "floraclin"."bank_reconciliation_allocations"

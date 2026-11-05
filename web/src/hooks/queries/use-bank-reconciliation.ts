@@ -49,13 +49,13 @@ export function useStatementLines(accountId: string, status: StatementLineFilter
   })
 }
 
-export function useMatchCandidates(lineId: string | null, search: string, includeBookkeepingPairs: boolean) {
+export function useMatchCandidates(lineId: string | null, search: string) {
   return useQuery({
-    queryKey: queryKeys.financial.reconciliationCandidates(lineId ?? '', search, includeBookkeepingPairs),
+    queryKey: queryKeys.financial.reconciliationCandidates(lineId ?? '', search),
     enabled: Boolean(lineId),
     queryFn: () =>
       request<MatchCandidateView[]>(
-        `/api/financial/reconciliation/lines/${lineId}/candidates?search=${encodeURIComponent(search)}&includeBookkeepingPairs=${includeBookkeepingPairs}`,
+        `/api/financial/reconciliation/lines/${lineId}/candidates?search=${encodeURIComponent(search)}`,
       ),
   })
 }
@@ -133,7 +133,7 @@ export function useCreateExpenseFromLine() {
   const invalidate = useInvalidateFinance()
   return useMutation({
     mutationFn: ({ lineId, ...data }: { lineId: string; categoryId: string; description?: string; paymentMethod: string }) =>
-      request(`/api/financial/reconciliation/lines/${lineId}/expense`, json('POST', data)),
+      request<{ expenseId: string; reused: boolean }>(`/api/financial/reconciliation/lines/${lineId}/expense`, json('POST', data)),
     onSuccess: invalidate,
   })
 }

@@ -29,7 +29,6 @@ export const ignoreLineSchema = z.object({
 
 export const candidatesQuerySchema = z.object({
   search: z.string().trim().max(100).optional(),
-  includeBookkeepingPairs: z.enum(['true', 'false']).optional().transform((v) => v === 'true'),
 })
 
 export const expenseFromLineSchema = z.object({
