@@ -4,7 +4,7 @@
  * against the old hierarchy (FloraClin wordmark as hero, clinic name as a
  * subtitle) creeping back in.
  */
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { BookingPage } from '../booking-page'
 
@@ -129,4 +129,46 @@ describe('BookingPage', () => {
     })
   })
 
+  describe('when the clinic has a single practitioner', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    it('skips the practitioner step and loads slots for that practitioner', async () => {
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ slots: [] }) })
+      vi.stubGlobal('fetch', fetchMock)
+      render(
+        <BookingPage
+          clinic={{ ...CLINIC, logoUrl: null }}
+          practitioners={[{ id: 'p-1', name: 'Ana Souza' }]}
+          slug="bela-pele"
+          acceptingBookings
+        />
+      )
+
+      expect(screen.getByTestId('booking-step-2')).toBeInTheDocument()
+      expect(screen.getByText('Atendimento com Ana Souza')).toBeInTheDocument()
+      expect(screen.queryByText('Profissional')).not.toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Voltar' })).not.toBeInTheDocument()
+
+      const today = screen.getByRole('grid').querySelector('[data-today] button')
+      fireEvent.click(today!)
+      expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('practitioner_id=p-1'))
+      expect(await screen.findByText('Nenhum horário disponível para esta data.')).toBeInTheDocument()
+    })
+
+    it('still asks for the practitioner when there are several', () => {
+      render(
+        <BookingPage
+          clinic={{ ...CLINIC, logoUrl: null }}
+          practitioners={[
+            { id: 'p-1', name: 'Ana Souza' },
+            { id: 'p-2', name: 'Bruno Lima' },
+          ]}
+          slug="bela-pele"
+          acceptingBookings
+        />
+      )
+
+      expect(screen.getByTestId('booking-step-1')).toBeInTheDocument()
+    })
+  })
 })
