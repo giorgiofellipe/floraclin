@@ -145,6 +145,7 @@ describe('BookingPage', () => {
       )
 
       expect(screen.getByTestId('booking-step-2')).toBeInTheDocument()
+      expect(screen.getByText('Atendimento com Ana Souza')).toBeInTheDocument()
       expect(screen.queryByText('Profissional')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Voltar' })).not.toBeInTheDocument()
 

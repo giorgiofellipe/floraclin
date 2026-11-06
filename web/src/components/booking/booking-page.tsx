@@ -355,9 +355,14 @@ export function BookingPage({
               <h2 className="text-xl sm:text-2xl text-charcoal font-medium mb-1">
                 Selecione a data e horário
               </h2>
-              <p className="text-sm text-mid mb-6">
+              <p className={cn('text-sm text-mid', soloPractitioner ? 'mb-1' : 'mb-6')}>
                 Escolha o melhor dia e horário para você
               </p>
+              {soloPractitioner && (
+                <p className="text-sm text-charcoal font-medium mb-6">
+                  Atendimento com {soloPractitioner.name}
+                </p>
+              )}
 
               <div className="flex justify-center mb-6">
                 <Calendar
