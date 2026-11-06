@@ -74,6 +74,8 @@ export const moveMovementsSchema = z
     fromAccountId: z.string().uuid('Conta de origem inválida').optional(),
     dateFrom: ymd.optional(),
     dateTo: ymd.optional(),
+    /** Count and total what would move, without moving it. */
+    preview: z.boolean().optional(),
   })
   .refine((v) => Boolean(v.movementIds) !== Boolean(v.fromAccountId), {
     message: 'Informe as movimentações ou a conta de origem',

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireWrite } from '@/lib/write-access'
-import { moveMovementsToAccount } from '@/db/queries/financial-accounts'
+import { moveMovementsToAccount, previewMoveMovements } from '@/db/queries/financial-accounts'
 import { moveMovementsSchema } from '@/validations/financial-accounts'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
@@ -19,7 +19,9 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await moveMovementsToAccount(ctx.tenantId, ctx.userId, parsed.data)
+    const result = parsed.data.preview
+      ? await previewMoveMovements(ctx.tenantId, parsed.data)
+      : await moveMovementsToAccount(ctx.tenantId, ctx.userId, parsed.data)
     return NextResponse.json({ success: true, data: result })
   } catch (error) {
     if (error instanceof BusinessError) {

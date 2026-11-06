@@ -1,18 +1,44 @@
-import { beforeAll, describe, expect, it } from 'vitest'
-import { and, count, eq, inArray, isNotNull } from 'drizzle-orm'
+// @vitest-environment node
+import { beforeAll, describe, expect, it, vi } from 'vitest'
+import { and, count, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { cashMovements, tenants, users } from '@/db/schema'
+import {
+  auditLogs,
+  bankReconciliationAllocations,
+  cashMovements,
+  financialEntries,
+  installments,
+  patients,
+  paymentRecords,
+  tenants,
+  users,
+} from '@/db/schema'
+import { parseOfx } from '@/lib/financial/ofx'
 import {
   createFinancialAccount,
   createTransfer,
   listFinancialAccounts,
   moveMovementsToAccount,
+  paymentInflowAccountId,
+  previewMoveMovements,
   resolveMovementAccountId,
   reversalAccountId,
   setFinancialAccountArchived,
   type FinancialAccountRow,
 } from '../financial-accounts'
 import { exportLedgerCSV, getLedgerSummary, listCashMovements } from '../cash-movements'
+import { allocateStatementLine, commitStatementImport, listStatementLines } from '../bank-reconciliation'
+
+/** Set by the rollback test: the audit insert, the move's last write, fails. */
+const audit = vi.hoisted(() => ({ fail: false }))
+vi.mock('@/lib/audit', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/audit')>()
+  return {
+    ...actual,
+    createAuditLog: (...args: Parameters<typeof actual.createAuditLog>) =>
+      audit.fail ? Promise.reject(new Error('audit down')) : actual.createAuditLog(...args),
+  }
+})
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
 const describeIntegration = RUN_INTEGRATION ? describe : describe.skip
@@ -21,6 +47,10 @@ const CLINIC = '00000000-0000-0000-0000-0000000fa001'
 const OTHER_CLINIC = '00000000-0000-0000-0000-0000000fa002'
 const NEW_CLINIC = '00000000-0000-0000-0000-0000000fa003'
 const USER = '00000000-0000-0000-0000-0000000fa004'
+const MOVE_CLINIC = '00000000-0000-0000-0000-0000000fa005'
+const PATIENT = '00000000-0000-0000-0000-0000000fa006'
+const ENTRY = '00000000-0000-0000-0000-0000000fa007'
+const INSTALLMENT = '00000000-0000-0000-0000-0000000fa008'
 
 const PERIOD = { dateFrom: '2026-10-01', dateTo: '2026-11-30', type: 'all' as const }
 
@@ -185,57 +215,316 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
     )
   })
 
-  describe('moving movements between accounts', () => {
-    const day = new Date('2026-11-03T15:00:00Z')
+})
 
-    it('moves a payment and its reversal together, leaving amount and date alone', async () => {
-      const [original] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '70.00', day)).returning()
-      const [counter] = await db
-        .insert(cashMovements)
-        .values({ ...inflow(CLINIC, cash.id, '70.00', day), type: 'outflow' })
-        .returning()
-      await db.update(cashMovements).set({ reversedByMovementId: counter.id }).where(eq(cashMovements.id, original.id))
+describeIntegration('moving movements between accounts (integration, requires test DB)', () => {
+  // A clinic of its own: the suite above archives its bank, which can't be a destination.
+  let drawer: FinancialAccountRow
+  let itau: FinancialAccountRow
+  let legacyId: string
+  let lineSeq = 0
 
-      // Picking only the counter still moves the pair.
-      const result = await moveMovementsToAccount(CLINIC, USER, { toAccountId: bank.id, movementIds: [counter.id] })
-      expect(result).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+  const day = new Date('2026-11-03T15:00:00Z')
 
-      const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, [original.id, counter.id]))
-      expect(rows.map((r) => r.accountId)).toEqual([bank.id, bank.id])
-      expect(rows.map((r) => r.amount)).toEqual(['70.00', '70.00'])
+  async function movement(accountId: string, amount: string, extra: Partial<typeof cashMovements.$inferInsert> = {}) {
+    const [row] = await db
+      .insert(cashMovements)
+      .values({ ...inflow(MOVE_CLINIC, accountId, amount, day), ...extra })
+      .returning()
+    return row
+  }
+
+  /** An original and its reversal counter, linked the way reversePayment links them. */
+  async function reversedPair(accountId: string, amount: string) {
+    const original = await movement(accountId, amount)
+    const counter = await movement(accountId, amount, { type: 'outflow' })
+    await db.update(cashMovements).set({ reversedByMovementId: counter.id }).where(eq(cashMovements.id, original.id))
+    return { original, counter }
+  }
+
+  /** One credit line on Itaú's statement, for matching. */
+  async function statementLine(amount: string) {
+    lineSeq += 1
+    const memo = `Credito ${lineSeq}`
+    await commitStatementImport(MOVE_CLINIC, USER, {
+      accountId: itau.id,
+      fileName: `extrato-${lineSeq}.ofx`,
+      parsed: parseOfx(
+        `OFXHEADER:100\n\n<OFX><STMTRS><CURDEF>BRL<BANKACCTFROM><BANKID>1<ACCTID>9</BANKACCTFROM><BANKTRANLIST>` +
+          `<STMTTRN><TRNTYPE>CREDIT<DTPOSTED>20261103000000[-3:BRT]<TRNAMT>${amount}<FITID>mv-${lineSeq}<MEMO>${memo}</STMTTRN>` +
+          `</BANKTRANLIST></STMTRS></OFX>`,
+      ),
     })
+    const { lines } = await listStatementLines(MOVE_CLINIC, { accountId: itau.id, status: 'all', limit: 200 })
+    return lines.find((l) => l.memo === memo)!
+  }
 
-    it('skips transfer legs and refuses another clinic or an unknown movement', async () => {
-      await createTransfer(CLINIC, USER, { fromAccountId: cash.id, toAccountId: bank.id, amount: 5, date: '2026-11-03' })
-      const legs = await db
-        .select({ id: cashMovements.id })
-        .from(cashMovements)
-        .where(and(eq(cashMovements.tenantId, CLINIC), isNotNull(cashMovements.transferGroupId)))
-      const result = await moveMovementsToAccount(CLINIC, USER, {
-        toAccountId: cash.id,
-        movementIds: legs.map((l) => l.id),
-      })
-      expect(result.moved).toBe(0)
-      expect(result.skippedTransfers).toBe(legs.length)
+  async function accountsOf(ids: string[]) {
+    const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, ids))
+    return Object.fromEntries(rows.map((r) => [r.id, r.accountId]))
+  }
 
+  /**
+   * Runs `work` in a transaction and keeps it open, holding its locks, until
+   * release() is called: the other half of a race, paused at the worst moment.
+   */
+  async function holdTransaction(work: (tx: typeof db) => Promise<void>) {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    let ready!: () => void
+    const started = new Promise<void>((resolve) => (ready = resolve))
+    const done = db.transaction(async (tx) => {
+      await work(tx as unknown as typeof db)
+      ready()
+      await gate
+    })
+    await Promise.race([started, done])
+    return { release, done }
+  }
+
+  /** Resolves once some session is blocked on a lock, i.e. the racing call reached the held rows. */
+  async function waitForLockWait() {
+    for (let i = 0; i < 200; i++) {
+      const rows = await db.execute<{ n: number }>(
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+      )
+      if (Number(rows[0]?.n) > 0) return
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    throw new Error('nothing ever waited on the held lock')
+  }
+
+  beforeAll(async () => {
+    await db.insert(tenants).values({ id: MOVE_CLINIC, name: 'Mover', slug: 'financial-accounts-move-test' })
+    drawer = await createFinancialAccount(MOVE_CLINIC, USER, account('cash', 'Caixa'))
+    itau = await createFinancialAccount(MOVE_CLINIC, USER, account('bank', 'Itaú'))
+    // The account 0050 gives a clinic's pre-account history.
+    legacyId = await reversalAccountId(db, MOVE_CLINIC, null)
+
+    await db.insert(patients).values({ id: PATIENT, tenantId: MOVE_CLINIC, fullName: 'Ana', phone: '11999990000' })
+    await db.insert(financialEntries).values({
+      id: ENTRY,
+      tenantId: MOVE_CLINIC,
+      patientId: PATIENT,
+      description: 'Botox',
+      totalAmount: '90.00',
+      createdBy: USER,
+    })
+    await db.insert(installments).values({
+      id: INSTALLMENT,
+      tenantId: MOVE_CLINIC,
+      financialEntryId: ENTRY,
+      installmentNumber: 1,
+      amount: '90.00',
+      dueDate: '2026-11-03',
+      appliedFineType: 'percentage',
+      appliedFineValue: '0',
+      appliedInterestRate: '0',
+      appliedGracePeriodDays: 0,
+    })
+  })
+
+  it('moves a payment and its reversal together, leaving amount and date alone, and audits each old account', async () => {
+    const { original, counter } = await reversedPair(drawer.id, '70.00')
+
+    // Picking only the counter still moves the pair.
+    const result = await moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [counter.id] })
+    expect(result).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+
+    const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, [original.id, counter.id]))
+    expect(rows.map((r) => [r.accountId, r.amount, r.movementDate.toISOString()])).toEqual([
+      [itau.id, '70.00', day.toISOString()],
+      [itau.id, '70.00', day.toISOString()],
+    ])
+
+    const [log] = await db
+      .select()
+      .from(auditLogs)
+      .where(and(eq(auditLogs.tenantId, MOVE_CLINIC), eq(auditLogs.entityType, 'cash_movement_account')))
+      .orderBy(desc(auditLogs.createdAt))
+      .limit(1)
+    expect(log.changes).toEqual({
+      accountId: { old: { [original.id]: drawer.id, [counter.id]: drawer.id }, new: itau.id },
+    })
+  })
+
+  it('skips a reversed payment whose counter is matched to the statement, keeping both halves', async () => {
+    const { original, counter } = await reversedPair(itau.id, '30.00')
+    const line = await statementLine('30.00')
+    await allocateStatementLine(MOVE_CLINIC, USER, line.id, [{ movementId: original.id, amountCents: 3000 }])
+
+    const preview = await previewMoveMovements(MOVE_CLINIC, { toAccountId: drawer.id, movementIds: [counter.id] })
+    expect(preview).toEqual({ moved: 0, skippedReconciled: 1, skippedTransfers: 0, total: '0.00' })
+
+    const result = await moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: drawer.id, movementIds: [counter.id] })
+    expect(result).toEqual({ moved: 0, skippedReconciled: 1, skippedTransfers: 0 })
+    expect(await accountsOf([original.id, counter.id])).toEqual({ [original.id]: itau.id, [counter.id]: itau.id })
+  })
+
+  it('lets money leave the legacy account but never land on it', async () => {
+    const old = await movement(legacyId, '15.00')
+
+    await expect(
+      moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: legacyId, movementIds: [old.id] }),
+    ).rejects.toMatchObject({ code: 'FINANCIAL_ACCOUNT_NOT_FOUND' })
+    expect(await accountsOf([old.id])).toEqual({ [old.id]: legacyId })
+
+    await moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: drawer.id, movementIds: [old.id] })
+    expect(await accountsOf([old.id])).toEqual({ [old.id]: drawer.id })
+  })
+
+  it('skips transfer legs and refuses another clinic or an unknown movement', async () => {
+    const { transferGroupId } = await createTransfer(MOVE_CLINIC, USER, {
+      fromAccountId: drawer.id,
+      toAccountId: itau.id,
+      amount: 5,
+      date: '2026-11-03',
+    })
+    const legs = await db
+      .select({ id: cashMovements.id })
+      .from(cashMovements)
+      .where(eq(cashMovements.transferGroupId, transferGroupId))
+    const result = await moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: drawer.id, movementIds: legs.map((l) => l.id) })
+    expect(result).toEqual({ moved: 0, skippedReconciled: 0, skippedTransfers: 2 })
+
+    const otherClinics = await createFinancialAccount(OTHER_CLINIC, USER, account('cash', 'Caixa'))
+    await expect(
+      moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: otherClinics.id, movementIds: legs.map((l) => l.id) }),
+    ).rejects.toMatchObject({ code: 'FINANCIAL_ACCOUNT_NOT_FOUND' })
+    await expect(
+      moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: ['00000000-0000-0000-0000-00000000dead'] }),
+    ).rejects.toMatchObject({ code: 'FINANCIAL_ACCOUNT_NOT_FOUND' })
+  })
+
+  it('previews then moves a whole account for a period, BR days inclusive', async () => {
+    const from = await createFinancialAccount(MOVE_CLINIC, USER, { ...account('cash', 'Caixa 2'), isDefault: false })
+    // 23:30 on Nov 30 in BR is still inside the period; 23:30 on Oct 31 is not.
+    const inside = await movement(from.id, '10.00', { movementDate: new Date('2026-12-01T02:30:00Z') })
+    const refund = await movement(from.id, '4.00', { type: 'outflow', movementDate: new Date('2026-11-10T15:00:00Z') })
+    const outside = await movement(from.id, '11.00', { movementDate: new Date('2026-11-01T02:30:00Z') })
+    const period = { toAccountId: itau.id, fromAccountId: from.id, dateFrom: '2026-11-01', dateTo: '2026-11-30' }
+
+    expect(await previewMoveMovements(MOVE_CLINIC, period)).toEqual({
+      moved: 2,
+      skippedReconciled: 0,
+      skippedTransfers: 0,
+      total: '6.00',
+    })
+    // The preview writes nothing.
+    expect(await accountsOf([inside.id])).toEqual({ [inside.id]: from.id })
+
+    expect(await moveMovementsToAccount(MOVE_CLINIC, USER, period)).toEqual({ moved: 2, skippedReconciled: 0, skippedTransfers: 0 })
+    expect(await accountsOf([inside.id, refund.id, outside.id])).toEqual({
+      [inside.id]: itau.id,
+      [refund.id]: itau.id,
+      [outside.id]: from.id,
+    })
+  })
+
+  it('rolls the whole move back when its audit entry fails', async () => {
+    const a = await movement(drawer.id, '8.00')
+    const b = await movement(drawer.id, '9.00')
+    const before = await db.select({ n: count() }).from(auditLogs).where(eq(auditLogs.tenantId, MOVE_CLINIC))
+
+    audit.fail = true
+    try {
       await expect(
-        moveMovementsToAccount(CLINIC, USER, { toAccountId: otherBank.id, movementIds: legs.map((l) => l.id) }),
-      ).rejects.toMatchObject({ code: 'FINANCIAL_ACCOUNT_NOT_FOUND' })
+        moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [a.id, b.id] }),
+      ).rejects.toThrow('audit down')
+    } finally {
+      audit.fail = false
+    }
+
+    expect(await accountsOf([a.id, b.id])).toEqual({ [a.id]: drawer.id, [b.id]: drawer.id })
+    const after = await db.select({ n: count() }).from(auditLogs).where(eq(auditLogs.tenantId, MOVE_CLINIC))
+    expect(after[0].n).toBe(before[0].n)
+  })
+
+  describe('racing other writers', () => {
+    it('skips a movement whose match commits while the move waits, so the match never points at another account', async () => {
+      const paid = await movement(itau.id, '40.00')
+      const line = await statementLine('40.00')
+
+      // A reconciliation holding the movement, its allocation written but not committed.
+      const match = await holdTransaction(async (tx) => {
+        await tx.select({ id: cashMovements.id }).from(cashMovements).where(eq(cashMovements.id, paid.id)).for('update')
+        await tx.insert(bankReconciliationAllocations).values({
+          tenantId: MOVE_CLINIC,
+          accountId: itau.id,
+          lineId: line.id,
+          movementId: paid.id,
+          amountCents: 4000,
+          createdBy: USER,
+        })
+      })
+      const move = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: drawer.id, movementIds: [paid.id] })
+      await waitForLockWait()
+      match.release()
+      await match.done
+
+      expect(await move).toEqual({ moved: 0, skippedReconciled: 1, skippedTransfers: 0 })
+      expect(await accountsOf([paid.id])).toEqual({ [paid.id]: itau.id })
     })
 
-    it('moves a whole account for a period', async () => {
-      const [inside] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '10.00', new Date('2026-11-10T15:00:00Z'))).returning()
-      const [outside] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '11.00', new Date('2026-10-02T15:00:00Z'))).returning()
+    it('refuses a match on a movement a move has already taken to another account', async () => {
+      const paid = await movement(itau.id, '41.00')
+      const line = await statementLine('41.00')
 
-      await moveMovementsToAccount(CLINIC, USER, {
-        toAccountId: bank.id,
-        fromAccountId: cash.id,
-        dateFrom: '2026-11-01',
-        dateTo: '2026-11-30',
+      // A move holding the movement, re-pointed at the drawer but not committed.
+      const moving = await holdTransaction(async (tx) => {
+        await tx.select({ id: cashMovements.id }).from(cashMovements).where(eq(cashMovements.id, paid.id)).for('update')
+        await tx.update(cashMovements).set({ accountId: drawer.id }).where(eq(cashMovements.id, paid.id))
       })
+      const match = allocateStatementLine(MOVE_CLINIC, USER, line.id, [{ movementId: paid.id, amountCents: 4100 }])
+      await waitForLockWait()
+      moving.release()
+      await moving.done
 
-      const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, [inside.id, outside.id]))
-      expect(Object.fromEntries(rows.map((r) => [r.id, r.accountId]))).toEqual({ [inside.id]: bank.id, [outside.id]: cash.id })
+      await expect(match).rejects.toMatchObject({ code: 'ALLOCATION_ACCOUNT' })
+    })
+
+    it('moves the counter of a reversal that commits while the move waits', async () => {
+      const original = await movement(drawer.id, '50.00')
+      let counterId = ''
+
+      // A reversal holding the original, its counter written on the old account but not committed.
+      const reversal = await holdTransaction(async (tx) => {
+        await tx.select({ id: cashMovements.id }).from(cashMovements).where(eq(cashMovements.id, original.id)).for('update')
+        const [counter] = await tx
+          .insert(cashMovements)
+          .values({ ...inflow(MOVE_CLINIC, drawer.id, '50.00', day), type: 'outflow' })
+          .returning()
+        counterId = counter.id
+        await tx.update(cashMovements).set({ reversedByMovementId: counter.id }).where(eq(cashMovements.id, original.id))
+      })
+      const move = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [original.id] })
+      await waitForLockWait()
+      reversal.release()
+      await reversal.done
+
+      expect(await move).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+      expect(await accountsOf([original.id, counterId])).toEqual({ [original.id]: itau.id, [counterId]: itau.id })
+    })
+
+    it('writes a reversal on the account a move committed while the reversal waited', async () => {
+      const [record] = await db
+        .insert(paymentRecords)
+        .values({ installmentId: INSTALLMENT, amount: '60.00', paymentMethod: 'pix', paidAt: day, recordedBy: USER })
+        .returning()
+      const original = await movement(drawer.id, '60.00', { paymentRecordId: record.id })
+
+      // A move holding the inflow, re-pointed at Itaú but not committed.
+      const moving = await holdTransaction(async (tx) => {
+        await tx.select({ id: cashMovements.id }).from(cashMovements).where(eq(cashMovements.id, original.id)).for('update')
+        await tx.update(cashMovements).set({ accountId: itau.id }).where(eq(cashMovements.id, original.id))
+      })
+      // What reversePayment asks for, inside its own transaction, before writing the counter.
+      const reversalAccount = db.transaction((tx) => paymentInflowAccountId(tx as unknown as typeof db, MOVE_CLINIC, record.id))
+      await waitForLockWait()
+      moving.release()
+      await moving.done
+
+      expect(await reversalAccount).toBe(itau.id)
     })
   })
 })

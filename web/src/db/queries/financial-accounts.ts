@@ -156,7 +156,12 @@ async function ensureLegacyAccount(tx: Pick<typeof db, 'select' | 'insert'>, ten
   return legacy.id
 }
 
-/** The account of the live inflow a payment record wrote, for its reversal. */
+/**
+ * The account of the live inflow a payment record wrote, for its reversal.
+ * Locks the inflow until the reversal commits: moveMovementsToAccount locks it
+ * too, so a move either sees the finished pair and moves both halves, or
+ * finishes first and the counter lands on the new account.
+ */
 export async function paymentInflowAccountId(
   tx: Pick<typeof db, 'select' | 'insert'>,
   tenantId: string,
@@ -174,6 +179,7 @@ export async function paymentInflowAccountId(
     )
     .orderBy(desc(cashMovements.recordedAt))
     .limit(1)
+    .for('update')
   return reversalAccountId(tx, tenantId, original?.accountId)
 }
 
@@ -477,13 +483,141 @@ export interface MoveMovementsResult {
   skippedTransfers: number
 }
 
+export interface MoveMovementsPreview extends MoveMovementsResult {
+  /** What the source balances lose and the target gains (inflows minus outflows), e.g. "1250.00". */
+  total: string
+}
+
+type Tx = typeof db
+
+const movementRow = {
+  id: cashMovements.id,
+  type: cashMovements.type,
+  amount: cashMovements.amount,
+  accountId: cashMovements.accountId,
+  transferGroupId: cashMovements.transferGroupId,
+  reversedByMovementId: cashMovements.reversedByMovementId,
+}
+
+type MovementRow = { [K in keyof typeof movementRow]: (typeof cashMovements.$inferSelect)[K] }
+
+/** The rows plus the other half of each reversal pair: the original points at its counter through reversed_by_movement_id. */
+function withPairs(tenantId: string, ids: string[]) {
+  return and(
+    eq(cashMovements.tenantId, tenantId),
+    or(
+      inArray(cashMovements.id, ids),
+      inArray(cashMovements.reversedByMovementId, ids),
+      sql`${cashMovements.id} IN (
+        SELECT reversed_by_movement_id FROM floraclin.cash_movements
+        WHERE tenant_id = ${tenantId} AND id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+          AND reversed_by_movement_id IS NOT NULL)`,
+    ),
+  )
+}
+
+/**
+ * Picks the movements a move covers and decides which ones go. With `lock`,
+ * every row is locked (in id order, like allocateStatementLine) before the
+ * pairs and the reconciliation are read, so neither a concurrent match nor a
+ * concurrent reversal can slip between this read and the update.
+ */
+async function planMove(tx: Tx, tenantId: string, targetId: string, data: MoveMovementsInput, lock: boolean) {
+  const locked = <T extends { for: (strength: 'update') => unknown }>(query: T) => (lock ? query.for('update') : query)
+
+  const pickWhere = and(
+    eq(cashMovements.tenantId, tenantId),
+    data.movementIds
+      ? inArray(cashMovements.id, data.movementIds)
+      : and(
+          eq(cashMovements.accountId, data.fromAccountId!),
+          data.dateFrom ? gte(cashMovements.movementDate, startOfBrDay(data.dateFrom)) : undefined,
+          data.dateTo ? lte(cashMovements.movementDate, endOfBrDay(data.dateTo)) : undefined,
+        ),
+  )
+  const picked = (await locked(
+    tx.select(movementRow).from(cashMovements).where(pickWhere).orderBy(asc(cashMovements.id)),
+  )) as MovementRow[]
+  if (data.movementIds && picked.length !== new Set(data.movementIds).size) throw notFound()
+
+  const skippedTransfers = picked.filter((m) => m.transferGroupId).length
+  const pickedIds = picked.filter((m) => !m.transferGroupId).map((m) => m.id)
+  if (!pickedIds.length) return { rows: [] as MovementRow[], toMove: [] as MovementRow[], moved: 0, skippedReconciled: 0, skippedTransfers }
+
+  // A reversal locks the inflow before writing its counter (reversePayment),
+  // so once the picked rows are locked no new pair can form. A counter
+  // committed while this transaction waited for a lock is only visible to a
+  // later statement: read again until the set stops growing.
+  let rows: MovementRow[] = []
+  let ids = pickedIds
+  for (;;) {
+    rows = (await locked(
+      tx.select(movementRow).from(cashMovements).where(withPairs(tenantId, ids)).orderBy(asc(cashMovements.id)),
+    )) as MovementRow[]
+    if (rows.length === ids.length || !lock) break
+    ids = rows.map((r) => r.id)
+  }
+
+  // Group each row with its pair so the pair is moved or skipped as one.
+  const groupOf = new Map<string, string>()
+  for (const r of rows) {
+    groupOf.set(r.id, groupOf.get(r.id) ?? r.id)
+    if (r.reversedByMovementId) groupOf.set(r.reversedByMovementId, groupOf.get(r.id)!)
+  }
+
+  // Read behind the locks: allocateStatementLine locks the movement before it
+  // writes an allocation, so none can appear for these rows from here on.
+  const reconciledRows = await tx
+    .select({ movementId: bankReconciliationAllocations.movementId })
+    .from(bankReconciliationAllocations)
+    .where(
+      and(
+        eq(bankReconciliationAllocations.tenantId, tenantId),
+        inArray(bankReconciliationAllocations.movementId, rows.map((r) => r.id)),
+        isNull(bankReconciliationAllocations.undoneAt),
+      ),
+    )
+  const blockedGroups = new Set(reconciledRows.map((r) => groupOf.get(r.movementId)))
+
+  const toMove = rows.filter((r) => !blockedGroups.has(groupOf.get(r.id)) && r.accountId !== targetId)
+  // Counted per pair, so a skipped reversed payment reads as one.
+  const skippedReconciled = new Set(
+    rows.filter((r) => blockedGroups.has(groupOf.get(r.id))).map((r) => groupOf.get(r.id)),
+  ).size
+  const moved = new Set(toMove.map((r) => groupOf.get(r.id))).size
+  return { rows, toMove, moved, skippedReconciled, skippedTransfers }
+}
+
+async function lockTarget(tx: Tx, tenantId: string, toAccountId: string, lock: boolean) {
+  // The legacy account only holds history: money can leave it, never land on it.
+  const query = tx
+    .select({ id: financialAccounts.id })
+    .from(financialAccounts)
+    .where(and(activeInTenant(tenantId), eq(financialAccounts.id, toAccountId), ne(financialAccounts.kind, 'legacy')))
+    .limit(1)
+  // SHARE holds off an archive but not the key-share lock that a reversal's or
+  // an allocation's foreign key takes on this account while holding a movement
+  // this move waits for: FOR UPDATE here would deadlock with them.
+  const [target] = lock ? await query.for('share') : await query
+  if (!target) throw notFound()
+  return target
+}
+
+/** What moveMovementsToAccount would do, without writing: shown before the user confirms. */
+export async function previewMoveMovements(tenantId: string, data: MoveMovementsInput): Promise<MoveMovementsPreview> {
+  const target = await lockTarget(db, tenantId, data.toAccountId, false)
+  const { toMove, moved, skippedReconciled, skippedTransfers } = await planMove(db, tenantId, target.id, data, false)
+  const cents = toMove.reduce((sum, r) => sum + Math.round(Number(r.amount) * 100) * (r.type === 'inflow' ? 1 : -1), 0)
+  return { moved, skippedReconciled, skippedTransfers, total: (cents / 100).toFixed(2) }
+}
+
 /**
  * Re-points movements at another account, for a payment registered on the
  * wrong one. Only account_id changes (amount, date and links are untouched)
- * and the move is audited. A reversal pair always moves together, so a
- * reversed payment never leaves +amount on one account and -amount on another.
- * Movements matched to a bank statement line and transfer legs are skipped and
- * counted.
+ * and the move is audited with each movement's previous account. A reversal
+ * pair always moves together, so a reversed payment never leaves +amount on
+ * one account and -amount on another. Movements matched to a bank statement
+ * line and transfer legs are skipped and counted.
  */
 export async function moveMovementsToAccount(
   tenantId: string,
@@ -491,92 +625,8 @@ export async function moveMovementsToAccount(
   data: MoveMovementsInput,
 ): Promise<MoveMovementsResult> {
   return withTransaction(async (tx) => {
-    // The legacy account only holds history: money can leave it, never land on it.
-    const [target] = await tx
-      .select({ id: financialAccounts.id })
-      .from(financialAccounts)
-      .where(
-        and(activeInTenant(tenantId), eq(financialAccounts.id, data.toAccountId), ne(financialAccounts.kind, 'legacy')),
-      )
-      .for('update')
-      .limit(1)
-    if (!target) throw notFound()
-
-    const picked = await tx
-      .select({
-        id: cashMovements.id,
-        transferGroupId: cashMovements.transferGroupId,
-      })
-      .from(cashMovements)
-      .where(
-        and(
-          eq(cashMovements.tenantId, tenantId),
-          data.movementIds
-            ? inArray(cashMovements.id, data.movementIds)
-            : and(
-                eq(cashMovements.accountId, data.fromAccountId!),
-                data.dateFrom ? gte(cashMovements.movementDate, startOfBrDay(data.dateFrom)) : undefined,
-                data.dateTo ? lte(cashMovements.movementDate, endOfBrDay(data.dateTo)) : undefined,
-              ),
-        ),
-      )
-    if (data.movementIds && picked.length !== new Set(data.movementIds).size) throw notFound()
-
-    const skippedTransfers = picked.filter((m) => m.transferGroupId).length
-    const pickedIds = picked.filter((m) => !m.transferGroupId).map((m) => m.id)
-    if (!pickedIds.length) return { moved: 0, skippedReconciled: 0, skippedTransfers }
-
-    // The picked rows plus the other half of each reversal pair: the original
-    // points at its counter through reversed_by_movement_id.
-    const rows = await tx
-      .select({
-        id: cashMovements.id,
-        accountId: cashMovements.accountId,
-        reversedByMovementId: cashMovements.reversedByMovementId,
-      })
-      .from(cashMovements)
-      .where(
-        and(
-          eq(cashMovements.tenantId, tenantId),
-          or(
-            inArray(cashMovements.id, pickedIds),
-            inArray(cashMovements.reversedByMovementId, pickedIds),
-            sql`${cashMovements.id} IN (
-              SELECT reversed_by_movement_id FROM floraclin.cash_movements
-              WHERE tenant_id = ${tenantId} AND id IN (${sql.join(pickedIds.map((id) => sql`${id}::uuid`), sql`, `)})
-                AND reversed_by_movement_id IS NOT NULL)`,
-          ),
-        ),
-      )
-
-    // Group each row with its pair so the pair is moved or skipped as one.
-    const groupOf = new Map<string, string>()
-    for (const r of rows) {
-      groupOf.set(r.id, groupOf.get(r.id) ?? r.id)
-      if (r.reversedByMovementId) {
-        const group = groupOf.get(r.id)!
-        groupOf.set(r.reversedByMovementId, group)
-      }
-    }
-
-    const reconciledRows = await tx
-      .select({ movementId: bankReconciliationAllocations.movementId })
-      .from(bankReconciliationAllocations)
-      .where(
-        and(
-          eq(bankReconciliationAllocations.tenantId, tenantId),
-          inArray(bankReconciliationAllocations.movementId, rows.map((r) => r.id)),
-          isNull(bankReconciliationAllocations.undoneAt),
-        ),
-      )
-    const blockedGroups = new Set(reconciledRows.map((r) => groupOf.get(r.movementId)))
-
-    const free = rows.filter((r) => !blockedGroups.has(groupOf.get(r.id)))
-    const toMove = free.filter((r) => r.accountId !== target.id)
-    // Counted as picked rows only, so a skipped pair reads as one skipped payment.
-    const skippedReconciled = new Set(
-      rows.filter((r) => blockedGroups.has(groupOf.get(r.id))).map((r) => groupOf.get(r.id)),
-    ).size
+    const target = await lockTarget(tx, tenantId, data.toAccountId, true)
+    const { toMove, moved, skippedReconciled, skippedTransfers } = await planMove(tx, tenantId, target.id, data, true)
 
     if (toMove.length) {
       await tx
@@ -592,14 +642,14 @@ export async function moveMovementsToAccount(
           entityType: 'cash_movement_account',
           entityId: randomUUID(),
           changes: {
-            accountId: { old: [...new Set(toMove.map((r) => r.accountId))], new: target.id },
-            movementIds: { old: null, new: toMove.map((r) => r.id) },
+            // Movement id → its account before the move, so each one can be put back.
+            accountId: { old: Object.fromEntries(toMove.map((r) => [r.id, r.accountId])), new: target.id },
           },
         },
         tx,
       )
     }
 
-    return { moved: new Set(toMove.map((r) => groupOf.get(r.id))).size, skippedReconciled, skippedTransfers }
+    return { moved, skippedReconciled, skippedTransfers }
   })
 }
