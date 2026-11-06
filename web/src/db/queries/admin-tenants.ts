@@ -1,9 +1,13 @@
 import { db } from '@/db/client'
 import { provisionDefaultAccounts } from '@/db/queries/financial-accounts'
-import { PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
-import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
+import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic-placeholder'
+import { tenants, users, tenantUsers, patients, financialEntries, plans, whatsappAutomations } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
+import { mergeSettings } from '@/db/queries/tenants'
+import { changeBookingSlug, isBookingSlugFree, isSlugReservedForAnotherTenant } from '@/db/queries/booking-slugs'
+import { BOOKING_SLUG_MESSAGES } from '@/lib/booking-slug'
+import { BusinessError } from '@/lib/errors'
 import { sendInviteEmail } from '@/lib/email'
 import { createSubscription } from '@/db/queries/subscriptions'
 import { notifyDiscord } from '@/lib/discord'
@@ -104,6 +108,11 @@ export async function listAllTenants(
 
 // ─── Create tenant with owner ───────────────────────────────────────
 
+/** Code of the BusinessError thrown when an admin picks a slug another clinic holds or has reserved. */
+export const ADMIN_SLUG_TAKEN = 'booking_slug_taken'
+
+const slugTaken = () => new BusinessError(ADMIN_SLUG_TAKEN, BOOKING_SLUG_MESSAGES.taken)
+
 export async function createTenantWithOwner(data: {
   name: string
   slug?: string
@@ -132,7 +141,7 @@ export async function createTenantWithOwner(data: {
     if (existingDbUser) {
       userId = existingDbUser.id
     } else {
-      // New user — generate UUID and insert directly (no password; they'll use magic link)
+      // New user: generate UUID and insert directly (no password; they'll use magic link)
       userId = crypto.randomUUID()
 
       await tx.insert(users).values({
@@ -153,10 +162,14 @@ export async function createTenantWithOwner(data: {
         .where(eq(users.id, userId))
     }
 
-    // 3. Insert tenant
+    // 3. Insert tenant. The slug must not be one another clinic moved off
+    // less than SLUG_RESERVATION_DAYS ago: its old links still point there.
+    const tenantId = crypto.randomUUID()
+    if (!(await isBookingSlugFree(tx, slug, tenantId))) throw slugTaken()
     const [t] = await tx
       .insert(tenants)
       .values({
+        id: tenantId,
         name: data.name,
         slug,
       })
@@ -171,7 +184,7 @@ export async function createTenantWithOwner(data: {
       isActive: true,
     })
 
-    // 5. Send invite email (outside transaction is fine — fire-and-forget)
+    // 5. Send invite email (outside transaction is fine, fire-and-forget)
     sendInviteEmail(data.ownerEmail, loginUrl, data.name).catch(() => {
       // Email delivery failure should not break tenant creation
     })
@@ -205,24 +218,34 @@ export async function updateTenantAdmin(
     slug?: string
     settings?: Record<string, unknown>
     isActive?: boolean
-  }
+  },
+  actorUserId: string,
 ) {
-  const updateData: Record<string, unknown> = { updatedAt: new Date() }
+  // A slug change takes the owner's path: the old link redirects and stays
+  // reserved for this clinic, and a link another clinic holds or has reserved is refused.
+  return withTransaction(async (tx) => {
+    if (data.slug !== undefined) {
+      const result = await changeBookingSlug({ tenantId, userId: actorUserId, slug: data.slug, byPlatformAdmin: true }, tx)
+      if (result.outcome === 'not_found') return null
+      if (result.outcome === 'taken') throw slugTaken()
+    }
 
-  if (data.name !== undefined) updateData.name = data.name
-  if (data.slug !== undefined) updateData.slug = data.slug
-  if (data.settings !== undefined) updateData.settings = data.settings
-  if (data.isActive !== undefined) {
-    updateData.deletedAt = data.isActive ? null : new Date()
-  }
+    const updateData: Record<string, unknown> = { updatedAt: new Date() }
 
-  const [tenant] = await db
-    .update(tenants)
-    .set(updateData)
-    .where(eq(tenants.id, tenantId))
-    .returning()
+    if (data.name !== undefined) updateData.name = data.name
+    if (data.settings !== undefined) updateData.settings = mergeSettings(data.settings)
+    if (data.isActive !== undefined) {
+      updateData.deletedAt = data.isActive ? null : new Date()
+    }
 
-  return tenant ?? null
+    const [tenant] = await tx
+      .update(tenants)
+      .set(updateData)
+      .where(eq(tenants.id, tenantId))
+      .returning()
+
+    return tenant ?? null
+  })
 }
 
 // ─── Get tenant detail ──────────────────────────────────────────────
@@ -310,7 +333,7 @@ export async function findAvailableSlug(
       .from(tenants)
       .where(and(...conditions))
       .limit(1)
-    if (!existing) return slug
+    if (!existing && !(await isSlugReservedForAnotherTenant(executor, slug, excludeTenantId))) return slug
   }
 }
 
@@ -396,6 +419,13 @@ export async function insertSelfSignupTenantBase(
 
   await provisionDefaultAccounts(tx, row.id)
 
+  await tx.insert(whatsappAutomations).values({
+    tenantId: row.id,
+    trigger: 'appointment_confirmation',
+    enabled: true,
+    firstEnabledAt: new Date(),
+  })
+
   return {
     id: row.id,
     name: row.name,
@@ -449,7 +479,7 @@ export async function createSelfSignupTenant(data: {
       // A clinic created on arrival skipped the form that shows the lifecycle
       // notice: onboarding shows it and stamps lifecycle_notice_at instead.
       ...(data.placeholderName
-        ? { settings: { [PLACEHOLDER_NAME_SETTING]: true }, lifecycleNoticeShown: false }
+        ? { settings: { [PLACEHOLDER_NAME_SETTING]: true, [PLACEHOLDER_SLUG_SETTING]: true }, lifecycleNoticeShown: false }
         : {}),
     })
 

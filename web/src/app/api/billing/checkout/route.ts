@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
+import { emailConfirmationGate } from '@/lib/email-confirmation-gate'
 import {
   claimStripeCustomerId,
   getSubscription,
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
     if (ctx.role !== 'owner') {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
+    // Stripe keeps the address as the customer's; it has to be a proven one.
+    const unconfirmed = emailConfirmationGate(ctx)
+    if (unconfirmed) return unconfirmed
 
     const body = await request.json()
     const planSlug = body.planSlug as string | undefined

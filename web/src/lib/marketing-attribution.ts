@@ -2,6 +2,9 @@ import { hasMarketingConsent } from '@/lib/cookie-consent'
 
 export const DEFAULT_META_PIXEL_ID = '1651713926600603'
 
+/** Carries the signup's CompleteRegistration event id to the page that fires the browser half. */
+export const META_EVENT_ID_PARAM = 'meta_event_id'
+
 declare global {
   interface Window {
     fbq?: ((command: string, eventName: string, params?: Record<string, unknown>, options?: Record<string, unknown>) => void) & {

@@ -1243,6 +1243,16 @@ export const referralCodeAliases = floraclinSchema.table('referral_code_aliases'
   index('idx_referral_code_aliases_tenant').on(table.tenantId),
 ])
 
+// Booking links a clinic moved off: for 90 days the old slug redirects to the
+// clinic's current one and no other clinic may take it (db/queries/booking-slugs.ts).
+export const tenantSlugHistory = floraclinSchema.table('tenant_slug_history', {
+  slug: varchar('slug', { length: 100 }).primaryKey(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  retiredAt: timestamp('retired_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index('idx_tenant_slug_history_tenant').on(table.tenantId),
+])
+
 export const tenantReferrals = floraclinSchema.table('tenant_referrals', {
   id: uuid('id').primaryKey().defaultRandom(),
   referrerTenantId: uuid('referrer_tenant_id').notNull().references(() => tenants.id),
@@ -1719,6 +1729,7 @@ export const nfseSettings = floraclinSchema.table('nfse_settings', {
   emissionMode: varchar('emission_mode', { length: 10 }).$type<NfseEmissionMode>().notNull().default('ask'), // CHECK in migration
   alwaysEnabledAt: timestamp('always_enabled_at', { withTimezone: true }),
   emailPatient: boolean('email_patient').notNull().default(false),
+  clinicAddressFallback: boolean('clinic_address_fallback').notNull().default(false),
   configuredAt: timestamp('configured_at', { withTimezone: true }),
   updatedBy: uuid('updated_by'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

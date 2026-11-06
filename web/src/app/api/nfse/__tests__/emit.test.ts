@@ -76,6 +76,7 @@ const NFSE_XML = '<NFSe><infNFSe><nNFSe>7</nNFSe></infNFSe></NFSe>'
 
 const VALID_ADDRESS = { street: 'Av. Paulista', number: '1000', neighborhood: 'Bela Vista', city: 'São Paulo', state: 'SP', zip: '01310-100' }
 const TAKER_ADDRESS = { ...VALID_ADDRESS, complement: null }
+const CLINIC_ADDRESS = { street: 'Rua XV de Novembro', number: '50', neighborhood: 'Centro', city: 'Curitiba', state: 'PR', zip: '80020-310' }
 
 const cert = {
   cnpj: CNPJ,
@@ -98,6 +99,7 @@ const fiscal = {
   issWithheld: false,
   emissionMode: 'ask' as const,
   emailPatient: true,
+  clinicAddressFallback: false,
 }
 
 const post = (path: string, body: unknown) =>
@@ -183,6 +185,7 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
     await db.update(patients).set({ cpf: null, address: null }).where(eq(patients.id, PATIENT_BARE))
     await saveCertificate(TENANT, USER, cert)
     await saveFiscalSettings(TENANT, USER, fiscal)
+    await db.update(tenants).set({ address: CLINIC_ADDRESS }).where(eq(tenants.id, TENANT))
     mocks.createNfseGateway.mockReturnValue(mocks.gateway)
     mocks.gateway.emit.mockResolvedValue({ accessKey: ACCESS_KEY, nfseXml: NFSE_XML })
     mocks.gateway.reconcile.mockResolvedValue({ kind: 'not_found' })
@@ -213,6 +216,15 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       expect(byId[PATIENT].paymentRecordIds.sort()).toEqual([PAY_1, PAY_2].sort())
       expect(byId[PATIENT_BARE].missing).toEqual(['cpf', 'zip', 'street', 'number', 'neighborhood', 'city', 'state'])
       expect(data).toMatchObject({ defaultCompetence: '2026-10-30', competenceIsPastMonth: true, settings: { emailPatient: true } })
+    })
+
+    it('asks only for the CPF of a patient without address when the clinic address stands in', async () => {
+      await saveFiscalSettings(TENANT, USER, { ...fiscal, clinicAddressFallback: true })
+      const res = await listEmission(new Request(`http://localhost/api/nfse?paymentRecordIds=${PAY_1},${PAY_BARE}`))
+      const { data } = await res.json()
+      const byId = Object.fromEntries(data.patients.map((p: { patientId: string }) => [p.patientId, p]))
+      expect(byId[PATIENT_BARE]).toMatchObject({ addressSource: 'clinic', missing: ['cpf'] })
+      expect(byId[PATIENT]).toMatchObject({ addressSource: 'patient', missing: [] })
     })
 
     it("rejects a foreign tenant's payment record", async () => {
@@ -283,6 +295,26 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       expect(await docsFor([PAY_1])).toHaveLength(0)
     })
 
+    it('describes each note for the result screen: number, patient, value and email outcome', async () => {
+      const res = await emit(post('/api/nfse', emitBody({ sendEmail: true })))
+
+      expect(res.status).toBe(200)
+      const [doc] = await docsFor([PAY_1])
+      expect((await res.json()).data).toEqual([
+        {
+          id: doc.id,
+          status: 'issued',
+          paymentRecordId: PAY_1,
+          nfseNumber: '7',
+          patientName: 'Maria Souza',
+          value: Number(doc.value),
+          email: 'maria@example.com',
+          emailRequested: true,
+          emailSent: true,
+        },
+      ])
+    })
+
     it('retries a failed row instead of inserting', async () => {
       const [failed] = await db
         .insert(nfseDocuments)
@@ -303,7 +335,7 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
       const res = await emit(post('/api/nfse', emitBody()))
 
       expect(res.status).toBe(200)
-      expect((await res.json()).data).toEqual([{ id: failed.id, status: 'issued' }])
+      expect((await res.json()).data).toMatchObject([{ id: failed.id, status: 'issued' }])
       const rows = await docsFor([PAY_1])
       expect(rows).toHaveLength(1)
       expect(rows[0].status).toBe('issued')
@@ -321,6 +353,24 @@ describeIntegration('NFS-e document API (integration, requires test DB)', () => 
         expect.objectContaining({ entityType: 'patient', entityId: PATIENT_BARE, action: 'update', tenantId: TENANT }),
         expect.anything(),
       )
+    })
+
+    it('saves only the CPF of a taker that uses the clinic address', async () => {
+      await saveFiscalSettings(TENANT, USER, { ...fiscal, clinicAddressFallback: true })
+      const res = await emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_BARE], takers: [{ patientId: PATIENT_BARE, cpf: '39053344705' }] })))
+      expect(res.status).toBe(200)
+      expect((await res.json()).data[0].status).toBe('issued')
+      const [bare] = await db.select().from(patients).where(eq(patients.id, PATIENT_BARE))
+      expect(bare).toMatchObject({ cpf: '390.533.447-05', address: null })
+    })
+
+    it('rejects a CPF-only taker when the clinic address does not stand in, saving nothing', async () => {
+      const res = await emit(post('/api/nfse', emitBody({ paymentRecordIds: [PAY_BARE], takers: [{ patientId: PATIENT_BARE, cpf: '39053344705' }] })))
+      expect(res.status).toBe(400)
+      expect(await res.json()).toMatchObject({ code: 'TAKER_ADDRESS_REQUIRED', error: 'Complete o endereço do paciente.' })
+      const [bare] = await db.select().from(patients).where(eq(patients.id, PATIENT_BARE))
+      expect(bare.cpf).toBeNull()
+      expect(await docsFor([PAY_BARE])).toHaveLength(0)
     })
 
     it('financial role cannot save taker data', async () => {

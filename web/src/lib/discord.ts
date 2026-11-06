@@ -7,8 +7,9 @@ import type { CapturedVia, IneligibleReason, PausedReason, ReferralStatus } from
 // Notifier for two Discord channels:
 //
 // - "floraclin" (DISCORD_WEBHOOK_EVENTS): business events -- the business
-//   grew. signup.started / onboarding.completed / clinic.approved /
-//   subscription.created / lifecycle.reply / referral.*.
+//   grew. signup.started / onboarding.completed /
+//   onboarding.import_requested / clinic.approved / subscription.created /
+//   lifecycle.reply / referral.*.
 // - "floraclin-logs" (DISCORD_WEBHOOK_LOGS): operational digests -- code
 //   reporting on itself, e.g. the daily whatsapp-automations cron digest
 //   or lifecycle.template_not_approved.
@@ -60,6 +61,8 @@ export type DiscordEvent =
       elapsed: string
       tenantId: string
     }
+  // The owner asked for help importing patients from another system.
+  | { kind: 'onboarding.import_requested'; tenantId: string; tenantName: string; phone: string | null; ownerEmail: string }
   | { kind: 'clinic.approved'; tenantName: string; tenantId: string }
   | { kind: 'subscription.created'; tenantName: string; planName: string; priceCents: number; tenantId: string }
   | { kind: 'lifecycle.reply'; tenantName: string; tenantId: string; messageKey: string; body: string }
@@ -127,6 +130,7 @@ export type DiscordPayload = {
 
 const COLOR_ONBOARDING_COMPLETED = 0x4a9d5f
 const COLOR_SIGNUP_STARTED = 0x94a3b8
+const COLOR_IMPORT_REQUESTED = 0x14b8a6
 const COLOR_APPROVED = 0x3b82f6
 const COLOR_SUBSCRIPTION = 0xf59e0b
 const COLOR_DIGEST_OK = 0x4a9d5f
@@ -226,6 +230,25 @@ export function buildDiscordPayload(event: DiscordEvent): DiscordPayload {
               { name: 'Clínica', value: asInlineCode(event.tenantName), inline: true },
               { name: 'Telefone', value: asInlineCode(event.phone || 'Não informado'), inline: true },
               { name: 'Localização', value: location ? asInlineCode(location) : 'Não informado', inline: true },
+              { name: 'Admin', value: adminLink },
+            ],
+            timestamp: new Date().toISOString(),
+          },
+        ],
+      }
+    }
+    case 'onboarding.import_requested': {
+      return {
+        username: 'FloraClin',
+        embeds: [
+          {
+            title: 'Pedido de importação',
+            color: COLOR_IMPORT_REQUESTED,
+            description: 'A clínica quer ajuda para importar pacientes. Entre em contato pelo WhatsApp para receber os arquivos.',
+            fields: [
+              { name: 'Clínica', value: asInlineCode(event.tenantName), inline: true },
+              { name: 'Telefone', value: asInlineCode(event.phone || 'Não informado'), inline: true },
+              { name: 'E-mail', value: asInlineCode(event.ownerEmail), inline: true },
               { name: 'Admin', value: adminLink },
             ],
             timestamp: new Date().toISOString(),
@@ -449,7 +472,8 @@ function webhookForEvent(kind: DiscordEvent['kind']): string | undefined {
  *    posting to a real channel.
  * 3. It never posts patient data, enforced by DiscordEvent's shape, not by
  *    this function. The only contact data is the owner's name and e-mail
- *    (signup.started) and the clinic phone (onboarding.completed).
+ *    (signup.started, onboarding.import_requested) and the clinic phone
+ *    (onboarding.completed, onboarding.import_requested).
  *    lifecycle.reply carries the reply text a clinic owner chose to send
  *    FloraClin.
  */

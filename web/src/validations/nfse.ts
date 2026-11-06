@@ -35,7 +35,7 @@ export const nfseEmitSchema = z.object({
       z.object({
         patientId: z.guid(),
         cpf: z.string().refine(isValidCpf, 'CPF inválido'),
-        address: takerAddressSchema,
+        address: takerAddressSchema.optional(),
       }),
     )
     .max(NFSE_MAX_PER_REQUEST)
@@ -87,6 +87,7 @@ export const nfseFiscalSettingsSchema = z
     issWithheld: z.boolean(),
     emissionMode: z.enum(['ask', 'always']),
     emailPatient: z.boolean(),
+    clinicAddressFallback: z.boolean(),
   })
   .superRefine((value, ctx) => {
     if (value.simplesNacionalOption === 3) {
@@ -101,3 +102,16 @@ export const nfseFiscalSettingsSchema = z
       ctx.addIssue({ code: 'custom', path: ['servicePreset'], message: 'Escolha o serviço prestado' })
     }
   }) satisfies z.ZodType<NfseFiscalSettingsInput>
+
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inválida (esperado YYYY-MM-DD)')
+
+export const nfseDocumentsFilterSchema = z.object({
+  dateFrom: ymd,
+  dateTo: ymd,
+  status: z.enum(['issued', 'cancelled', 'failed', 'processing']).optional(),
+  patientId: z.guid().optional(),
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(30),
+})
+
+export type NfseDocumentsFilter = z.infer<typeof nfseDocumentsFilterSchema>

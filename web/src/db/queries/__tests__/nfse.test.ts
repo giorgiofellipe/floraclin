@@ -64,6 +64,7 @@ const fiscal = {
   issWithheld: false,
   emissionMode: 'ask' as const,
   emailPatient: false,
+  clinicAddressFallback: false,
 }
 
 function docRow(paymentRecordId: string, tenantId = TENANT_A, patientId = PATIENT_A) {

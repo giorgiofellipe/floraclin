@@ -12,12 +12,15 @@ export const CONFIRM_EMAIL_STATE_PATH = '/confirm-email'
 export interface ConfirmEmailPageState {
   email: string
   token?: string | null
+  /** The link was refused because the address is confirmed already (opened again, say on another device). */
+  confirmed?: true
 }
 
 export function serializeConfirmEmailPageState(state: ConfirmEmailPageState): string {
   return JSON.stringify({
     email: state.email,
     token: state.token ?? null,
+    ...(state.confirmed ? { confirmed: true } : {}),
   })
 }
 
@@ -28,7 +31,8 @@ export function parseConfirmEmailPageState(value: string | undefined): ConfirmEm
     const parsed = JSON.parse(value) as Partial<ConfirmEmailPageState>
     const email = typeof parsed.email === 'string' ? parsed.email.trim() : ''
     const token = typeof parsed.token === 'string' && parsed.token.trim() ? parsed.token.trim() : null
-    return email ? { email, token } : null
+    if (!email) return null
+    return parsed.confirmed === true ? { email, token, confirmed: true } : { email, token }
   } catch {
     return null
   }

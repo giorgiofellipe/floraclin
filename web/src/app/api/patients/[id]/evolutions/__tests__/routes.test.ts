@@ -76,6 +76,7 @@ const AUTH_OK = {
   email: 'practitioner@example.com',
   fullName: 'Practitioner Example',
   isPlatformAdmin: false,
+  emailVerified: true,
 }
 
 /**

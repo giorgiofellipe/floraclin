@@ -1,10 +1,9 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { db } from '@/db/client'
-import { tenants } from '@/db/schema'
-import { eq, and, ne } from 'drizzle-orm'
 import { handleApiError } from '@/lib/api-error'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
 
 export async function GET(request: Request) {
   try {
@@ -22,13 +21,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ available: false })
     }
 
-    const [existing] = await db
-      .select({ id: tenants.id })
-      .from(tenants)
-      .where(and(eq(tenants.slug, slug), ne(tenants.id, tenantId)))
-      .limit(1)
-
-    return NextResponse.json({ available: !existing })
+    return NextResponse.json({ available: await isBookingSlugFree(db, slug, tenantId) })
   } catch (error) {
     return handleApiError(error, request)
   }

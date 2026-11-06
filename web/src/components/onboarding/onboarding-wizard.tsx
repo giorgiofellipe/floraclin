@@ -1,32 +1,49 @@
 'use client'
 
-import { useState, useEffect, useTransition, useCallback } from 'react'
+import { useState, useEffect, useRef, useTransition } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { ClinicSettingsForm } from '@/components/settings/clinic-settings-form'
-import { ProcedureTypeList } from '@/components/settings/procedure-type-list'
-import { ProcedureTypeForm } from '@/components/settings/procedure-type-form'
-import { InviteUserForm } from '@/components/settings/invite-user-form'
-import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, DEFAULT_WORKING_HOURS, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/constants'
+import { DEFAULT_PROCEDURE_TYPES, DEFAULT_PRODUCTS, PROCEDURE_CATEGORY_LABELS as CATEGORY_LABEL } from '@/lib/constants'
 import { toast } from 'sonner'
 import { CheckIcon, Building2Icon, SyringeIcon, PackageIcon, UsersIcon, LogOutIcon, PlusIcon } from 'lucide-react'
 import { logout } from '@/actions/auth'
-import type { WorkingHours } from '@/validations/tenant'
-import { ProductsStep } from './products-step'
 import type { CustomProductInput } from './custom-product-form'
 import type { Product } from '@/db/queries/products'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { cn } from '@/lib/utils'
-import { ExternalLinkIcon, CircleCheckIcon, CircleXIcon, Loader2Icon } from 'lucide-react'
-import { Input } from '@/components/ui/input'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
 import { resetAnalytics, track } from '@/lib/analytics/client'
-import type { OnboardingStepName, OnboardingSubmitFailureReason } from '@/lib/analytics/events'
-import { ONBOARDING_ALREADY_COMPLETED, ONBOARDING_STEPS, type OnboardingDraft, type OnboardingProgressInput } from '@/validations/onboarding'
+import type { OnboardingStepName, OnboardingSubmitFailureReason, OnboardingTrackedField } from '@/lib/analytics/events'
+import {
+  ONBOARDING_ALREADY_COMPLETED,
+  ONBOARDING_STEPS,
+  type OnboardingCompletionMethod,
+  type OnboardingDraft,
+  type OnboardingProgressInput,
+} from '@/validations/onboarding'
 import { useOnboardingAutosave } from './use-onboarding-autosave'
 import { useRedirectWhenOnboardingCompleted } from './use-redirect-when-onboarding-completed'
+import { stepProperties, useFieldInteractionTracking, useStepAbandonTracking } from './use-onboarding-tracking'
+import { useKeyboardInset } from './use-keyboard-inset'
+import { ClinicStep, type ClinicStepValues } from './clinic-step'
+import { ConfirmEmailToInvite } from './confirm-email-to-invite'
+import { FIRST_PATIENT_HIGHLIGHT_PARAM } from '@/lib/first-patient-highlight'
+
+// Only the clinic step is needed on arrival, and most owners arrive on a
+// phone, many in Instagram's or Facebook's in-app browser. The later steps'
+// forms (and what they import: the procedure dialog, the invite form, the
+// product catalogue) load when the owner gets there, not with step 1.
+const ProcedureTypeList = dynamic(() =>
+  import('@/components/settings/procedure-type-list').then((m) => m.ProcedureTypeList),
+)
+const ProcedureTypeForm = dynamic(() =>
+  import('@/components/settings/procedure-type-form').then((m) => m.ProcedureTypeForm),
+)
+const InviteUserForm = dynamic(() => import('@/components/settings/invite-user-form').then((m) => m.InviteUserForm))
+const ProductsStep = dynamic(() => import('./products-step').then((m) => m.ProductsStep))
 
 interface ProcedureOverride {
   selected: boolean
@@ -72,34 +89,91 @@ function submitFailureReason(status: number): OnboardingSubmitFailureReason {
   return 'server_error'
 }
 
-function stepProperties(index: number) {
-  return { step_index: index, step_name: STEPS[index].name }
+const CLINIC_FIELD_MESSAGES: Record<OnboardingTrackedField, string> = {
+  name: 'Nome da clínica é obrigatório',
+  phone: CLINIC_PHONE_REQUIRED_MESSAGE,
+}
+
+function missingClinicField(values: ClinicStepValues, phoneRequired: boolean): OnboardingTrackedField | null {
+  if (values.name.trim().length === 0) return 'name'
+  if (phoneRequired && !hasClinicPhone(values.phone)) return 'phone'
+  return null
 }
 
 interface OnboardingWizardProps {
   tenantName: string
+  /** The name is only a suggestion from the Google profile, not one the owner saved. */
+  tenantNameSuggested?: boolean
   tenantPhone: string | null
-  tenantEmail: string | null
-  tenantAddress?: Record<string, string> | null
-  tenantWorkingHours?: WorkingHours | null
   /** Progress autosaved on an earlier visit, to resume from. */
   draft?: OnboardingDraft | null
   existingProcedureTypes: ProcedureTypeItem[]
   existingProducts?: Product[]
   /** Ask for the clinic phone before moving past the first step. */
   phoneRequired?: boolean
+  /** The owner's address while it is not confirmed yet; invites wait for the confirmation. */
+  unconfirmedEmail?: string | null
+}
+
+/** The procedures the wizard offers, all selected, at their default durations. */
+function defaultProcedureOverrides(): ProcedureOverride[] {
+  return DEFAULT_PROCEDURE_TYPES.map((pt) => ({ selected: true, durationMin: pt.estimatedDurationMin, defaultPrice: '' }))
+}
+
+// Pre-select the first product of each category that matches a selected procedure type.
+function computeDefaultProductSelection(selectedProcedureFlags: boolean[]): Set<string> {
+  const activeCategories = new Set(
+    DEFAULT_PROCEDURE_TYPES.filter((_, i) => selectedProcedureFlags[i]).map((pt) => pt.category),
+  )
+  const seen = new Set<string>()
+  const firstPerCategory = new Set<string>()
+  for (const p of DEFAULT_PRODUCTS) {
+    if (activeCategories.has(p.category) && !seen.has(p.category)) {
+      seen.add(p.category)
+      firstPerCategory.add(p.name)
+    }
+  }
+  return firstPerCategory
+}
+
+function procedureTypesPayload(overrides: ProcedureOverride[]) {
+  return DEFAULT_PROCEDURE_TYPES.flatMap((pt, i) => {
+    const override = overrides[i]
+    if (!override?.selected) return []
+    const priceNumber = override.defaultPrice ? parseCurrency(override.defaultPrice) : 0
+    return [
+      {
+        name: pt.name,
+        category: pt.category,
+        estimatedDurationMin: override.durationMin,
+        defaultPrice: priceNumber > 0 ? priceNumber.toFixed(2) : undefined,
+      },
+    ]
+  })
+}
+
+// Strip UI-only `origin` from defaults and `isCustom` from customs.
+function selectedProductsPayload(names: Set<string>, customs: CustomProductItem[]) {
+  return [
+    ...DEFAULT_PRODUCTS.filter((p) => names.has(p.name)).map((p) => ({
+      name: p.name,
+      category: p.category,
+      activeIngredient: p.activeIngredient,
+      defaultUnit: p.defaultUnit,
+    })),
+    ...customs.map(withoutCustomFlag),
+  ]
 }
 
 export function OnboardingWizard({
   tenantName,
+  tenantNameSuggested = false,
   tenantPhone,
-  tenantEmail,
-  tenantAddress = null,
-  tenantWorkingHours = null,
   draft = null,
   existingProcedureTypes,
   existingProducts = [],
   phoneRequired = false,
+  unconfirmedEmail = null,
 }: OnboardingWizardProps) {
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -107,45 +181,24 @@ export function OnboardingWizard({
   const clinicStepSaved = Boolean(tenantName.trim()) && (!phoneRequired || hasClinicPhone(tenantPhone))
   const [currentStep, setCurrentStep] = useState(clinicStepSaved ? (draft?.step ?? 0) : 0)
 
-  // Step 1 state: clinic info
-  const [clinicData, setClinicData] = useState<Record<string, unknown>>({
+  // Step 1 state: clinic name and phone, the only two things onboarding asks.
+  const [clinicData, setClinicData] = useState<ClinicStepValues>({
     name: tenantName || '',
     phone: tenantPhone ?? '',
-    email: tenantEmail ?? '',
-    address: tenantAddress ?? {},
-    workingHours: tenantWorkingHours ?? DEFAULT_WORKING_HOURS,
   })
+  const [invalidField, setInvalidField] = useState<OnboardingTrackedField | null>(null)
+  // Says where the prefilled name came from until the owner edits it.
+  const [nameSuggested, setNameSuggested] = useState(tenantNameSuggested && Boolean(tenantName.trim()))
+  const clinicStepValid = missingClinicField(clinicData, phoneRequired) === null
 
   // Step 2 state: procedure types (local selection before onboarding completes)
   const [procedureOverrides, setProcedureOverrides] = useState<ProcedureOverride[]>(() =>
-    draft?.procedures.length === DEFAULT_PROCEDURE_TYPES.length
-      ? draft.procedures
-      : DEFAULT_PROCEDURE_TYPES.map((pt) => ({
-          selected: true,
-          durationMin: pt.estimatedDurationMin,
-          defaultPrice: '',
-        })),
+    draft?.procedures.length === DEFAULT_PROCEDURE_TYPES.length ? draft.procedures : defaultProcedureOverrides(),
   )
   const [showAddProcedure, setShowAddProcedure] = useState(false)
 
-  // Step 3 state: products — pre-select the first product of each category
-  // that matches a selected procedure type. Re-compute when procedures change,
-  // but only until the user manually touches the product selection.
-  function computeDefaultProductSelection(selectedProcedureFlags: boolean[]): Set<string> {
-    const activeCategories = new Set(
-      DEFAULT_PROCEDURE_TYPES.filter((_, i) => selectedProcedureFlags[i]).map((pt) => pt.category),
-    )
-    const seen = new Set<string>()
-    const firstPerCategory = new Set<string>()
-    for (const p of DEFAULT_PRODUCTS) {
-      if (activeCategories.has(p.category) && !seen.has(p.category)) {
-        seen.add(p.category)
-        firstPerCategory.add(p.name)
-      }
-    }
-    return firstPerCategory
-  }
-
+  // Step 3 state: products, re-computed from the procedures until the user
+  // manually touches the product selection.
   const [selectedProductNames, setSelectedProductNames] = useState<Set<string>>(() =>
     draft
       ? new Set(draft.selectedProductNames)
@@ -157,26 +210,14 @@ export function OnboardingWizard({
   )
   const productsAlreadyConfigured = (existingProducts?.length ?? 0) > 0
 
-  // Slug state
-  const [customSlug, setCustomSlug] = useState(draft?.customSlug ?? '')
-  const [slugAvailable, setSlugAvailable] = useState<boolean | null>(null)
-  const [slugChecking, setSlugChecking] = useState(false)
-  const [suggestedSlug, setSuggestedSlug] = useState('')
-  const clinicName = ((clinicData.name as string) || '').trim()
-  const displayedSlug = customSlug || suggestedSlug
-  const customSlugTaken = Boolean(customSlug) && slugAvailable === false
-
   // Step 4 state: track sent invites count
   const [invitesSent, setInvitesSent] = useState(0)
   const [showInviteForm, setShowInviteForm] = useState(false)
 
   const progress: OnboardingProgressInput = {
     clinic: {
-      name: clinicData.name as string,
-      phone: clinicData.phone as string,
-      email: clinicData.email as string,
-      address: clinicData.address as Record<string, string>,
-      workingHours: clinicData.workingHours as WorkingHours,
+      name: clinicData.name,
+      phone: clinicData.phone,
     },
     draft: {
       step: currentStep,
@@ -184,15 +225,19 @@ export function OnboardingWizard({
       selectedProductNames: [...selectedProductNames],
       productsTouched,
       customProducts: customProducts.map(withoutCustomFlag),
-      customSlug,
     },
   }
   const autosave = useOnboardingAutosave(progress)
-  useRedirectWhenOnboardingCompleted()
+  const trackFieldInteraction = useFieldInteractionTracking(0)
+  const abandonTracking = useStepAbandonTracking(currentStep)
+  useRedirectWhenOnboardingCompleted(abandonTracking.suppress)
+  const keyboardInset = useKeyboardInset()
 
-  const handleClinicChange = useCallback((data: Record<string, unknown>) => {
-    setClinicData(data)
-  }, [])
+  function handleClinicChange(values: ClinicStepValues) {
+    if (values.name !== clinicData.name) setNameSuggested(false)
+    setClinicData(values)
+    if (invalidField) setInvalidField(null)
+  }
 
   function toggleDefault(index: number) {
     setProcedureOverrides((prev) =>
@@ -252,58 +297,34 @@ export function OnboardingWizard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [procedureOverrides, productsTouched])
 
-  // Debounced slug check. Without a custom slug the server suggests the
-  // name-based slug with the same -N suffix it will save on completion.
-  useEffect(() => {
-    let query: string | null = null
-    if (customSlug) query = `slug=${encodeURIComponent(customSlug)}`
-    else if (clinicName) query = `name=${encodeURIComponent(clinicName)}`
-    if (!query) {
-      setSuggestedSlug('')
-      setSlugAvailable(null)
-      return
-    }
-    let cancelled = false
-    setSlugChecking(true)
-    const timer = setTimeout(async () => {
-      try {
-        const res = await fetch(`/api/slug-check?${query}`)
-        const data = await res.json()
-        if (cancelled) return
-        if (!customSlug) setSuggestedSlug(data.slug ?? '')
-        setSlugAvailable(data.available)
-      } catch {
-        if (!cancelled) setSlugAvailable(null)
-      } finally {
-        if (!cancelled) setSlugChecking(false)
-      }
-    }, 400)
-    return () => {
-      cancelled = true
-      clearTimeout(timer)
-    }
-  }, [customSlug, clinicName])
-
+  // `onboarding_step_submitted` is sent once per visit to a step: a retried
+  // finish after a failed save does not send it again.
+  const stepSubmitted = useRef(false)
   // Field names only, never values.
   useEffect(() => {
+    stepSubmitted.current = false
     track('onboarding_step_viewed', stepProperties(currentStep))
   }, [currentStep])
 
+  function trackStepSubmitted(extra?: { via: 'defaults' }) {
+    if (stepSubmitted.current) return
+    stepSubmitted.current = true
+    track('onboarding_step_submitted', { ...stepProperties(currentStep), ...extra })
+  }
+
   function handleNext() {
-    if (currentStep === 0) {
-      if (!clinicData.name || (clinicData.name as string).trim().length === 0) {
-        track('onboarding_step_validation_error', { ...stepProperties(currentStep), fields: ['name'] })
-        toast.error('Nome da clínica é obrigatório')
-        return
-      }
-      if (phoneRequired && !hasClinicPhone(clinicData.phone as string | undefined)) {
-        track('onboarding_step_validation_error', { ...stepProperties(currentStep), fields: ['phone'] })
-        toast.error(CLINIC_PHONE_REQUIRED_MESSAGE)
-        return
-      }
-    }
-    track('onboarding_step_submitted', stepProperties(currentStep))
+    if (currentStep === 0 && !validateClinicStep()) return
+    trackStepSubmitted()
     setCurrentStep(prev => Math.min(prev + 1, STEPS.length - 1))
+  }
+
+  function validateClinicStep(): boolean {
+    const missing = missingClinicField(clinicData, phoneRequired)
+    if (!missing) return true
+    track('onboarding_step_validation_error', { ...stepProperties(0), fields: [missing] })
+    setInvalidField(missing)
+    toast.error(CLINIC_FIELD_MESSAGES[missing])
+    return false
   }
 
   function handlePrev() {
@@ -313,33 +334,40 @@ export function OnboardingWizard({
   function handleComplete() {
     // onboarding_completed itself is sent by the server, once, when the save
     // succeeds (api/onboarding).
-    track('onboarding_step_submitted', stepProperties(currentStep))
+    trackStepSubmitted()
+    complete('wizard', procedureTypesPayload(procedureOverrides), selectedProductsPayload(selectedProductNames, customProducts))
+  }
+
+  /**
+   * "Configurar depois": the procedures and products the wizard offers
+   * preselected, no invites, and the same final save (and so the same
+   * completion side effects) as the last step, marked `method: defaults`.
+   */
+  function handleUseDefaults() {
+    if (!validateClinicStep()) return
+    // Step 1 is submitted either way; `via` tells the shortcut from "Próximo".
+    trackStepSubmitted({ via: 'defaults' })
+    const overrides = defaultProcedureOverrides()
+    complete(
+      'defaults',
+      procedureTypesPayload(overrides),
+      selectedProductsPayload(computeDefaultProductSelection(overrides.map((o) => o.selected)), []),
+    )
+  }
+
+  function complete(
+    method: OnboardingCompletionMethod,
+    procedureTypes: ReturnType<typeof procedureTypesPayload>,
+    selectedProducts: ReturnType<typeof selectedProductsPayload>,
+  ) {
+    // Leaving for the dashboard is not abandoning the step.
+    abandonTracking.suppress()
     startTransition(async () => {
       await autosave.pause()
-      const procedureTypes = DEFAULT_PROCEDURE_TYPES.flatMap((pt, i) => {
-        const override = procedureOverrides[i]
-        if (!override?.selected) return []
-        const priceNumber = override.defaultPrice ? parseCurrency(override.defaultPrice) : 0
-        return [
-          {
-            name: pt.name,
-            category: pt.category,
-            estimatedDurationMin: override.durationMin,
-            defaultPrice: priceNumber > 0 ? priceNumber.toFixed(2) : undefined,
-          },
-        ]
-      })
-
-      // Build selectedProducts — strip UI-only `origin` from defaults and `isCustom` from customs
-      const selectedProducts = [
-        ...DEFAULT_PRODUCTS.filter((p) => selectedProductNames.has(p.name)).map((p) => ({
-          name: p.name,
-          category: p.category,
-          activeIngredient: p.activeIngredient,
-          defaultUnit: p.defaultUnit,
-        })),
-        ...customProducts.map(withoutCustomFlag),
-      ]
+      const failed = () => {
+        autosave.resume()
+        abandonTracking.resume()
+      }
 
       let res: Response
       try {
@@ -348,19 +376,16 @@ export function OnboardingWizard({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             clinic: {
-              name: (clinicData.name as string) || tenantName,
-              slug: customSlug || undefined,
-              phone: (clinicData.phone as string) || undefined,
-              email: (clinicData.email as string) || undefined,
-              address: (clinicData.address as Record<string, string>) || undefined,
-              workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
+              name: clinicData.name || tenantName,
+              phone: clinicData.phone || undefined,
             },
             procedureTypes,
             selectedProducts,
+            method,
           }),
         })
       } catch {
-        autosave.resume()
+        failed()
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: 'network_error' })
         toast.error('Erro ao completar o onboarding')
         return
@@ -371,14 +396,15 @@ export function OnboardingWizard({
 
       if (result?.success) {
         autosave.finish()
-        toast.success('Configuração concluída! Bem-vindo ao FloraClin.')
-        // Replace, so Back cannot return to the finished wizard.
-        router.replace('/dashboard')
+        toast.success('Configuração concluída! Bem-vindo(a) ao FloraClin.')
+        // Replace, so Back cannot return to the finished wizard. The
+        // dashboard points at the first patient once.
+        router.replace(`/dashboard?${FIRST_PATIENT_HIGHLIGHT_PARAM}=1`)
       } else if (res.status === 409 && result?.error === ONBOARDING_ALREADY_COMPLETED) {
         autosave.finish()
         router.replace('/dashboard')
       } else {
-        autosave.resume()
+        failed()
         track('onboarding_submit_failed', { ...stepProperties(currentStep), reason: submitFailureReason(res.status), status: res.status })
         toast.error(result?.error || 'Erro ao completar o onboarding')
       }
@@ -386,23 +412,26 @@ export function OnboardingWizard({
   }
 
   return (
-    <div className="min-h-screen bg-[#F4F6F8]">
-      <div className="mx-auto max-w-3xl px-4 py-10 sm:py-16">
+    <div className="min-h-dvh bg-content-bg">
+      <div className="mx-auto max-w-3xl px-4 pt-4 pb-36 sm:py-16">
         {/* Header */}
-        <div className="mb-12 text-center animate-fade-in-up">
-          <h1 className="text-4xl text-charcoal sm:text-5xl font-semibold tracking-tight">
-            Bem-vindo ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
+        <div className="mb-3 text-center sm:mb-12 animate-fade-in-up">
+          <h1 className="text-3xl text-charcoal sm:text-5xl font-semibold tracking-tight">
+            Bem-vindo(a) ao <span className="font-display text-forest">Flora</span><span className="font-display text-sage">Clin</span>
           </h1>
-          <p className="mt-3 text-mid text-base">
+          <p className="mt-1 text-mid text-base sm:mt-3">
             Configure sua clínica em poucos passos
           </p>
           <button
             type="button"
             onClick={() => {
+              // Signing out is not abandoning a step, and the identity is
+              // about to be cleared anyway.
+              abandonTracking.suppress()
               resetAnalytics()
               void logout()
             }}
-            className="mt-3 inline-flex items-center gap-1 text-xs text-mid/50 hover:text-mid transition-colors"
+            className="inline-flex min-h-11 items-center gap-1 px-3 text-xs text-charcoal/70 hover:text-charcoal transition-colors sm:mt-3"
           >
             <LogOutIcon className="h-3 w-3" />
             Sair
@@ -410,7 +439,7 @@ export function OnboardingWizard({
         </div>
 
         {/* Stepper */}
-        <div className="mb-10 animate-fade-in-up-delay-1">
+        <div className="mb-4 sm:mb-10 animate-fade-in-up-delay-1">
           <div className="relative flex items-start justify-center">
             {/* Connector lines (absolute, behind circles) */}
             {STEPS.map((_, index) => {
@@ -440,7 +469,7 @@ export function OnboardingWizard({
               return (
                 <div
                   key={step.label}
-                  className="relative z-10 flex flex-1 flex-col items-center gap-2"
+                  className="relative z-10 flex flex-1 flex-col items-center gap-1 sm:gap-2"
                 >
                   <div
                     className={`flex h-12 w-12 items-center justify-center rounded-full transition-all duration-500 ${
@@ -458,9 +487,12 @@ export function OnboardingWizard({
                     )}
                   </div>
                   <span
-                    className={`text-xs font-medium tracking-wide transition-colors duration-300 ${
-                      isCurrent ? 'text-forest' : isCompleted ? 'text-sage' : 'text-mid/50'
-                    }`}
+                    className={cn(
+                      'text-xs font-medium tracking-wide transition-colors duration-300',
+                      isCurrent && 'text-forest',
+                      isCompleted && 'text-sage',
+                      !isCurrent && !isCompleted && 'text-charcoal/70',
+                    )}
                   >
                     {step.label}
                   </span>
@@ -473,75 +505,44 @@ export function OnboardingWizard({
         {/* Step Content */}
         <Card
           key={currentStep}
-          className="animate-fade-in-up border-blush/30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-8 sm:p-10"
+          className="animate-fade-in-up border-blush/30 bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-4 sm:p-10"
         >
-          {/* Step 1: Clinic Settings */}
+          {/* Step 1: the clinic's name and phone */}
           {currentStep === 0 && (
             <div>
               <h2 className="text-xl font-medium text-charcoal mb-1 tracking-tight">
                 Dados da Clínica
               </h2>
-              <p className="text-sm text-mid mb-8">
-                Preencha as informações básicas e configure o horário de funcionamento.
+              <p className="text-sm text-mid mb-4 sm:mb-6">
+                Só o nome e o telefone. O resto você ajusta depois.
               </p>
 
-              <ClinicSettingsForm
-                initialData={{
-                  name: (clinicData.name as string) || tenantName,
-                  phone: (clinicData.phone as string) || '',
-                  email: (clinicData.email as string) || '',
-                  address: (clinicData.address as Record<string, string>) || null,
-                  workingHours: (clinicData.workingHours as WorkingHours) || DEFAULT_WORKING_HOURS,
-                }}
-                embedded
-                phoneRequired={phoneRequired}
+              <ClinicStep
+                values={clinicData}
                 onChange={handleClinicChange}
+                onFieldInteraction={trackFieldInteraction}
+                invalidField={invalidField}
+                nameSuggested={nameSuggested}
               />
 
-              {displayedSlug && (
-                <div className="mt-6 rounded-[3px] bg-[#F0F7F1] border border-sage/20 p-4 space-y-3">
-                  <div>
-                    <p className="text-xs text-mid uppercase tracking-wider mb-0.5">
-                      Link de agendamento online
-                    </p>
-                    <p className="text-xs text-mid">
-                      Seus pacientes poderão agendar consultas diretamente por este link.
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-mid shrink-0">floraclin.com.br/c/</span>
-                    <Input
-                      value={displayedSlug}
-                      onChange={(e) => {
-                        const v = e.target.value
-                          .toLowerCase()
-                          .replace(/[^a-z0-9-]/g, '')
-                        setCustomSlug(v)
-                        setSlugAvailable(null)
-                      }}
-                      maxLength={100}
-                      className="h-8 text-sm font-medium text-forest max-w-48"
-                    />
-                    {slugChecking ? (
-                      <Loader2Icon className="h-4 w-4 text-mid animate-spin shrink-0" />
-                    ) : slugAvailable === true ? (
-                      <CircleCheckIcon className="h-4 w-4 text-emerald-500 shrink-0" />
-                    ) : slugAvailable === false ? (
-                      <CircleXIcon className="h-4 w-4 text-red-500 shrink-0" />
-                    ) : null}
-                  </div>
-
-                  {slugAvailable === false && (
-                    <p className="text-xs text-red-600">Este link já está em uso. Escolha outro.</p>
-                  )}
-
-                  <p className="inline-flex items-center gap-1.5 text-xs text-mid/60">
-                    <ExternalLinkIcon className="h-3 w-3" />
-                    Disponível após concluir o cadastro
-                  </p>
-                </div>
-              )}
+              <div className="mt-6 flex flex-col items-center text-center sm:mt-8">
+                <Button
+                  type="button"
+                  variant="link"
+                  onClick={handleUseDefaults}
+                  disabled={isPending || !clinicStepValid}
+                  aria-describedby="use-defaults-hint"
+                  data-testid="onboarding-use-defaults"
+                  className="h-11 px-3 text-sm text-forest underline decoration-forest/40 hover:decoration-forest disabled:text-mid disabled:no-underline disabled:opacity-100"
+                >
+                  {isPending ? 'Finalizando...' : 'Configurar depois'}
+                </Button>
+                <p id="use-defaults-hint" className="text-xs text-mid">
+                  {clinicStepValid
+                    ? 'Usa os procedimentos padrão, você ajusta quando quiser.'
+                    : 'Preencha o nome e o telefone para configurar depois.'}
+                </p>
+              </div>
             </div>
           )}
 
@@ -555,7 +556,7 @@ export function OnboardingWizard({
                 Selecione os procedimentos que sua clínica oferece. Você pode adicionar mais depois.
               </p>
 
-              {/* Default procedure types — card grid with inline editable duration + price */}
+              {/* Default procedure types: card grid with inline editable duration + price */}
               <div className="mb-8 space-y-3">
                 <h3 className="text-xs font-medium text-mid uppercase tracking-wider">
                   Procedimentos Sugeridos
@@ -615,7 +616,7 @@ export function OnboardingWizard({
                               onChange={(e) => setProcedureDuration(index, Number(e.target.value))}
                               disabled={!selected}
                               tabIndex={selected ? 0 : -1}
-                              className="w-full rounded-md border border-sage/30 bg-white px-2 py-1 text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                              className="w-full rounded-md border border-sage/30 bg-white px-2 py-1 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-content-bg"
                             >
                               {DURATION_OPTIONS.map((mins) => (
                                 <option key={mins} value={mins}>
@@ -640,7 +641,7 @@ export function OnboardingWizard({
                                 tabIndex={selected ? 0 : -1}
                                 placeholder="0,00"
                                 inputMode="numeric"
-                                className="h-auto w-full rounded-md border border-sage/30 bg-white py-1 pl-8 pr-2 text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-[#F4F6F8]"
+                                className="h-auto w-full rounded-md border border-sage/30 bg-white py-1 pl-8 pr-2 text-base sm:text-sm text-charcoal focus:border-forest focus:outline-none focus:ring-1 focus:ring-forest/30 disabled:bg-content-bg"
                               />
                             </div>
                           </div>
@@ -712,6 +713,8 @@ export function OnboardingWizard({
                 Você pode convidar profissionais e recepcionistas agora, ou fazer isso depois em Configurações.
               </p>
 
+              {unconfirmedEmail && <ConfirmEmailToInvite email={unconfirmedEmail} />}
+
               {invitesSent > 0 && (
                 <div className="mb-6 rounded-lg bg-sage/10 border border-sage/20 p-4 flex items-center gap-3 animate-fade-in-up">
                   <div className="w-8 h-8 rounded-full bg-sage/20 flex items-center justify-center flex-shrink-0">
@@ -754,6 +757,7 @@ export function OnboardingWizard({
                     type="button"
                     variant="outline"
                     onClick={() => setShowInviteForm(true)}
+                    disabled={Boolean(unconfirmedEmail)}
                     className="border-sage/30 text-sage hover:bg-sage/5 hover:text-forest"
                   >
                     <PlusIcon className="h-4 w-4" />
@@ -765,70 +769,93 @@ export function OnboardingWizard({
           )}
         </Card>
 
-        {/* Navigation Buttons */}
-        <div className="mt-8 flex items-center justify-between animate-fade-in-up-delay-2">
-          <div>
-            {currentStep > 0 && (
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handlePrev}
-                disabled={isPending}
-                className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
-                data-testid="onboarding-prev"
-              >
-                Anterior
-              </Button>
+        {/* No transform-based animation on any ancestor of this bar: it turns position: fixed into absolute. */}
+        <div
+          data-testid="onboarding-actions"
+          className="fixed inset-x-0 bottom-[var(--cookie-banner-offset,0px)] z-40 border-t border-blush/30 bg-white px-4 pt-3 pb-[calc(0.75rem+var(--cookie-banner-safe-area,env(safe-area-inset-bottom)))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] transition-transform duration-150 sm:static sm:z-auto sm:mt-8 sm:border-0 sm:bg-transparent sm:p-0 sm:shadow-none"
+          // With the keyboard open the cookie banner is behind it, so the bar
+          // rises from the bottom edge by the keyboard alone, not from above
+          // the banner as well.
+          style={keyboardInset > 0 ? { bottom: 0, transform: `translateY(-${keyboardInset}px)` } : undefined}
+        >
+          {/* On the last step, below sm, Começar a usar takes a full row on top
+              and Voltar and the skip action share the row under it: the three
+              in one line do not fit a phone. */}
+          <div
+            className={cn(
+              'mx-auto flex max-w-3xl items-center justify-between gap-3',
+              currentStep === 3 && 'flex-wrap sm:flex-nowrap',
             )}
-          </div>
+          >
+            {/* Without Voltar (step 1) Próximo spans the bar on phones: a full thumb target. */}
+            <div className={currentStep === 0 ? 'hidden sm:block' : undefined}>
+              {currentStep > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handlePrev}
+                  disabled={isPending}
+                  className="h-11 border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:h-9"
+                  data-testid="onboarding-prev"
+                >
+                  Voltar
+                </Button>
+              )}
+            </div>
 
-          <div className="flex gap-3">
-            {currentStep === 3 && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={handleComplete}
-                disabled={isPending || customSlugTaken}
-                className="text-mid hover:text-sage transition-colors duration-200"
-                data-testid="onboarding-skip"
-              >
-                {invitesSent > 0 ? 'Continuar sem mais convites' : 'Pular por enquanto'}
-              </Button>
-            )}
+            <div
+              className={cn(
+                'flex items-center gap-2 sm:gap-3',
+                currentStep === 0 && 'w-full sm:w-auto',
+                currentStep === 3 && 'contents sm:flex',
+              )}
+            >
+              {currentStep === 3 && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={handleComplete}
+                  disabled={isPending}
+                  className="h-11 px-2 text-mid hover:text-sage transition-colors duration-200 sm:h-9 sm:px-4"
+                  data-testid="onboarding-skip"
+                >
+                  {invitesSent > 0 ? 'Continuar sem mais convites' : 'Pular por enquanto'}
+                </Button>
+              )}
 
-            {currentStep === STEPS.length - 1 && customSlugTaken && (
-              <p className="text-xs text-red-600">
-                O link de agendamento já está em uso. Volte à etapa Clínica e escolha outro.
-              </p>
-            )}
-
-            {currentStep < STEPS.length - 1 ? (
-              <Button
-                type="button"
-                onClick={handleNext}
-                className="bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-sm hover:shadow-md px-8"
-                data-testid="onboarding-next"
-              >
-                Próximo
-              </Button>
-            ) : (
-              <Button
-                type="button"
-                onClick={handleComplete}
-                disabled={isPending || customSlugTaken}
-                data-testid="onboarding-complete"
-                className={`bg-forest text-cream hover:bg-sage uppercase tracking-wider text-sm font-medium transition-all duration-300 shadow-md hover:shadow-lg px-8 ${
-                  !isPending ? 'animate-subtle-pulse' : ''
-                }`}
-              >
-                {isPending ? 'Finalizando...' : 'Começar a usar'}
-              </Button>
-            )}
+              {currentStep < STEPS.length - 1 ? (
+                <Button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={isPending}
+                  className={cn(
+                    'h-11 uppercase tracking-wider duration-300 shadow-sm hover:shadow-md px-8 sm:h-9',
+                    currentStep === 0 && 'w-full sm:w-auto',
+                  )}
+                  data-testid="onboarding-next"
+                >
+                  Próximo
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={handleComplete}
+                  disabled={isPending}
+                  data-testid="onboarding-complete"
+                  className={cn(
+                    'order-first h-11 w-full uppercase tracking-wider duration-300 shadow-md hover:shadow-lg px-6 sm:order-none sm:h-9 sm:w-auto sm:px-8',
+                    !isPending && 'animate-subtle-pulse',
+                  )}
+                >
+                  {isPending ? 'Finalizando...' : 'Começar a usar'}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Footer */}
-        <p className="mt-12 text-center text-gold/50 text-[11px] tracking-wider">
+        <p className="mt-8 text-center text-gold/50 text-[11px] tracking-wider sm:mt-12">
           floraclin.com.br
         </p>
       </div>

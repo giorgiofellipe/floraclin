@@ -8,12 +8,9 @@ import { Label } from '@/components/ui/label'
 /**
  * Asks for the address when we do not already know it.
  *
- * Signup no longer creates a session, so the address exists only in the
- * confirmation link. Anyone who closed that tab, or opened the app on another
- * device, arrives here with neither a session nor a query parameter. Before
- * this they were redirected to /login, where the password they had just
- * chosen was refused for being unconfirmed and the error said only that the
- * credentials were invalid: a dead end with no route back.
+ * Without a session and without the confirm-email cookie (another device or
+ * browser, or a signup whose sign-in failed) the page knows no address. Rather
+ * than a bounce to /login, the owner can ask for a new link here.
  *
  * Safe to expose. The resend endpoint answers identically for an unknown
  * address, an already-confirmed one and a throttled one, so this form cannot
@@ -51,7 +48,7 @@ export function RequestConfirmationForm() {
           Se houver uma conta aguardando confirmação para esse e-mail, enviamos um novo link.
         </p>
         <p className="text-sm text-mid">
-          Verifique também a caixa de spam. O link vale por 24 horas.
+          Verifique também a caixa de spam. Se o link expirar, peça um novo.
         </p>
       </div>
     )

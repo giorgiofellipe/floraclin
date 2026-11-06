@@ -1,5 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { afterEach, describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { TrialChecklistCard } from '../trial-checklist-card'
 import type { ActivationState } from '@/lib/activation'
 
@@ -21,6 +23,14 @@ function activationWith(overrides: Partial<ActivationState> = {}): ActivationSta
   }
 }
 
+const allStepsDone = activationWith({
+  onboardingDone: true,
+  hasPatient: true,
+  hasAppointment: true,
+  hasProcedureRecord: true,
+  hasWhatsappSend: true,
+})
+
 describe('TrialChecklistCard', () => {
   it('counts done steps, drops the link on done rows and keeps it on open rows', () => {
     render(
@@ -36,18 +46,11 @@ describe('TrialChecklistCard', () => {
     )
   })
 
-  it('renders nothing when all five steps are done, so a finished clinic keeps no stale nag', () => {
-    const { container } = render(
-      <TrialChecklistCard
-        activation={activationWith({
-          onboardingDone: true,
-          hasPatient: true,
-          hasAppointment: true,
-          hasProcedureRecord: true,
-          hasWhatsappSend: true,
-        })}
-      />,
-    )
+  it.each([
+    ['import help is not offered', {}],
+    ['import help was already requested', { canRequestImport: true, importHelpRequested: true }],
+  ])('renders nothing when all five steps are done and %s, so a finished clinic keeps no stale nag', (_case, props) => {
+    const { container } = render(<TrialChecklistCard activation={allStepsDone} {...props} />)
 
     expect(container).toBeEmptyDOMElement()
   })
@@ -64,5 +67,41 @@ describe('TrialChecklistCard', () => {
     const { container } = render(<TrialChecklistCard activation={null} />)
 
     expect(container).toBeEmptyDOMElement()
+  })
+
+  describe('import help', () => {
+    afterEach(() => vi.unstubAllGlobals())
+
+    function renderWithQuery(ui: React.ReactElement) {
+      return render(<QueryClientProvider client={new QueryClient()}>{ui}</QueryClientProvider>)
+    }
+
+    it('asks for help once tapped and shows it as done, without counting it as a step', async () => {
+      const fetchMock = vi.fn(async () => Response.json({ requestedAt: '2026-11-03T12:00:00.000Z' }))
+      vi.stubGlobal('fetch', fetchMock)
+      renderWithQuery(
+        <TrialChecklistCard activation={activationWith({ onboardingDone: true, hasPatient: true })} canRequestImport />,
+      )
+
+      await userEvent.click(screen.getByRole('button', { name: 'Quero ajuda' }))
+
+      expect(await screen.findByText('A gente entra em contato pelo WhatsApp para receber seus arquivos.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Quero ajuda' })).toBeNull()
+      expect(fetchMock).toHaveBeenCalledWith('/api/onboarding/import-request', expect.objectContaining({ method: 'POST' }))
+      expect(screen.getByText('2 de 5')).toBeInTheDocument()
+    })
+
+    it('still offers import help once all five steps are done', () => {
+      renderWithQuery(<TrialChecklistCard activation={allStepsDone} canRequestImport />)
+
+      expect(screen.getByRole('button', { name: 'Quero ajuda' })).toBeInTheDocument()
+    })
+
+    it('shows an earlier request as done on load', () => {
+      renderWithQuery(<TrialChecklistCard activation={activationWith()} canRequestImport importHelpRequested />)
+
+      expect(screen.getByText('A gente entra em contato pelo WhatsApp para receber seus arquivos.')).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Quero ajuda' })).toBeNull()
+    })
   })
 })

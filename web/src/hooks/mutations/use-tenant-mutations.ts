@@ -27,6 +27,17 @@ export function useUpdateTenant() {
   })
 }
 
+export function useUpdateBookingSlug() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (slug: string) => mutateJson('/api/tenant', 'PUT', { slug, _action: 'booking_slug' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenant.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.tenant })
+    },
+  })
+}
+
 export function useUpdateBookingSettings() {
   const queryClient = useQueryClient()
   return useMutation({
@@ -35,6 +46,16 @@ export function useUpdateBookingSettings() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.tenant.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.settings.tenant })
+    },
+  })
+}
+
+export function useRequestImportHelp() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (): Promise<{ requestedAt: string }> => mutateJson('/api/onboarding/import-request', 'POST'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.tenant.all })
     },
   })
 }

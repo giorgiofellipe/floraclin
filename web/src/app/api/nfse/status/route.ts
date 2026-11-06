@@ -10,6 +10,7 @@ export async function GET(request: Request) {
     return NextResponse.json({
       data: {
         configured: settings?.configured === true,
+        canEmit: true,
         canCancel: ctx.role === 'owner' || ctx.role === 'financial',
       },
     })

@@ -64,6 +64,17 @@ export const bookingSettingsSchema = z.object({
   publicBookingEnabled: z.boolean(),
 })
 
+// The public booking link, /c/<slug>. Same shape onboarding used to accept.
+export const bookingSlugSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .min(3, 'Use pelo menos 3 caracteres')
+    .max(100, 'Use no máximo 100 caracteres')
+    .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Use apenas letras sem acento, números e hífens'),
+})
+
 export type UpdateTenantInput = z.infer<typeof updateTenantSchema>
 export type ProcedureTypeInput = z.infer<typeof procedureTypeSchema>
 export type UpdateProcedureTypeInput = z.infer<typeof updateProcedureTypeSchema>

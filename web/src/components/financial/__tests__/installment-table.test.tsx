@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import userEvent from '@testing-library/user-event'
 import { InstallmentTable } from '../installment-table'
+import { createWrapper } from '@/tests/test-utils'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
 
@@ -52,11 +53,19 @@ const mockInstallments = [
   },
 ]
 
+let mockRole = 'owner'
+
 beforeEach(() => {
+  mockRole = 'owner'
   vi.spyOn(globalThis, 'fetch').mockResolvedValue({
     ok: true,
     json: async () => ({ installments: mockInstallments }),
   } as Response)
+})
+
+vi.mock('@/components/layout/subscription-access', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/components/layout/subscription-access')>()
+  return { ...actual, useSubscriptionAccess: () => ({ ...actual.useSubscriptionAccess(), role: mockRole }) }
 })
 
 vi.mock('next/navigation', () => ({
@@ -64,19 +73,6 @@ vi.mock('next/navigation', () => ({
   usePathname: () => '/',
   useSearchParams: () => new URLSearchParams(),
 }))
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
-    )
-  }
-}
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
@@ -400,5 +396,62 @@ describe('InstallmentTable NFS-e reversal', () => {
     fireEvent.click(screen.getByText('Confirmar Estorno'))
 
     await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: true }))
+  })
+})
+
+describe('InstallmentTable "Emitir NFS-e" without NFS-e configured', () => {
+  function mockUnconfigured() {
+    vi.spyOn(globalThis, 'fetch').mockClear().mockImplementation(async (url) => {
+      if (String(url).includes('/api/nfse/status')) {
+        return { ok: true, json: async () => ({ data: { configured: false, canEmit: true, canCancel: false } }) } as Response
+      }
+      return {
+        ok: true,
+        json: async () => ({
+          installments: [
+            {
+              ...mockInstallments[0],
+              paymentRecords: [
+                {
+                  id: 'pay-1',
+                  amount: '500.00',
+                  paymentMethod: 'pix',
+                  interestCovered: '0',
+                  fineCovered: '0',
+                  principalCovered: '500.00',
+                  paidAt: '2026-09-01T12:00:00.000Z',
+                  recordedAt: '2026-09-01T12:00:00.000Z',
+                  notes: null,
+                  nfse: null,
+                },
+              ],
+            },
+          ],
+        }),
+      } as Response
+    })
+  }
+
+  async function clickEmit() {
+    mockUnconfigured()
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Emitir NFS-e' }))
+  }
+
+  it('sends the owner to the NFS-e settings', async () => {
+    await clickEmit()
+
+    expect(await screen.findByText('NFS-e não configurada')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Configurar NFS-e' })).toHaveAttribute('href', '/configuracoes?tab=nota-fiscal')
+  })
+
+  it('tells another role to ask the clinic owner', async () => {
+    mockRole = 'receptionist'
+    await clickEmit()
+
+    expect(await screen.findByText(/Peça à pessoa responsável pela clínica/)).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Configurar NFS-e' })).not.toBeInTheDocument()
   })
 })

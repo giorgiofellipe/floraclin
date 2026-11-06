@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Image from 'next/image'
 import { X } from 'lucide-react'
 import { IosInstallSteps } from '@/components/layout/ios-install-steps'
-import { useIsFullHeightPage } from '@/components/layout/platform-chrome'
+import { useIsFullHeightPage, useIsInstallBannerHeld } from '@/components/layout/platform-chrome'
 
 const DISMISSED_KEY = 'floraclin.install-banner.dismissed'
 // The complement of Tailwind's md breakpoint (48rem), where the wrapper's
@@ -52,8 +52,11 @@ export function InstallBanner() {
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
   const [showIosSteps, setShowIosSteps] = useState(false)
   // Suppressed (not dismissed) on full-height screens, where it would cover
-  // the WhatsApp composer; it comes back on the next regular page.
-  const suppressed = useIsFullHeightPage()
+  // the WhatsApp composer, and while a page holds it back for guidance of its
+  // own; it comes back on the next regular page.
+  const fullHeight = useIsFullHeightPage()
+  const held = useIsInstallBannerHeld()
+  const suppressed = fullHeight || held
 
   useEffect(() => {
     if (isInstalled() || readDismissed()) return

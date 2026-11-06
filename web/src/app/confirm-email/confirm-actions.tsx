@@ -1,10 +1,10 @@
 'use client'
 
-import { useEffect, useState, useTransition } from 'react'
-import { toast } from 'sonner'
+import { useState, useTransition } from 'react'
 import { Button } from '@/components/ui/button'
 import { loginWithGoogle } from '@/actions/auth'
 import { confirmEmail } from '@/actions/confirm-email'
+import { useConfirmationResend } from '@/hooks/use-confirmation-resend'
 
 function GoogleIcon() {
   return (
@@ -17,24 +17,17 @@ function GoogleIcon() {
   )
 }
 
-const RESEND_COOLDOWN_SECONDS = 60
-
 interface ConfirmActionsProps {
   email: string
   hasToken: boolean
+  /** Signed in (signup signs in before confirming): the clinic setup is open already. */
+  signedIn?: boolean
 }
 
-export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
+export function ConfirmActions({ email, hasToken, signedIn = false }: ConfirmActionsProps) {
   const [isConfirming, startConfirm] = useTransition()
   const [confirmError, setConfirmError] = useState<string | null>(null)
-  const [resendCooldown, setResendCooldown] = useState(0)
-  const [isResending, startResend] = useTransition()
-
-  useEffect(() => {
-    if (resendCooldown <= 0) return
-    const id = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000)
-    return () => clearInterval(id)
-  }, [resendCooldown])
+  const { resend, cooldown: resendCooldown, disabled: resendDisabled } = useConfirmationResend(email)
 
   function handleConfirm() {
     setConfirmError(null)
@@ -48,44 +41,32 @@ export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
     })
   }
 
-  function handleResend() {
-    startResend(async () => {
-      try {
-        const res = await fetch('/api/auth/confirm/resend', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email }),
-        })
-
-        if (!res.ok) {
-          toast.error('Não foi possível reenviar o link agora.')
-          return
-        }
-
-        // Not "reenviado". The endpoint answers 200 for an unknown address,
-        // an already-confirmed one and a throttled one alike, so it cannot
-        // tell us an email actually went out, and claiming one did sends a
-        // throttled user to wait on an inbox that will stay empty.
-        toast.success('Se houver um link a enviar, ele chega em instantes.')
-        setResendCooldown(RESEND_COOLDOWN_SECONDS)
-      } catch {
-        toast.error('Não foi possível reenviar o link agora.')
-      }
-    })
-  }
-
   return (
     <div className="space-y-6">
-      <div>
+      {/* With the token this is the page the e-mail link opened. It must not
+          read like the "check your inbox" screen, or people take it for a
+          failed link: one action, stated as the last step. */}
+      {hasToken ? (
+        <p className="text-sm text-mid leading-relaxed">
+          Confirme <strong className="text-charcoal">{email}</strong> no botão abaixo para continuar a configuração
+          da sua clínica.
+        </p>
+      ) : (
         <p className="text-sm text-mid leading-relaxed">
           Enviamos um link de confirmação para <strong className="text-charcoal">{email}</strong>.
           Verifique sua caixa de entrada e a pasta de spam.
         </p>
-      </div>
+      )}
 
       {hasToken && (
         <div>
-          <Button type="button" className="w-full h-11" disabled={isConfirming} onClick={handleConfirm}>
+          <Button
+            type="button"
+            className="w-full h-11"
+            disabled={isConfirming}
+            onClick={handleConfirm}
+            data-testid="confirm-email-submit"
+          >
             {isConfirming ? 'Confirmando...' : 'Confirmar e-mail'}
           </Button>
           <p className="mt-2 text-xs text-mid">
@@ -99,12 +80,17 @@ export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
       {confirmError && <p className="text-sm text-red-600">{confirmError}</p>}
 
       <div className="grid gap-3">
+        {signedIn && !hasToken && (
+          <Button render={<a href="/onboarding" />} nativeButton={false} className="w-full h-11">
+            Continuar configurando a clínica
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"
           className="w-full h-11"
-          disabled={isResending || resendCooldown > 0}
-          onClick={handleResend}
+          disabled={resendDisabled}
+          onClick={resend}
         >
           {resendCooldown > 0 ? `Reenviar link (${resendCooldown}s)` : 'Reenviar link de confirmação'}
         </Button>
@@ -119,6 +105,26 @@ export function ConfirmActions({ email, hasToken }: ConfirmActionsProps) {
           </Button>
         </form>
       </div>
+    </div>
+  )
+}
+
+/** The link was opened again after the address was confirmed: sign in, no session handed out here. */
+export function AlreadyConfirmed({ email }: { email: string }) {
+  return (
+    <div className="space-y-6">
+      <p className="text-sm text-mid leading-relaxed">
+        <strong className="text-charcoal">{email}</strong> já foi confirmado. Entre para continuar a configuração da
+        sua clínica.
+      </p>
+      <Button
+        render={<a href="/login" />}
+        nativeButton={false}
+        className="w-full h-11"
+        data-testid="confirm-email-login"
+      >
+        Entrar
+      </Button>
     </div>
   )
 }

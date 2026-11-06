@@ -9,6 +9,7 @@ import { users, sessions, accounts, verificationTokens, tenantUsers, tenants, te
 import { eq, and, isNull, sql } from 'drizzle-orm'
 import bcrypt from 'bcryptjs'
 import { discardUnconfirmedPassword, markEmailVerifiedViaGoogle } from '@/db/queries/users'
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { loginMethodFromProvider } from '@/lib/analytics/events'
 import { rememberLastLogin } from '@/lib/last-login'
@@ -28,8 +29,6 @@ const baseAdapter = DrizzleAdapter(db as any, {
  * DEFAULT for `full_name`, which is NOT NULL with no default. So the adapter's
  * own `createUser` cannot insert anyone, and the very first Google sign-in
  * for a new person fails on a not-null violation.
- *
- * Confirmed by reading the SQL drizzle emits, not inferred from the types.
  */
 export const adapter: Adapter = {
   ...baseAdapter,
@@ -73,11 +72,17 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       credentials: {
         email: { type: 'email' },
         password: { type: 'password' },
+        /** '1' only from actions/signup.ts, see isNewUser below. */
+        signup: { type: 'hidden' },
       },
       async authorize(credentials) {
         const email = credentials?.email as string
         const password = credentials?.password as string
         if (!email || !password) return null
+
+        // The session's authAt (see jwt), 1ms before the hash is read: a discard
+        // stamped in that same millisecond must still count as later and revoke it.
+        const readAt = Date.now() - 1
 
         // Matched the way uq_users_email_lower indexes it. A row stored with
         // any uppercase (an invite, an OAuth adapter insert) is invisible to
@@ -94,23 +99,23 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
         const valid = await bcrypt.compare(password, user.passwordHash)
         if (!valid) return null
 
-        // Double opt-in is enforced here rather than only in proxy.
-        // Signup no longer signs anyone in, so refusing here means the
-        // password never yields a session, and proxy lets every /api
-        // request through before it looks at emailVerified: gating pages
-        // alone would have left the whole API callable with a cookie.
+        // An unconfirmed address signs in too: the owner sets up the clinic
+        // before opening the confirmation e-mail. What an unconfirmed account
+        // must not do (message patients, invite, check out) is refused at
+        // those sends, see lib/email-confirmation-gate.ts.
         //
-        // This is not the only door, and deliberately so. Google sign-in and
-        // the Resend magic link both bypass `authorize` entirely, and both
-        // prove the person controls the address, which is the same thing the
-        // confirmation email proves. Auth.js stamps emailVerified on those
-        // paths, so they satisfy the gate rather than sidestep it.
-        //
-        // Existing accounts were backfilled by 0023_email_confirmation.sql,
-        // so no current customer is caught by this.
-        if (!user.emailVerified) return null
+        // A password planted on someone else's address stays harmless: it
+        // enters only the clinic it created (membershipUsableBeforeConfirmation),
+        // and the real owner's Google or magic-link sign-in discards it and
+        // revokes every session it opened (markEmailVerifiedViaGoogle,
+        // discardUnconfirmedPassword), as a reset does.
 
-        return { id: user.id, email: user.email, name: user.fullName }
+        // Signup signs the new owner in through here (actions/signup.ts), and
+        // Auth.js reports every credentials sign-in as trigger 'signIn'. The
+        // marker lets login_succeeded say is_new_user like a Google signup does;
+        // a just-created account is always unconfirmed.
+        const isNewUser = credentials?.signup === '1' && !user.emailVerified
+        return { id: user.id, email: user.email, name: user.fullName, isNewUser, authAt: readAt }
       },
     }),
     Credentials({
@@ -168,9 +173,6 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
     async jwt({ token, user, account, trigger }) {
       if (user) {
         token.sub = user.id
-        // Not `iat`: Auth.js re-signs the token on every refresh, so `iat` moves
-        // forward and would outlive a password change.
-        token.authAt = Date.now()
       }
 
       // Google already verifies the address itself (the signIn callback above
@@ -187,6 +189,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // hook covers both cases.
       if (user?.email && account?.provider === 'google') {
         await markEmailVerifiedViaGoogle(user.email)
+      }
+
+      if (user) {
+        // Not `iat`: Auth.js re-signs the token on every refresh, so `iat` moves
+        // forward and would outlive a password change. Stamped after
+        // markEmailVerifiedViaGoogle: discarding a planted password revokes the
+        // sessions signed in before it, and this one must not be among them.
+        // A password sign-in counts from when its hash was read (authorize).
+        token.authAt = 'authAt' in user && typeof user.authAt === 'number' ? user.authAt : Date.now()
       }
 
       if (user || trigger === 'update') {
@@ -212,7 +223,8 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             .where(
               and(
                 eq(tenantUsers.userId, userId),
-                eq(tenantUsers.isActive, true)
+                eq(tenantUsers.isActive, true),
+                membershipUsableBeforeConfirmation(),
               )
             )
             .limit(1)
@@ -228,9 +240,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
             token.tenantStatus = null
             token.role = null
             token.isPlatformAdmin = userRow?.isPlatformAdmin ?? false
-            // A branch that forgets this leaves the field undefined, and the
-            // proxy gate treats undefined as "do not gate" -- so every
-            // branch that assigns tenantStatus assigns this alongside it.
+            // A branch that forgets this leaves the field undefined, which the
+            // confirmation gate and banner read as "unknown" and let through
+            // (see the session callback) -- so every branch that assigns
+            // tenantStatus assigns this alongside it.
             token.emailVerified = !!userRow?.emailVerified
             token.subscriptionStatus = 'expired'
             token.planSlug = 'free'
@@ -287,10 +300,15 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       // every provider, so this counts each successful sign-in once.
       const loginMethod = user && account ? loginMethodFromProvider(account.provider) : null
       if (loginMethod && token.sub && !token.isPlatformAdmin) {
+        // Set by the credentials authorize for the sign-in signup performs.
+        const passwordSignup = !!user && 'isNewUser' in user && user.isNewUser === true
         trackServerEvent(
           'login_succeeded',
           { distinctId: token.sub, tenantId: (token.tenantId as string | null | undefined) ?? null },
-          { method: loginMethod, is_new_user: trigger === 'signUp' },
+          {
+            method: loginMethod,
+            is_new_user: trigger === 'signUp' || passwordSignup,
+          },
         )
       }
 
@@ -305,9 +323,10 @@ export const { auth, handlers, signIn, signOut } = NextAuth({
       ;(session as any).role = token.role ?? null
       ;(session as any).isPlatformAdmin = token.isPlatformAdmin ?? false
       // Deliberately NOT `?? false`. A token minted before this field existed
-      // has no claim, and coercing that to false would make the confirmation
-      // gate trap every already-logged-in user. Undefined means "unknown",
-      // and the gate only acts on an explicit false.
+      // has no claim, and coercing that to false would refuse every
+      // already-logged-in user the sends behind the confirmation
+      // (lib/email-confirmation-gate.ts) and show them the banner. Undefined
+      // means "unknown", and both only act on an explicit false.
       ;(session as any).emailVerified = token.emailVerified
       ;(session as any).subscriptionStatus = token.subscriptionStatus ?? 'expired'
       ;(session as any).planSlug = token.planSlug ?? 'free'

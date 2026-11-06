@@ -21,7 +21,7 @@ describe('GET /api/nfse/status', () => {
     auth.role = role
     const res = await GET(new Request('http://localhost/api/nfse/status'))
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ data: { configured: true, canCancel } })
+    expect(await res.json()).toEqual({ data: { configured: true, canEmit: true, canCancel } })
   })
 
   it('refuses a practitioner, who has no access to payments', async () => {

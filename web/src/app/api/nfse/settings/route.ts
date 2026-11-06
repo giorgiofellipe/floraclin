@@ -7,6 +7,7 @@ import { createAuditLog } from '@/lib/audit'
 import { getNfseSettings, saveFiscalSettings } from '@/db/queries/nfse'
 import { getTenant } from '@/db/queries/tenants'
 import { nfseFiscalSettingsSchema } from '@/validations/nfse'
+import { isCompleteAddress } from '@/lib/nfse/taker-address'
 
 export async function GET(request: Request) {
   try {
@@ -17,7 +18,11 @@ export async function GET(request: Request) {
     const suggestedMunicipalityCode =
       address.city && address.state ? findMunicipalityCode(address.city, address.state) : null
 
-    return NextResponse.json({ data, suggestedMunicipalityCode })
+    return NextResponse.json({
+      data,
+      suggestedMunicipalityCode,
+      clinicAddressComplete: isCompleteAddress(tenant?.address),
+    })
   } catch (error) {
     return handleApiError(error, request)
   }

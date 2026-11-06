@@ -3,14 +3,17 @@ import { finishLifecycleSend } from '@/db/queries/lifecycle'
 import {
   claimSignupReminder,
   findConfirmReminderRecipients,
+  findFinalConfirmReminderRecipients,
   findFinishReminderRecipients,
+  SIGNUP_CONFIRM_FINAL_REMINDER_KEY,
   SIGNUP_CONFIRM_REMINDER_KEY,
   SIGNUP_FINISH_REMINDER_KEY,
   type SignupReminderRecipient,
 } from '@/db/queries/signup-reminders'
 import { handleApiError } from '@/lib/api-error'
-import { getOrIssueConfirmationUrl } from '@/lib/confirm-email'
+import { getOrIssueConfirmationUrl, MIN_LINK_VALIDITY_MS } from '@/lib/confirm-email'
 import { withCronMonitor } from '@/lib/cron-monitor'
+import { isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { sendConfirmationReminderEmail, sendFinishSetupReminderEmail } from '@/lib/email'
 import { reportSideEffectFailure } from '@/lib/observability'
 
@@ -23,13 +26,13 @@ const MONITOR_SCHEDULE = '0 * * * *'
 type Outcome = {
   tenantId: string
   key: string
-  result: 'sent' | 'already_claimed' | 'failed' | 'tenant_error'
+  result: 'sent' | 'already_claimed' | 'confirmed' | 'failed' | 'tenant_error'
 }
 
 async function sendOnce(
   recipient: SignupReminderRecipient,
   key: string,
-  send: () => Promise<{ id: string }>,
+  send: (idempotencyKey: string) => Promise<{ id: string }>,
 ): Promise<Outcome['result']> {
   const id = await claimSignupReminder({
     tenantId: recipient.tenantId,
@@ -38,7 +41,9 @@ async function sendOnce(
   })
   if (!id) return 'already_claimed'
   try {
-    const sent = await send()
+    // One key per claim: a send Resend accepted but answered too late for us is
+    // not delivered twice when the failed claim is retried.
+    const sent = await send(`signup-reminder/${recipient.tenantId}/${key}`)
     await finishLifecycleSend(id, { status: 'sent', providerMessageId: sent.id })
     return 'sent'
   } catch (err) {
@@ -52,29 +57,47 @@ async function sendOnce(
   }
 }
 
-function sendConfirmReminder(recipient: SignupReminderRecipient) {
-  return sendOnce(recipient, SIGNUP_CONFIRM_REMINDER_KEY, async () =>
-    sendConfirmationReminderEmail(
-      recipient.ownerEmail,
-      await getOrIssueConfirmationUrl(recipient.ownerEmail),
-      recipient.tenantName,
-    ),
+// The 24 hour reminder comes about when the signup link expires, so a link
+// with under MIN_LINK_VALIDITY_MS left is replaced rather than resent.
+function confirmReminder(key: string, reminder: 'first' | 'last') {
+  return async (recipient: SignupReminderRecipient): Promise<Outcome['result']> => {
+    // The batch was selected before the sends ahead of this one: the owner may have confirmed since.
+    if (!(await isTenantAwaitingEmailConfirmation(recipient.tenantId))) return 'confirmed'
+    return sendOnce(recipient, key, async (idempotencyKey) =>
+      sendConfirmationReminderEmail(
+        recipient.ownerEmail,
+        await getOrIssueConfirmationUrl(recipient.ownerEmail, MIN_LINK_VALIDITY_MS),
+        recipient.tenantName,
+        reminder,
+        idempotencyKey,
+      ),
+    )
+  }
+}
+
+const sendConfirmReminder = confirmReminder(SIGNUP_CONFIRM_REMINDER_KEY, 'first')
+const sendFinalConfirmReminder = confirmReminder(SIGNUP_CONFIRM_FINAL_REMINDER_KEY, 'last')
+
+function sendFinishReminder(recipient: SignupReminderRecipient) {
+  return sendOnce(recipient, SIGNUP_FINISH_REMINDER_KEY, (idempotencyKey) =>
+    sendFinishSetupReminderEmail(recipient.ownerEmail, idempotencyKey),
   )
 }
 
-function sendFinishReminder(recipient: SignupReminderRecipient) {
-  return sendOnce(recipient, SIGNUP_FINISH_REMINDER_KEY, () => sendFinishSetupReminderEmail(recipient.ownerEmail))
-}
-
 async function run() {
+  // Each batch is looked up only after the one before it was sent: a clinic
+  // turning 24 hours old between the lookups would otherwise be in both confirm
+  // batches, and the final one's 12 hour gap only sees a first reminder once
+  // it has been claimed.
   const batches = [
-    { key: SIGNUP_CONFIRM_REMINDER_KEY, recipients: await findConfirmReminderRecipients(), send: sendConfirmReminder },
-    { key: SIGNUP_FINISH_REMINDER_KEY, recipients: await findFinishReminderRecipients(), send: sendFinishReminder },
+    { key: SIGNUP_CONFIRM_REMINDER_KEY, find: findConfirmReminderRecipients, send: sendConfirmReminder },
+    { key: SIGNUP_CONFIRM_FINAL_REMINDER_KEY, find: findFinalConfirmReminderRecipients, send: sendFinalConfirmReminder },
+    { key: SIGNUP_FINISH_REMINDER_KEY, find: findFinishReminderRecipients, send: sendFinishReminder },
   ]
   const outcomes: Outcome[] = []
 
-  for (const { key, recipients, send } of batches) {
-    for (const recipient of recipients) {
+  for (const { key, find, send } of batches) {
+    for (const recipient of await find()) {
       try {
         outcomes.push({ tenantId: recipient.tenantId, key, result: await send(recipient) })
       } catch (err) {

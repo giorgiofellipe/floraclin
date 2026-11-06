@@ -20,7 +20,7 @@ import { notifySignupStarted } from '@/lib/signup-notifications'
 import { confirmEmailUrl, issueConfirmationToken } from '@/lib/confirm-email'
 import { getAppUrl } from '@/lib/app-url'
 import { isUndefinedColumn, isUniqueViolation } from '@/lib/errors'
-import { generateMetaEventId } from '@/lib/marketing-attribution'
+import { generateMetaEventId, META_EVENT_ID_PARAM } from '@/lib/marketing-attribution'
 import { metaBrowserSignals, type MetaBrowserSignals } from '@/lib/meta/request-signals'
 import { FIRST_TOUCH_COOKIE, parseFirstTouch, type FirstTouch } from '@/lib/first-touch'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
@@ -151,20 +151,28 @@ export async function signUp(
     reportSideEffectFailure(err, { area: 'signup', step: 'confirmation_email' })
   }
 
-  // Deliberately no signIn here. Signing the user in before they confirm
-  // would hand an unconfirmed account a working session cookie, and the API
-  // would accept it: proxy's /api branch returns before any email check.
-  // The first sign-in happens after confirming, and `authorize` refuses until
-  // then. There is no session for the page to read the address from, so it
-  // rides in an httpOnly cookie instead of the URL that Meta sees.
-  cookieStore.set(
-    CONFIRM_EMAIL_STATE_COOKIE,
-    serializeConfirmEmailPageState({ email }),
-    confirmEmailStateCookieOptions(),
-  )
-  const confirmPageUrl = new URL('/confirm-email', getAppUrl())
-  confirmPageUrl.searchParams.set('meta_event_id', metaEventId)
-  redirect(`${confirmPageUrl.pathname}${confirmPageUrl.search}`)
+  // Signed in straight away, confirmed or not: the owner sets up the clinic
+  // while the confirmation e-mail is on its way. What an unconfirmed account
+  // cannot do is refused at those sends (lib/email-confirmation-gate.ts), and
+  // a banner asks for the confirmation. The Meta event id rides along so the
+  // browser pixel can pair with the server CompleteRegistration.
+  let signedIn = true
+  try {
+    await signIn('credentials', { email, password, signup: '1', redirect: false })
+  } catch (err) {
+    // The account exists either way. Without a session the confirm-email page
+    // is the way in: it knows the address from the cookie and can resend.
+    signedIn = false
+    reportSideEffectFailure(err, { area: 'signup', step: 'sign_in_after_signup' })
+    cookieStore.set(
+      CONFIRM_EMAIL_STATE_COOKIE,
+      serializeConfirmEmailPageState({ email }),
+      confirmEmailStateCookieOptions(),
+    )
+  }
+  const target = new URL(signedIn ? '/onboarding' : '/confirm-email', getAppUrl())
+  target.searchParams.set(META_EVENT_ID_PARAM, metaEventId)
+  redirect(`${target.pathname}${target.search}`)
 }
 
 export async function signUpWithGoogle() {

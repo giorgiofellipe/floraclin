@@ -1,3 +1,5 @@
+import type { NfseEmissionMode } from '@/lib/nfse/types'
+
 export type Role = 'owner' | 'practitioner' | 'receptionist' | 'financial'
 
 export type AppointmentStatus = 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show' | 'pending_reschedule'
@@ -39,6 +41,8 @@ export interface AuthContext {
   email: string
   fullName: string
   isPlatformAdmin: boolean
+  /** Read from the database: the token's claim goes stale after a confirmation in another browser. */
+  emailVerified: boolean
 }
 
 export interface PaginationParams {
@@ -55,7 +59,7 @@ export interface PaginatedResult<T> {
 }
 
 export interface NfseIntake {
-  mode: 'ask' | 'always' | null
+  mode: NfseEmissionMode | null
   documentIds: string[]
   promptPaymentRecordIds: string[]
 }

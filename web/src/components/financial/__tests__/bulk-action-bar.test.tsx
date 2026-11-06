@@ -1,8 +1,8 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { BulkActionBar } from '../bulk-action-bar'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
+import { createWrapper } from '@/tests/test-utils'
 
 vi.mock('@/hooks/queries/use-installment-quote', () => ({
   useInstallmentQuote: vi.fn(),
@@ -83,19 +83,6 @@ vi.mock('@/components/ui/date-picker', () => ({
     />
   ),
 }))
-
-function createWrapper() {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  })
-  return function Wrapper({ children }: { children: React.ReactNode }) {
-    return (
-      <QueryClientProvider client={queryClient}>
-        {children}
-      </QueryClientProvider>
-    )
-  }
-}
 
 afterEach(() => {
   mockBulkPay.mockClear()

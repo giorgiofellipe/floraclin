@@ -45,18 +45,7 @@ describe('productSelectionSchema', () => {
 
 describe('onboardingCompleteSchema', () => {
   it('defaults selectedProducts to empty when omitted', () => {
-    const validClinic = {
-      name: 'Clínica X',
-      workingHours: {
-        mon: { start: '08:00', end: '18:00', enabled: true },
-        tue: { start: '08:00', end: '18:00', enabled: true },
-        wed: { start: '08:00', end: '18:00', enabled: true },
-        thu: { start: '08:00', end: '18:00', enabled: true },
-        fri: { start: '08:00', end: '18:00', enabled: true },
-        sat: { start: '08:00', end: '12:00', enabled: false },
-        sun: { start: '08:00', end: '12:00', enabled: false },
-      },
-    }
+    const validClinic = { name: 'Clínica X' }
     const result = onboardingCompleteSchema.safeParse({
       clinic: validClinic,
       procedureTypes: [],
@@ -66,18 +55,7 @@ describe('onboardingCompleteSchema', () => {
   })
 
   it('accepts valid selectedProducts', () => {
-    const validClinic = {
-      name: 'Clínica X',
-      workingHours: {
-        mon: { start: '08:00', end: '18:00', enabled: true },
-        tue: { start: '08:00', end: '18:00', enabled: true },
-        wed: { start: '08:00', end: '18:00', enabled: true },
-        thu: { start: '08:00', end: '18:00', enabled: true },
-        fri: { start: '08:00', end: '18:00', enabled: true },
-        sat: { start: '08:00', end: '12:00', enabled: false },
-        sun: { start: '08:00', end: '12:00', enabled: false },
-      },
-    }
+    const validClinic = { name: 'Clínica X' }
     const result = onboardingCompleteSchema.safeParse({
       clinic: validClinic,
       procedureTypes: [],

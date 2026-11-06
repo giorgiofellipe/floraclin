@@ -1,18 +1,20 @@
 import { NextResponse } from 'next/server'
-import { eq, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
 import { createAuditLog } from '@/lib/audit'
 import { db } from '@/db/client'
 import { tenants } from '@/db/schema'
-import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant } from '@/db/queries/tenants'
+import { getTenant, updateTenant, updateTenantSettings, isPhoneNumberIdClaimedByAnotherTenant, mergeSettings } from '@/db/queries/tenants'
 import { signLogoPath } from '@/lib/logo'
-import { updateTenantSchema, bookingSettingsSchema } from '@/validations/tenant'
+import { updateTenantSchema, bookingSettingsSchema, bookingSlugSchema } from '@/validations/tenant'
 import { whatsappSettingsSchema } from '@/validations/whatsapp'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanFeature } from '@/lib/plans'
 import { verifyCredentials } from '@/lib/whatsapp'
+import { changeBookingSlug } from '@/db/queries/booking-slugs'
+import { BOOKING_SLUG_MESSAGES } from '@/lib/booking-slug'
 
 type Settings = Record<string, unknown> | undefined
 
@@ -142,7 +144,7 @@ export async function PUT(request: Request) {
 
       await db.update(tenants)
         .set({
-          settings: sql`COALESCE(${tenants.settings}, '{}'::jsonb) || ${JSON.stringify(parsed.data)}::jsonb`,
+          settings: mergeSettings(parsed.data),
           updatedAt: new Date(),
         })
         .where(eq(tenants.id, ctx.tenantId))
@@ -186,6 +188,38 @@ export async function PUT(request: Request) {
       return NextResponse.json({ success: true })
     }
 
+    // The public booking link. Chosen in onboarding before; now set here, any
+    // time. The old link redirects to the new one, and stays reserved for this
+    // clinic, for SLUG_RESERVATION_DAYS (changeBookingSlug).
+    if (body._action === 'booking_slug') {
+      const current = await getTenant(ctx.tenantId)
+      if (!current) return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+      // Unchanged is accepted before the rules: a link from before they
+      // existed (one or two characters) must not stop the form from saving.
+      if (typeof body.slug === 'string' && body.slug.trim().toLowerCase() === current.slug) {
+        return NextResponse.json({ success: true, slug: current.slug })
+      }
+      const parsed = bookingSlugSchema.safeParse(body)
+      if (!parsed.success) {
+        return NextResponse.json(
+          { error: parsed.error.issues[0]?.message ?? 'Link inválido', fieldErrors: parsed.error.flatten().fieldErrors },
+          { status: 400 },
+        )
+      }
+
+      const result = await changeBookingSlug({ tenantId: ctx.tenantId, userId: ctx.userId, slug: parsed.data.slug })
+      switch (result.outcome) {
+        case 'not_found':
+          return NextResponse.json({ error: 'Clínica não encontrada' }, { status: 404 })
+        case 'taken':
+          return NextResponse.json({ error: BOOKING_SLUG_MESSAGES.taken }, { status: 409 })
+        case 'rate_limited':
+          return NextResponse.json({ error: BOOKING_SLUG_MESSAGES.rateLimited }, { status: 429 })
+        default:
+          return NextResponse.json({ success: true, slug: result.slug })
+      }
+    }
+
     // Regular tenant update
     const parsed = updateTenantSchema.safeParse(body)
     if (!parsed.success) {
@@ -197,7 +231,7 @@ export async function PUT(request: Request) {
 
     // The same entitlement check as the whatsapp_settings branch above, and
     // it has to be here too. `tenantSettingsSchema` is `.passthrough()` and
-    // `updateTenant` writes `settings` wholesale, so this branch could set
+    // `updateTenant` writes any key it is given, so this branch could set
     // whatsapp_mode without ever touching the guarded branch. Gating one
     // entry point and not the other is the same as not gating it.
     const incomingMode = (parsed.data.settings as Record<string, unknown> | undefined)

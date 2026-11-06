@@ -24,18 +24,17 @@ beforeEach(() => {
 })
 
 describe('PATCH /api/onboarding/progress', () => {
-  it('saves the complete contact fields and the draft, and drops the half-typed ones', async () => {
+  it('saves the name, the phone and the draft', async () => {
     const draft = {
       step: 2,
       procedures: [{ selected: false, durationMin: 30, defaultPrice: '150,00' }],
       selectedProductNames: ['Botox 100U'],
       productsTouched: true,
       customProducts: [],
-      customSlug: 'bella',
     }
 
     const res = await patchProgress({
-      clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777', email: 'oi@bel' },
+      clinic: { name: 'Clínica Bella', phone: '(11) 98888-7777' },
       draft,
     })
 
@@ -50,11 +49,11 @@ describe('PATCH /api/onboarding/progress', () => {
     ['half typed', '(11) 9888'],
     ['empty', ''],
   ])('never stores a phone %s', async (_label, phone) => {
-    const res = await patchProgress({ clinic: { phone, email: 'oi@bella.com' } })
+    const res = await patchProgress({ clinic: { name: 'Clínica Bella', phone } })
 
     expect(res.status).toBe(200)
     const [, clinic] = vi.mocked(saveOnboardingProgress).mock.calls[0]
-    expect(clinic).toEqual({ email: 'oi@bella.com' })
+    expect(clinic).toEqual({ name: 'Clínica Bella' })
   })
 
   // Regression: one draft field over its limit failed the whole save, and the
@@ -62,20 +61,13 @@ describe('PATCH /api/onboarding/progress', () => {
   it('still saves the phone when the draft is invalid', async () => {
     const res = await patchProgress({
       clinic: { phone: '(11) 98888-7777' },
-      draft: { step: 1, procedures: [], selectedProductNames: [], productsTouched: false, customProducts: [], customSlug: 'a'.repeat(101) },
+      draft: { step: 1, procedures: [], selectedProductNames: ['a'.repeat(151)], productsTouched: false, customProducts: [] },
     })
 
     expect(res.status).toBe(200)
     const [, clinic, settings] = vi.mocked(saveOnboardingProgress).mock.calls[0]
     expect(clinic).toEqual({ phone: '(11) 98888-7777' })
     expect(settings).toEqual({})
-  })
-
-  // Regression: clearing every address field left the old address stored.
-  it('clears the stored address when every field is emptied', async () => {
-    await patchProgress({ clinic: { address: { street: '', city: '', zip: '' } } })
-
-    expect(vi.mocked(saveOnboardingProgress).mock.calls[0][1]).toEqual({ address: null })
   })
 
   it('clears the stand-in name flag with the first saved name', async () => {

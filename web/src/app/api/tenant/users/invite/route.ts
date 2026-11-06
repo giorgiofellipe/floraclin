@@ -5,11 +5,15 @@ import { inviteUser } from '@/db/queries/users'
 import { inviteUserSchema } from '@/validations/user'
 import { handleApiError } from '@/lib/api-error'
 import { checkPlanLimit } from '@/lib/plans'
+import { emailConfirmationGate } from '@/lib/email-confirmation-gate'
 
 export async function POST(request: Request) {
   try {
     const { ctx, blocked } = await requireWrite('owner')
     if (blocked) return blocked
+    // The invite is an e-mail to any address typed in.
+    const unconfirmed = emailConfirmationGate(ctx)
+    if (unconfirmed) return unconfirmed
 
     const body = await request.json()
     const parsed = inviteUserSchema.safeParse(body)

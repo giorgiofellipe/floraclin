@@ -11,6 +11,7 @@ import { financialFilterSchema, createFinancialEntrySchema } from '@/validations
 import { handleApiError } from '@/lib/api-error'
 import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
+import type { NfseIntake } from '@/types'
 
 export async function GET(request: Request) {
   try {
@@ -71,6 +72,7 @@ export async function POST(request: Request) {
 
     const { card, paymentMethod, totalAmount } = parsed.data
     let paymentError: string | undefined
+    let nfse: NfseIntake | undefined
     if (card && paymentMethod) {
       try {
         const payment = await recordPayment(ctx.tenantId, ctx.userId, {
@@ -80,13 +82,18 @@ export async function POST(request: Request) {
           card,
           expectedTotalDue: totalAmount,
         })
-        if (payment.nfse.documentIds.length > 0) after(() => processDocuments(payment.nfse.documentIds))
+        nfse = payment.nfse
+        const { documentIds } = nfse
+        if (documentIds.length > 0) after(() => processDocuments(documentIds))
       } catch (error) {
         paymentError = cardPaymentErrorMessage(error, { area: 'financial', tenantId: ctx.tenantId })
       }
     }
 
-    return NextResponse.json({ success: true, data: entry, ...(paymentError && { paymentError }) }, { status: 200 })
+    return NextResponse.json(
+      { success: true, data: entry, ...(nfse && { nfse }), ...(paymentError && { paymentError }) },
+      { status: 200 },
+    )
   } catch (error) {
     return handleApiError(error, request)
   }

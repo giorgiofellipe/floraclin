@@ -5,6 +5,8 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn, formatDate } from '@/lib/utils'
+import { formatBrDate, formatBrTime } from '@/lib/dates'
+import { IMPORT_HELP_REQUESTED_SETTING } from '@/lib/import-help'
 import { useAdminTenants, useAdminTenantDetail } from '@/hooks/queries/use-admin-tenants'
 import { useUpdateTenant, useSuspendTenant } from '@/hooks/mutations/use-admin-tenant-mutations'
 import { AdminTenantDialog } from './admin-tenant-dialog'
@@ -461,6 +463,7 @@ function TenantDetail({ tenantId }: { tenantId: string }) {
   const users: TenantUser[] = data?.users ?? []
   const patientCount: number = data?.patientCount ?? 0
   const userCount: number = data?.userCount ?? users.length
+  const importRequestedAt: string | undefined = data?.settings?.[IMPORT_HELP_REQUESTED_SETTING]
 
   return (
     <div className="border-t border-sage/10 bg-[#FAFBFA] px-4 py-4 rounded-b-lg animate-in fade-in slide-in-from-top-1 duration-200">
@@ -473,6 +476,11 @@ function TenantDetail({ tenantId }: { tenantId: string }) {
         <div className="flex items-center gap-1.5 text-xs text-mid">
           <span className="tabular-nums">{patientCount}</span> paciente{patientCount !== 1 ? 's' : ''}
         </div>
+        {importRequestedAt && (
+          <div className="text-xs text-mid">
+            Pediu importação em {formatBrDate(importRequestedAt)} {formatBrTime(importRequestedAt)}
+          </div>
+        )}
       </div>
 
       {/* Users list */}

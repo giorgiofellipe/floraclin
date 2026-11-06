@@ -23,6 +23,7 @@ export const queryKeys = {
     settings: ['nfse', 'settings'] as const,
     status: ['nfse', 'status'] as const,
     preview: (paymentRecordIds: string[]) => ['nfse', 'preview', paymentRecordIds] as const,
+    documents: (filters: Record<string, unknown>) => ['nfse', 'documents', filters] as const,
   },
   financial: {
     all: ['financial'] as const,

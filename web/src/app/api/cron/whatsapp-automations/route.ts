@@ -9,6 +9,7 @@ import { sendAndRecordTemplate } from '@/lib/whatsapp-automated-send'
 import { CreditExhaustedError } from '@/lib/whatsapp-credits'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { isSubscriptionActive } from '@/lib/plans'
+import { EmailConfirmationRequiredError, isTenantAwaitingEmailConfirmation } from '@/lib/email-confirmation-gate'
 import { notifyDiscord, type WhatsappDigestFailingTenant } from '@/lib/discord'
 import { withCronMonitor } from '@/lib/cron-monitor'
 import { buildConfirmationValues, CONFIRMATION_VALUE_KEYS } from '@/lib/whatsapp-confirmation'
@@ -42,6 +43,7 @@ type TenantOutcomeReason =
   | 'sent'
   | 'send_failed'
   | 'credit_exhausted'
+  | 'email_unconfirmed'
   | 'tenant_error'
 
 interface TenantOutcome {
@@ -132,6 +134,11 @@ async function runAutomations() {
         outcomes.push(skipOutcome(tenant.id, tenant.name, 'subscription_inactive'))
         continue
       }
+      // Every send would be refused until the owner confirms; the appointments stay pending for then.
+      if (await isTenantAwaitingEmailConfirmation(tenant.id)) {
+        outcomes.push(skipOutcome(tenant.id, tenant.name, 'email_unconfirmed'))
+        continue
+      }
 
       const automations = await listAutomations(tenant.id)
       const confirmationAuto = automations.find(
@@ -190,6 +197,7 @@ async function runAutomations() {
       let tenantAnamnesisFailed = 0
       let tenantHadPhone = false
       let creditExhausted = false
+      let emailUnconfirmed = false
 
       for (const send of sends) {
         const { kind, appt } = send
@@ -245,6 +253,10 @@ async function runAutomations() {
             creditExhausted = true
             break
           }
+          if (err instanceof EmailConfirmationRequiredError) {
+            emailUnconfirmed = true
+            break
+          }
           if (err instanceof InvalidWhatsAppPhoneError) {
             console.warn(`[cron] Skipping appointment ${appt.id}: ${err.message}`)
             continue
@@ -268,6 +280,8 @@ async function runAutomations() {
       let reason: TenantOutcomeReason
       if (creditExhausted) {
         reason = 'credit_exhausted'
+      } else if (emailUnconfirmed) {
+        reason = 'email_unconfirmed'
       } else if (tenantSent > 0) {
         reason = 'sent'
       } else if (confirmationBlockedReason) {

@@ -9,6 +9,7 @@ import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { InvalidWhatsAppPhoneError, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { SubscriptionExpiredError } from '@/lib/plans'
+import { EmailConfirmationRequiredError } from '@/lib/email-confirmation-gate'
 
 export type RescheduleNotification = 'sent' | 'unavailable' | 'no_phone' | 'no_credits' | 'failed'
 
@@ -65,7 +66,7 @@ export async function sendRescheduleNotification(
     return 'sent'
   } catch (err) {
     if (err instanceof CreditExhaustedError) return 'no_credits'
-    if (err instanceof SubscriptionExpiredError) return 'unavailable'
+    if (err instanceof SubscriptionExpiredError || err instanceof EmailConfirmationRequiredError) return 'unavailable'
     reportSideEffectFailure(err, {
       area: 'whatsapp',
       step: 'reschedule_notification',

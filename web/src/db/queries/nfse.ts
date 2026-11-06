@@ -1,5 +1,5 @@
 import { findMunicipality } from '@bullcode/fiscal'
-import { and, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, not, notExists, notInArray, or, sql } from 'drizzle-orm'
+import { and, count, desc, eq, getTableColumns, gte, inArray, isNotNull, isNull, lt, ne, not, notExists, notInArray, or, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
 import {
   appointments,
@@ -10,13 +10,21 @@ import {
   patients,
   paymentRecords,
   procedureRecords,
+  tenants,
 } from '@/db/schema'
 import { decryptSecret, encryptSecret } from '@/lib/crypto'
+import { endOfBrDay, startOfBrDay } from '@/lib/dates'
+import type { NfseDocumentsFilter } from '@/validations/nfse'
 import type {
   NfseCancelReason,
   NfseCertificateInfo,
+  NfseDocumentListItem,
+  NfseDocumentStatus,
   NfseDocumentSummary,
+  NfseListStatus,
+  NfseEmissionResult,
   NfseEnvironment,
+  NfseProcessResult,
   NfseFiscalSettingsInput,
   NfseSettingsPublic,
   NfseSettingsWithSecrets,
@@ -33,6 +41,10 @@ export const MAX_CANCEL_ATTEMPTS = 10
 const STALE_CLAIM_MS = 15 * 60 * 1000
 const ALWAYS_BACKFILL_WINDOW_MS = 7 * 24 * 60 * 60 * 1000
 const FINAL_ERROR_CODES = ['reconcile_ambiguous', 'payment_reversed']
+
+function isRetryable(row: { status: NfseDocumentStatus; errorCode: string | null }): boolean {
+  return row.status === 'failed' && !FINAL_ERROR_CODES.includes(row.errorCode ?? '')
+}
 const TRANSIENT_ERROR_CODES = ['provider_error', 'reconcile_unavailable']
 export const NOTHING_AT_SEFIN_CODES = [
   'invalid_request',
@@ -71,6 +83,7 @@ function toPublic(row: PublicSettingsRow): NfseSettingsPublic {
     issWithheld: row.issWithheld,
     emissionMode: row.emissionMode,
     emailPatient: row.emailPatient,
+    clinicAddressFallback: row.clinicAddressFallback,
     configured: row.configuredAt !== null,
   }
 }
@@ -143,6 +156,7 @@ export async function saveFiscalSettings(
           ? sql`CASE WHEN ${nfseSettings.emissionMode} = 'always' THEN ${nfseSettings.alwaysEnabledAt} ELSE now() END`
           : null,
       emailPatient: input.emailPatient,
+      clinicAddressFallback: input.clinicAddressFallback,
       configuredAt: new Date(),
       updatedBy: userId,
       updatedAt: new Date(),
@@ -417,6 +431,7 @@ export async function loadDocumentForProcessing(id: string) {
       installment: installments,
       entry: financialEntries,
       patient: patients,
+      clinicAddress: tenants.address,
       performedAt: procedureRecords.performedAt,
       appointmentDate: appointments.date,
     })
@@ -428,6 +443,7 @@ export async function loadDocumentForProcessing(id: string) {
     )
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
     .innerJoin(patients, eq(patients.id, nfseDocuments.patientId))
+    .innerJoin(tenants, eq(tenants.id, nfseDocuments.tenantId))
     .leftJoin(procedureRecords, eq(procedureRecords.id, financialEntries.procedureRecordId))
     .leftJoin(
       appointments,
@@ -446,6 +462,44 @@ export async function getDocument(tenantId: string, id: string): Promise<NfseDoc
     .where(and(eq(nfseDocuments.tenantId, tenantId), eq(nfseDocuments.id, id)))
     .limit(1)
   return row ?? null
+}
+
+export async function describeEmissionResults(
+  tenantId: string,
+  results: NfseProcessResult[],
+): Promise<NfseEmissionResult[]> {
+  if (results.length === 0) return []
+  const rows = await db
+    .select({
+      id: nfseDocuments.id,
+      paymentRecordId: nfseDocuments.paymentRecordId,
+      nfseNumber: nfseDocuments.nfseNumber,
+      value: nfseDocuments.value,
+      emailRequested: nfseDocuments.emailRequested,
+      emailSentAt: nfseDocuments.emailSentAt,
+      patientName: patients.fullName,
+      email: patients.email,
+    })
+    .from(nfseDocuments)
+    .innerJoin(patients, eq(patients.id, nfseDocuments.patientId))
+    .where(and(eq(nfseDocuments.tenantId, tenantId), inArray(nfseDocuments.id, results.map((r) => r.id))))
+  const byId = new Map(rows.map((row) => [row.id, row]))
+  return results.flatMap((result) => {
+    const row = byId.get(result.id)
+    if (!row) return []
+    return [
+      {
+        ...result,
+        paymentRecordId: row.paymentRecordId,
+        nfseNumber: row.nfseNumber,
+        patientName: row.patientName,
+        value: Number(row.value),
+        email: row.email || null,
+        emailRequested: row.emailRequested,
+        emailSent: row.emailSentAt !== null,
+      },
+    ]
+  })
 }
 
 export async function listDocumentsForPaymentRecords(
@@ -477,7 +531,7 @@ export async function listDocumentsForPaymentRecords(
     competenceDate: row.competenceDate,
     emailSentAt: row.emailSentAt?.toISOString() ?? null,
     cancelRequested: row.cancelRequestedAt !== null && row.status !== 'cancelled',
-    retryable: row.status === 'failed' && !FINAL_ERROR_CODES.includes(row.errorCode ?? ''),
+    retryable: isRetryable(row),
   }))
 }
 
@@ -549,5 +603,100 @@ export async function listAlwaysPaymentsMissingDocuments(
       ),
     )
     .orderBy(paymentRecords.recordedAt)
+    .limit(limit)
+}
+
+const LIST_STATUSES: Record<NfseListStatus, NfseDocumentStatus[]> = {
+  issued: ['issued'],
+  cancelled: ['cancelled'],
+  failed: ['failed'],
+  processing: ['pending', 'processing'],
+}
+
+const EXPORTABLE_STATUSES: NfseDocumentStatus[] = ['issued', 'cancelled']
+
+type DocumentFilter = Pick<NfseDocumentsFilter, 'dateFrom' | 'dateTo' | 'status' | 'patientId'>
+
+/** A note belongs to the BR day it was issued, or created when it never was. */
+function documentWhere(tenantId: string, filter: DocumentFilter, statuses?: NfseDocumentStatus[]) {
+  const at = sql`coalesce(${nfseDocuments.issuedAt}, ${nfseDocuments.createdAt})`
+  return and(
+    eq(nfseDocuments.tenantId, tenantId),
+    sql`${at} >= ${startOfBrDay(filter.dateFrom).toISOString()}::timestamptz`,
+    sql`${at} <= ${endOfBrDay(filter.dateTo).toISOString()}::timestamptz`,
+    statuses ? inArray(nfseDocuments.status, statuses) : undefined,
+    filter.patientId ? eq(nfseDocuments.patientId, filter.patientId) : undefined,
+  )
+}
+
+export async function listNfseDocuments(
+  tenantId: string,
+  filter: NfseDocumentsFilter,
+): Promise<{ data: NfseDocumentListItem[]; total: number; page: number; limit: number; totalPages: number }> {
+  const where = documentWhere(tenantId, filter, filter.status ? LIST_STATUSES[filter.status] : undefined)
+  const [rows, [{ total }]] = await Promise.all([
+    db
+      .select({
+        id: nfseDocuments.id,
+        paymentRecordId: nfseDocuments.paymentRecordId,
+        nfseNumber: nfseDocuments.nfseNumber,
+        status: nfseDocuments.status,
+        errorCode: nfseDocuments.errorCode,
+        errorMessage: nfseDocuments.errorMessage,
+        cancelRequestedAt: nfseDocuments.cancelRequestedAt,
+        issuedAt: nfseDocuments.issuedAt,
+        createdAt: nfseDocuments.createdAt,
+        competenceDate: nfseDocuments.competenceDate,
+        value: nfseDocuments.value,
+        patientId: nfseDocuments.patientId,
+        patientName: patients.fullName,
+        emailSentAt: nfseDocuments.emailSentAt,
+        environment: nfseDocuments.environment,
+      })
+      .from(nfseDocuments)
+      .innerJoin(patients, eq(patients.id, nfseDocuments.patientId))
+      .where(where)
+      .orderBy(desc(sql`coalesce(${nfseDocuments.issuedAt}, ${nfseDocuments.createdAt})`), desc(nfseDocuments.id))
+      .limit(filter.limit)
+      .offset((filter.page - 1) * filter.limit),
+    db.select({ total: count() }).from(nfseDocuments).where(where),
+  ])
+
+  return {
+    data: rows.map((row) => ({
+      id: row.id,
+      paymentRecordId: row.paymentRecordId,
+      nfseNumber: row.nfseNumber,
+      status: row.status,
+      cancelRequested: row.cancelRequestedAt !== null && row.status === 'issued',
+      issuedAt: row.issuedAt?.toISOString() ?? null,
+      createdAt: row.createdAt.toISOString(),
+      competenceDate: row.competenceDate,
+      value: Number(row.value),
+      patientId: row.patientId,
+      patientName: row.patientName,
+      errorMessage: row.errorMessage,
+      retryable: isRetryable(row),
+      emailSentAt: row.emailSentAt?.toISOString() ?? null,
+      environment: row.environment,
+    })),
+    total,
+    page: filter.page,
+    limit: filter.limit,
+    totalPages: Math.max(1, Math.ceil(total / filter.limit)),
+  }
+}
+
+/** Issued and cancelled notes with their XML; `limit` lets the caller detect an export over its cap. */
+export async function listNfseXmlForExport(tenantId: string, filter: DocumentFilter, limit: number) {
+  const statuses = filter.status
+    ? LIST_STATUSES[filter.status].filter((status) => EXPORTABLE_STATUSES.includes(status))
+    : EXPORTABLE_STATUSES
+  if (statuses.length === 0) return []
+  return db
+    .select({ nfseNumber: nfseDocuments.nfseNumber, accessKey: nfseDocuments.accessKey, nfseXml: nfseDocuments.nfseXml })
+    .from(nfseDocuments)
+    .where(and(documentWhere(tenantId, filter, statuses), isNotNull(nfseDocuments.nfseXml)))
+    .orderBy(nfseDocuments.issuedAt)
     .limit(limit)
 }

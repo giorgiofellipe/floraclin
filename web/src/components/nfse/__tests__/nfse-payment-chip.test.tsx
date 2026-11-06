@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
@@ -18,16 +18,36 @@ const issued: NfseDocumentSummary = {
   retryable: false,
 }
 
-async function openMenu(nfse: NfseDocumentSummary, canCancel: boolean) {
+function renderChip(nfse: NfseDocumentSummary | null, { canCancel = false, onEmit = () => {} } = {}) {
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <NfsePaymentChip payment={{ id: 'pay-1', nfse }} canEmit canCancel={canCancel} onEmit={() => {}} />
+      <NfsePaymentChip payment={{ id: 'pay-1', nfse }} canEmit canCancel={canCancel} onEmit={onEmit} />
     </QueryClientProvider>,
   )
-  await userEvent.click(screen.getByRole('button'))
+}
+
+async function openMenu(nfse: NfseDocumentSummary, canCancel: boolean) {
+  renderChip(nfse, { canCancel })
+  await userEvent.click(screen.getByTestId('nfse-menu'))
 }
 
 describe('NfsePaymentChip', () => {
+  it.each([
+    { name: 'no note yet', nfse: null },
+    { name: 'a cancelled note', nfse: { ...issued, status: 'cancelled' as const } },
+  ])('shows "Emitir NFS-e" as a button in the row for a payment with $name', async ({ nfse }) => {
+    const onEmit = vi.fn()
+    renderChip(nfse, { onEmit })
+    await userEvent.click(screen.getByRole('button', { name: 'Emitir NFS-e' }))
+    expect(onEmit).toHaveBeenCalledWith('pay-1')
+  })
+
+  it('keeps "Emitir NFS-e" out of the menu of a cancelled note', async () => {
+    await openMenu({ ...issued, status: 'cancelled' }, true)
+    await screen.findByText('Ver PDF')
+    expect(screen.queryByRole('menuitem', { name: 'Emitir NFS-e' })).not.toBeInTheDocument()
+  })
+
   it.each([
     { canCancel: false, visible: false },
     { canCancel: true, visible: true },

@@ -1,5 +1,4 @@
 import { z } from 'zod'
-import { addressSchema, workingHoursSchema } from './tenant'
 import { PROCEDURE_CATEGORIES } from '@/lib/constants'
 import { hasClinicPhone } from '@/lib/clinic-phone'
 
@@ -28,19 +27,15 @@ export type ProductSelection = z.infer<typeof productSelectionSchema>
 
 export const ONBOARDING_STEPS = ['clinic', 'procedures', 'products', 'team'] as const
 
-// An address with every field emptied is stored as none, so clearing it sticks.
-const clinicAddressSchema = addressSchema.unwrap().transform((address) =>
-  Object.values(address).some(Boolean) ? address : null,
-)
-
+// The phone is optional here because the route answers its own message for a missing one.
 const clinicDataSchema = z.object({
   name: z.string().trim().min(1),
-  slug: z.string().trim().min(1).max(100).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'Slug inválido').optional(),
   phone: z.string().optional(),
-  email: z.string().optional(),
-  address: clinicAddressSchema.optional(),
-  workingHours: workingHoursSchema,
 })
+
+/** `wizard`: through every step. `defaults`: "Configurar depois" from the clinic step. */
+export const ONBOARDING_COMPLETION_METHODS = ['wizard', 'defaults'] as const
+export type OnboardingCompletionMethod = (typeof ONBOARDING_COMPLETION_METHODS)[number]
 
 const procedureTypeInputSchema = z.object({
   name: z.string().trim().min(1),
@@ -53,6 +48,7 @@ export const onboardingCompleteSchema = z.object({
   clinic: clinicDataSchema,
   procedureTypes: z.array(procedureTypeInputSchema).max(100, 'Muitos procedimentos').default([]),
   selectedProducts: z.array(productSelectionSchema).max(200, 'Muitos produtos').default([]),
+  method: z.enum(ONBOARDING_COMPLETION_METHODS).default('wizard'),
 })
 
 export type OnboardingCompleteInput = z.infer<typeof onboardingCompleteSchema>
@@ -66,9 +62,6 @@ const savedWhenComplete = <T extends z.ZodType>(schema: T) => schema.optional().
 const progressClinicSchema = z.object({
   name: savedWhenComplete(safeTrimmedString('Nome', 255).min(1)),
   phone: savedWhenComplete(z.string().trim().max(20).refine(hasClinicPhone)),
-  email: savedWhenComplete(z.string().trim().max(255).email()),
-  address: savedWhenComplete(clinicAddressSchema),
-  workingHours: savedWhenComplete(workingHoursSchema),
 })
 
 export const onboardingDraftSchema = z.object({
@@ -85,7 +78,6 @@ export const onboardingDraftSchema = z.object({
   selectedProductNames: z.array(z.string().max(150)).max(200),
   productsTouched: z.boolean(),
   customProducts: z.array(productSelectionSchema).max(200),
-  customSlug: z.string().max(100).regex(/^[a-z0-9-]*$/),
 })
 
 export type OnboardingDraft = z.infer<typeof onboardingDraftSchema>

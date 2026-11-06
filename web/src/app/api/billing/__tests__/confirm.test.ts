@@ -98,6 +98,7 @@ beforeEach(() => {
     email: 'owner@example.com',
     fullName: 'Owner Example',
     isPlatformAdmin: false,
+    emailVerified: true,
   })
   vi.mocked(getPlanBySlug).mockResolvedValue(SAMPLE_PLAN as never)
   vi.mocked(updateSubscriptionPlan).mockResolvedValue(undefined as never)
@@ -175,6 +176,7 @@ describe('POST /api/billing/confirm', () => {
       email: 'p@example.com',
       fullName: 'Practitioner',
       isPlatformAdmin: false,
+      emailVerified: true,
     })
 
     const res = await POST(makeRequest({ sessionId: 'cs_test_123' }))

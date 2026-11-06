@@ -10,7 +10,9 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground [a]:hover:bg-primary/80",
+        // Brand green, not the shadcn near-black: cream on forest is 13.9:1,
+        // on the sage hover 5.6:1 (WCAG AA needs 4.5:1).
+        default: "bg-forest text-cream hover:bg-sage",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

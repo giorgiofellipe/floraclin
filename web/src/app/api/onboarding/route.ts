@@ -11,7 +11,13 @@ import {
   listProcedureTypes,
 } from '@/db/queries/tenants'
 import { findAvailableSlug, generateSlug } from '@/db/queries/admin-tenants'
-import { hasPlaceholderName, PLACEHOLDER_NAME_SETTING } from '@/lib/clinic-placeholder'
+import { isBookingSlugFree } from '@/db/queries/booking-slugs'
+import {
+  hasPlaceholderName,
+  hasPlaceholderSlug,
+  PLACEHOLDER_NAME_SETTING,
+  PLACEHOLDER_SLUG_SETTING,
+} from '@/lib/clinic-placeholder'
 import { scheduleLifecycleWelcome } from '@/lib/lifecycle-sender'
 import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
 import { reportSideEffectFailure } from '@/lib/observability'
@@ -26,13 +32,13 @@ import type { ProcedureCategory } from '@/types/evaluation'
 import { db } from '@/db/client'
 import { tenants, users } from '@/db/schema'
 import { eq, sql } from 'drizzle-orm'
-// withTransaction removed — helper functions use global db which deadlocks in transactions
 import { ONBOARDING_ALREADY_COMPLETED, onboardingCompleteSchema } from '@/validations/onboarding'
+import { addressSchema } from '@/validations/tenant'
 import { handleApiError } from '@/lib/api-error'
 import { isOnboardingCompleted } from '@/lib/onboarding-status'
 import { ForbiddenError, isUniqueViolation } from '@/lib/errors'
 
-const SLUG_TAKEN_MESSAGE = 'Este link já está em uso. Escolha outro.'
+const SLUG_RACE_MESSAGE = 'Não foi possível concluir agora. Tente novamente.'
 
 const alreadyCompleted = () =>
   NextResponse.json({ success: false, error: ONBOARDING_ALREADY_COMPLETED }, { status: 409 })
@@ -88,6 +94,10 @@ export async function POST(request: Request) {
     // Autosave may have cleared the stand-in flag already; it is still set
     // when this save is the first to hear the clinic's real name.
     const stillNamedPlaceholder = hasPlaceholderName(current.settings)
+    // The slug made from the stand-in name. Autosave does not clear this flag,
+    // so it holds after the real name was typed; the name flag covers clinics
+    // created before the slug flag existed that autosave has not reached.
+    const placeholderSlug = stillNamedPlaceholder || hasPlaceholderSlug(current.settings)
     // Pending for a clinic created on arrival after Google sign-up, unless
     // autosave already stamped it with the first saved phone.
     const noticePending = !current.lifecycleNoticeAt
@@ -99,23 +109,23 @@ export async function POST(request: Request) {
     // Onboarding is idempotent, so sequential execution is safe.
 
     {
-      // 1. Update tenant with clinic info, working hours, and slug
-      const slug = data.clinic.slug
-        || await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
+      // 1. The clinic keeps the slug it got at sign-up, which links may already
+      // carry, while it is still free; a stand-in from Google sign-up is
+      // replaced by one from the real name.
+      const keepSignupSlug = !placeholderSlug
+        && !!current.slug
+        && await isBookingSlugFree(db, current.slug, auth.tenantId)
+      const slug = keepSignupSlug
+        ? current.slug
+        : await findAvailableSlug(db, generateSlug(data.clinic.name), auth.tenantId)
 
       let saved: boolean
       try {
-        saved = await saveOnboardingClinic(auth.tenantId, {
-          slug,
-          name: data.clinic.name,
-          phone: data.clinic.phone,
-          email: data.clinic.email,
-          address: data.clinic.address,
-          workingHours: data.clinic.workingHours,
-        })
+        saved = await saveOnboardingClinic(auth.tenantId, { slug, name: data.clinic.name, phone: data.clinic.phone })
       } catch (err) {
+        // Another clinic took the slug between the check and the save; a retry picks another.
         if (isUniqueViolation(err, 'tenants_slug_unique')) {
-          return NextResponse.json({ error: SLUG_TAKEN_MESSAGE }, { status: 409 })
+          return NextResponse.json({ error: SLUG_RACE_MESSAGE }, { status: 409 })
         }
         throw err
       }
@@ -184,7 +194,7 @@ export async function POST(request: Request) {
         }
       }
 
-      // 5. Create default consent templates (idempotent — skip if any exist)
+      // 5. Create default consent templates (idempotent: skip if any exist)
       const { listConsentTemplates } = await import('@/db/queries/consent')
       const existingTemplates = await listConsentTemplates(auth.tenantId)
       const hasTemplates = Object.values(existingTemplates).some((arr) => Array.isArray(arr) && arr.length > 0)
@@ -239,6 +249,7 @@ export async function POST(request: Request) {
       const completionSettings = {
         onboarding_draft: null,
         ...(stillNamedPlaceholder ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+        ...(placeholderSlug ? { [PLACEHOLDER_SLUG_SETTING]: false } : {}),
       }
       const firstCompletion = await markOnboardingCompleted(auth.tenantId, completionSettings)
       // Reported straight away: once the flag is set no later save reports
@@ -249,20 +260,28 @@ export async function POST(request: Request) {
           trackServerEvent(
             'onboarding_completed',
             { distinctId: auth.userId, tenantId: auth.tenantId },
-            { procedure_types_count: data.procedureTypes.length, products_count: data.selectedProducts.length },
+            {
+              procedure_types_count: data.procedureTypes.length,
+              products_count: data.selectedProducts.length,
+              method: data.method,
+            },
           )
         }
         await reportOnboardingCompleted({
           tenantId: auth.tenantId,
           userId: auth.userId,
-          clinic: data.clinic,
+          clinic: { ...data.clinic, address: addressSchema.safeParse(current.address).data },
           signedUpAt: current.createdAt,
         })
       }
       // A concurrent save loses the compare-and-set above. It still clears a
       // leftover stand-in flag (a no-op if the winner did).
-      if (!firstCompletion && stillNamedPlaceholder) {
-        await updateTenantSettings(auth.tenantId, { onboarding_completed: true, [PLACEHOLDER_NAME_SETTING]: false })
+      if (!firstCompletion && placeholderSlug) {
+        await updateTenantSettings(auth.tenantId, {
+          onboarding_completed: true,
+          ...(stillNamedPlaceholder ? { [PLACEHOLDER_NAME_SETTING]: false } : {}),
+          [PLACEHOLDER_SLUG_SETTING]: false,
+        })
       }
 
       // 8. Audit log
@@ -279,6 +298,7 @@ export async function POST(request: Request) {
               completed: true,
               procedureTypesCount: data.procedureTypes.length,
               productsCount: data.selectedProducts.length,
+              method: data.method,
             },
           },
         },

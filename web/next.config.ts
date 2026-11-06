@@ -6,6 +6,9 @@ const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ['192.168.2.99'],
+  // pdfkit reads its font metrics from __dirname at runtime; bundled, that path
+  // points nowhere on Vercel (ENOENT Helvetica.afm on the DANFSe PDF).
+  serverExternalPackages: ['@bullcode/fiscal', 'pdfkit'],
   env: {
     NEXT_PUBLIC_BUILD_DATE: new Date().toISOString().slice(0, 16).replace('T', ' '),
     // Inlined from the server-side `VERCEL_ENV` at build time so the browser

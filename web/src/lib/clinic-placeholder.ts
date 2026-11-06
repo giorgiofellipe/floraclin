@@ -14,6 +14,19 @@ export function hasPlaceholderName(settings: unknown): boolean {
 }
 
 /**
+ * Settings key marking a booking slug made from the stand-in name. Unlike
+ * PLACEHOLDER_NAME_SETTING, autosave leaves it alone (it clears the name flag
+ * as soon as a real name is typed), so the onboarding save still knows to
+ * replace the slug with one from the real name, and clears it then.
+ */
+export const PLACEHOLDER_SLUG_SETTING = 'clinic_slug_placeholder'
+
+/** Whether the clinic's booking slug was made from the Google sign-up stand-in name. */
+export function hasPlaceholderSlug(settings: unknown): boolean {
+  return ((settings as Record<string, unknown> | null | undefined) ?? {})[PLACEHOLDER_SLUG_SETTING] === true
+}
+
+/**
  * Stand-in name for a clinic created right after Google sign-up, before the
  * owner has told us what it is called. Onboarding replaces it.
  */
@@ -30,4 +43,24 @@ export function placeholderClinicName(ownerName: string | null | undefined): str
  */
 export function isPlatformAdminSession(session: unknown): boolean {
   return (session as { isPlatformAdmin?: boolean } | null | undefined)?.isPlatformAdmin === true
+}
+
+/** Longest suggestion, the clinic name column's limit. */
+const MAX_SUGGESTED_NAME_LENGTH = 255
+
+/**
+ * What onboarding prefills as the clinic name after a Google sign-up, while
+ * the clinic still carries the stand-in: "Clínica" and the owner's name from
+ * the Google profile ("Clínica Ana Souza"). Many aesthetics clinics carry the
+ * professional's name, and an editable suggestion beats an empty required
+ * field on a phone. Empty when the profile has no real name: the adapter
+ * falls back to the e-mail's local part ("ana.souza93"), which would make a
+ * poor clinic name.
+ */
+export function suggestedClinicName(ownerName: string | null | undefined, ownerEmail: string | null | undefined): string {
+  const name = ownerName?.trim().replace(/\s+/g, ' ') ?? ''
+  if (!name || !/\p{L}/u.test(name)) return ''
+  const localPart = ownerEmail?.split('@')[0]?.toLowerCase()
+  if (localPart && name.toLowerCase() === localPart) return ''
+  return Array.from(`Clínica ${name}`).slice(0, MAX_SUGGESTED_NAME_LENGTH).join('')
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Loader2Icon, SaveIcon } from 'lucide-react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -87,6 +88,7 @@ interface FormState {
   issWithheld: boolean
   emissionMode: NfseEmissionMode
   emailPatient: boolean
+  clinicAddressFallback: boolean
 }
 
 function rateText(value: number | null): string {
@@ -107,6 +109,7 @@ function toFormState(data: NfseSettingsPublic | null, suggestedCode: string | nu
     issWithheld: data?.issWithheld ?? false,
     emissionMode: data?.emissionMode ?? 'ask',
     emailPatient: data?.emailPatient ?? false,
+    clinicAddressFallback: data?.clinicAddressFallback ?? false,
   }
 }
 
@@ -132,6 +135,7 @@ function toInput(form: FormState): NfseFiscalSettingsInput {
     issWithheld: form.issWithheld,
     emissionMode: form.emissionMode,
     emailPatient: form.emailPatient,
+    clinicAddressFallback: form.clinicAddressFallback,
   }
 }
 
@@ -142,9 +146,11 @@ function FieldError({ message }: { message?: string }) {
 function FiscalSettingsForm({
   data,
   suggestedCode,
+  clinicAddressComplete,
 }: {
   data: NfseSettingsPublic | null
   suggestedCode: string | null
+  clinicAddressComplete: boolean
 }) {
   const save = useSaveNfseSettings()
   const [form, setForm] = useState<FormState>(() => toFormState(data, suggestedCode))
@@ -345,12 +351,32 @@ function FiscalSettingsForm({
           </Select>
           <FieldError message={error('emissionMode')} />
         </div>
-        <div className="flex items-center gap-3">
+        <label className="flex items-center gap-3">
           <Switch
             checked={form.emailPatient}
             onCheckedChange={(checked) => patch({ emailPatient: checked })}
           />
           <span className="text-sm text-charcoal">Enviar a NFS-e por email ao paciente</span>
+        </label>
+        <div className="space-y-1">
+          <label className="flex items-center gap-3">
+            <Switch
+              checked={form.clinicAddressFallback}
+              onCheckedChange={(checked) => patch({ clinicAddressFallback: checked })}
+            />
+            <span className="text-sm text-charcoal">
+              Se o paciente não tiver endereço cadastrado, usar o endereço da clínica
+            </span>
+          </label>
+          {form.clinicAddressFallback && !clinicAddressComplete && (
+            <p className="text-xs text-amber-700">
+              Complete o endereço da clínica em{' '}
+              <Link href="/configuracoes?tab=clinica" className="underline underline-offset-2">
+                Configurações › Clínica
+              </Link>{' '}
+              para usar esta opção.
+            </p>
+          )}
         </div>
       </div>
 
@@ -384,6 +410,7 @@ function FiscalSettingsSection({ cnpj }: { cnpj: string }) {
       key={`${cnpj}-${settings.data?.configured ?? false}`}
       data={settings.data}
       suggestedCode={settings.suggestedMunicipalityCode}
+      clinicAddressComplete={settings.clinicAddressComplete}
     />
   )
 }

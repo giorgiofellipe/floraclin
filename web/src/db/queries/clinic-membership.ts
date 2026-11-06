@@ -1,6 +1,7 @@
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { tenants, tenantUsers } from '@/db/schema'
+import { tenants, tenantUsers, users } from '@/db/schema'
+import { membershipUsableBeforeConfirmation } from '@/lib/email-confirmation-gate'
 
 export type ClinicMemberships = {
   /** Active memberships in tenants that are not soft-deleted. */
@@ -32,12 +33,18 @@ export type ClinicMemberships = {
  */
 export async function getClinicMemberships(userId: string): Promise<ClinicMemberships> {
   const allRows = await db
-    .select({ tenantId: tenantUsers.tenantId, deletedAt: tenants.deletedAt, isActive: tenantUsers.isActive })
+    .select({
+      tenantId: tenantUsers.tenantId,
+      deletedAt: tenants.deletedAt,
+      isActive: tenantUsers.isActive,
+      usable: sql<boolean>`${membershipUsableBeforeConfirmation()}`,
+    })
     .from(tenantUsers)
     .innerJoin(tenants, eq(tenants.id, tenantUsers.tenantId))
+    .innerJoin(users, eq(users.id, tenantUsers.userId))
     .where(eq(tenantUsers.userId, userId))
 
-  const rows = allRows.filter((r) => r.isActive)
+  const rows = allRows.filter((r) => r.isActive && r.usable)
   const liveTenantIds = rows.filter((r) => r.deletedAt === null).map((r) => r.tenantId)
   return {
     liveTenantIds,

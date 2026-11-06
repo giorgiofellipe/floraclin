@@ -49,8 +49,16 @@ describeIntegration('markOnboardingCompleted (integration, requires test DB)', (
     expect(await settingsOf(id)).toEqual({
       clinic_name_placeholder: false,
       timezone: 'America/Sao_Paulo',
+      online_booking_enabled: true,
       onboarding_completed: true,
     })
+  })
+
+  it('keeps online booking off for a clinic that turned it off', async () => {
+    const id = await insertTenant({ online_booking_enabled: false })
+
+    expect(await markOnboardingCompleted(id)).toBe(true)
+    expect(await settingsOf(id)).toEqual({ online_booking_enabled: false, onboarding_completed: true })
   })
 
   it('works when settings is null or the flag is explicitly false', async () => {
@@ -59,6 +67,6 @@ describeIntegration('markOnboardingCompleted (integration, requires test DB)', (
 
     expect(await markOnboardingCompleted(nullId)).toBe(true)
     expect(await markOnboardingCompleted(falseId)).toBe(true)
-    expect(await settingsOf(nullId)).toEqual({ onboarding_completed: true })
+    expect(await settingsOf(nullId)).toEqual({ online_booking_enabled: true, onboarding_completed: true })
   })
 })

@@ -208,10 +208,15 @@ export function PlanCards({
   // and visual, reading and tab order agree.
   const ordered = [...plans].sort((a, b) => a.priceCents - b.priceCents)
   return (
-    <div className={cn('grid gap-5 pt-3', plans.length > 1 && 'sm:grid-cols-2')}>
-      {ordered.map((plan) => (
-        <PlanCard key={plan.slug} plan={plan} {...card} />
-      ))}
+    <div className="pt-3">
+      <div className={cn('grid gap-5', plans.length > 1 && 'sm:grid-cols-2')}>
+        {ordered.map((plan) => (
+          <PlanCard key={plan.slug} plan={plan} {...card} />
+        ))}
+      </div>
+      {card.canSubscribe && (
+        <p className="mt-3 text-center text-xs text-charcoal/75">Você cancela quando quiser em Configurações › Assinatura.</p>
+      )}
     </div>
   )
 }
@@ -299,7 +304,7 @@ export function OfferBadge({ offer }: { offer: EntryOffer | null }) {
  *  clinic's data stays readable and exportable without a plan. */
 export function TrustRow() {
   const items = [
-    { icon: RefreshCwIcon, text: 'Cancele quando quiser' },
+    { icon: RefreshCwIcon, text: 'Sem fidelidade: cancele em poucos cliques' },
     { icon: LockKeyholeIcon, text: 'Pagamento seguro via Stripe' },
     { icon: ShieldCheckIcon, text: 'Seus dados continuam salvos' },
   ]

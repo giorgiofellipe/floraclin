@@ -70,6 +70,7 @@ function settings(pfxBase64 = validPfx): NfseSettingsWithSecrets {
     issWithheld: false,
     emissionMode: 'ask',
     emailPatient: false,
+    clinicAddressFallback: false,
     configured: true,
     pfxBase64,
     password: PASSWORD,

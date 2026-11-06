@@ -2,13 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { drizzle } from 'drizzle-orm/pg-proxy'
 
 /**
- * Four defences that a mutation sweep found nothing pinning. Each one was
+ * Three defences that a mutation sweep found nothing pinning. Each one was
  * deleted, the whole 2500-test suite stayed green, and each is load-bearing
  * for the public signup this branch opens:
  *
- *  - `authorize` refusing an unconfirmed account. Signup no longer creates a
- *    session, so this is the only thing standing between a password and a
- *    working login.
  *  - `markEmailVerifiedViaGoogle` discarding a password planted on an
  *    unconfirmed account. Without it, registering someone else's address and
  *    waiting for them to sign in with Google leaves the planted credential
@@ -57,23 +54,5 @@ describe('Google verification discards a planted password', () => {
     await markEmailVerifiedViaGoogle('Vitima@Clinica.com.BR')
 
     expect(captured[0]).toMatch(/lower\("floraclin"\."users"\."email"\)/i)
-  })
-})
-
-describe('the credentials gate refuses an unconfirmed account', () => {
-  it('is present in authorize and not merely described in a comment', async () => {
-    // A behavioural test would have to boot Auth.js. This reads the source
-    // with comments stripped, so it cannot pass on the paragraph above the
-    // line the way the signup mapping test used to.
-    const fs = await import('node:fs')
-    const path = await import('node:path')
-    const src = fs
-      .readFileSync(path.resolve(__dirname, '../auth-config.ts'), 'utf8')
-      .replace(/\/\*[\s\S]*?\*\//g, '')
-      .split('\n')
-      .filter((line) => !line.trim().startsWith('//'))
-      .join('\n')
-
-    expect(src).toMatch(/if \(!user\.emailVerified\) return null/)
   })
 })

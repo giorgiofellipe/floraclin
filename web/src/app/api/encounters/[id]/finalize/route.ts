@@ -30,6 +30,7 @@ import { InvalidEncounterProcedureError, finalizeEncounter } from '@/lib/encount
 import { recordPayment } from '@/db/queries/financial'
 import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
+import type { NfseIntake } from '@/types'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { round2 } from '@/lib/financial/penalties'
 import type { PaymentMethod } from '@/types'
@@ -116,6 +117,7 @@ export async function POST(
     })
 
     let paymentError: string | undefined
+    let nfse: NfseIntake | undefined
     if (body.cardPayment) {
       const { totalAmount, paymentMethod, installmentCount } = body.financialPlan
       const amount = round2(Number(totalAmount))
@@ -131,13 +133,15 @@ export async function POST(
             expectedRate: body.cardPayment.expectedRate,
           },
         })
-        if (payment.nfse.documentIds.length > 0) after(() => processDocuments(payment.nfse.documentIds))
+        nfse = payment.nfse
+        const { documentIds } = nfse
+        if (documentIds.length > 0) after(() => processDocuments(documentIds))
       } catch (error) {
         paymentError = cardPaymentErrorMessage(error, { area: 'encounter-finalize', tenantId: ctx.tenantId })
       }
     }
 
-    return NextResponse.json({ success: true, data: result, ...(paymentError && { paymentError }) })
+    return NextResponse.json({ success: true, data: result, ...(nfse && { nfse }), ...(paymentError && { paymentError }) })
   } catch (error) {
     if (error instanceof z.ZodError) {
       return NextResponse.json(

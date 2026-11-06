@@ -30,3 +30,23 @@ describe('hasPlaceholderName', () => {
     expect(hasPlaceholderName(null)).toBe(false)
   })
 })
+
+describe('suggestedClinicName (onboarding prefill after Google sign-up)', () => {
+  it('suggests "Clínica" and the Google profile name', async () => {
+    const { suggestedClinicName } = await import('../clinic-placeholder')
+    expect(suggestedClinicName('  Ana   Souza ', 'ana@gmail.com')).toBe('Clínica Ana Souza')
+  })
+
+  it('suggests nothing when the profile had no real name (the e-mail local part stood in)', async () => {
+    const { suggestedClinicName } = await import('../clinic-placeholder')
+    expect(suggestedClinicName('ana.souza93', 'ana.souza93@gmail.com')).toBe('')
+    expect(suggestedClinicName('', 'x@y.com')).toBe('')
+    expect(suggestedClinicName(null, null)).toBe('')
+    expect(suggestedClinicName('1234', 'z@y.com')).toBe('')
+  })
+
+  it('stays within the clinic name column', async () => {
+    const { suggestedClinicName } = await import('../clinic-placeholder')
+    expect(Array.from(suggestedClinicName('A'.repeat(400), 'a@b.c')).length).toBe(255)
+  })
+})
