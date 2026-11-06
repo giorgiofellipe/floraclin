@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { COOKIE_CONSENT_COOKIE_NAME, saveCookieConsent } from '../cookie-consent'
 import { buildFbc, trackMetaEvent } from '../marketing-attribution'

@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The browser side of the consent design, against the real posthog-js in
  * jsdom: what it writes to the device and what it would send, before consent,
