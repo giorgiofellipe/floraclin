@@ -47,11 +47,11 @@ function readFbp(): string | undefined {
   return match ? decodeURIComponent(match[1]) : undefined
 }
 
-const STEP_LABELS = [
-  'Profissional',
-  'Data e Horário',
-  'Seus Dados',
-  'Confirmação',
+const STEPS: { step: Step; label: string }[] = [
+  { step: 1, label: 'Profissional' },
+  { step: 2, label: 'Data e Horário' },
+  { step: 3, label: 'Seus Dados' },
+  { step: 4, label: 'Confirmação' },
 ]
 
 function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
@@ -92,11 +92,10 @@ function ClinicBrand({ clinic }: { clinic: ClinicInfo }) {
   )
 }
 
-function Stepper({ currentStep }: { currentStep: Step }) {
+function Stepper({ currentStep, firstStep }: { currentStep: Step; firstStep: Step }) {
   return (
     <div className="flex items-center justify-center gap-0">
-      {STEP_LABELS.map((label, index) => {
-        const step = (index + 1) as Step
+      {STEPS.filter(({ step }) => step >= firstStep).map(({ step, label }, index) => {
         const isActive = step === currentStep
         const isComplete = step < currentStep
 
@@ -126,7 +125,7 @@ function Stepper({ currentStep }: { currentStep: Step }) {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 ) : (
-                  step
+                  index + 1
                 )}
               </div>
               <span
@@ -156,8 +155,10 @@ export function BookingPage({
   // a late 403 from the booking POST, so that case renders the same closed
   // state instead of a raw error.
   const [closed, setClosed] = useState(!acceptingBookings)
-  const [step, setStep] = useState<Step>(1)
-  const [selectedPractitioner, setSelectedPractitioner] = useState<Practitioner | null>(null)
+  const soloPractitioner = practitioners.length === 1 ? practitioners[0] : null
+  const firstStep: Step = soloPractitioner ? 2 : 1
+  const [step, setStep] = useState<Step>(firstStep)
+  const [selectedPractitioner, setSelectedPractitioner] = useState<Practitioner | null>(soloPractitioner)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined)
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null)
   const [slots, setSlots] = useState<Slot[]>([])
@@ -284,7 +285,7 @@ export function BookingPage({
           <>
         {/* Stepper */}
         <div className="mb-10">
-          <Stepper currentStep={step} />
+          <Stepper currentStep={step} firstStep={firstStep} />
         </div>
 
         {/* Step Content */}
@@ -589,7 +590,7 @@ export function BookingPage({
         {/* Navigation */}
         {step < 4 && (
           <div className="mt-6 flex gap-3">
-            {step > 1 && (
+            {step > firstStep && (
               <button
                 type="button"
                 onClick={() => setStep((s) => (s - 1) as Step)}
