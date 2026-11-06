@@ -5,7 +5,7 @@
  * subtitle) creeping back in.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { BookingPage } from '../booking-page'
 
 const CLINIC = {
@@ -132,7 +132,7 @@ describe('BookingPage', () => {
   describe('when the clinic has a single practitioner', () => {
     afterEach(() => vi.unstubAllGlobals())
 
-    it('skips the practitioner step and loads slots for that practitioner', () => {
+    it('skips the practitioner step and loads slots for that practitioner', async () => {
       const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ slots: [] }) })
       vi.stubGlobal('fetch', fetchMock)
       render(
@@ -148,9 +148,10 @@ describe('BookingPage', () => {
       expect(screen.queryByText('Profissional')).not.toBeInTheDocument()
       expect(screen.queryByRole('button', { name: 'Voltar' })).not.toBeInTheDocument()
 
-      const days = within(screen.getByRole('grid')).getAllByRole('button').filter((b) => !b.hasAttribute('disabled'))
-      fireEvent.click(days[days.length - 1])
+      const today = screen.getByRole('grid').querySelector('[data-today] button')
+      fireEvent.click(today!)
       expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('practitioner_id=p-1'))
+      expect(await screen.findByText('Nenhum horário disponível para esta data.')).toBeInTheDocument()
     })
 
     it('still asks for the practitioner when there are several', () => {
