@@ -19,6 +19,9 @@ const { state, auditMock } = vi.hoisted(() => ({
 vi.mock('@/db/queries/financial', () => ({
   createFinancialEntry: vi.fn(async () => ({ id: 'fe-1', installmentIds: ['inst-1'] })),
 }))
+vi.mock('@/db/queries/financial-accounts', () => ({
+  provisionDefaultAccounts: vi.fn(async () => undefined),
+}))
 vi.mock('@/lib/audit', () => ({ createAuditLog: auditMock }))
 vi.mock('@/db/schema', () => ({
   patientPackages: { __table: 'patientPackages' },
