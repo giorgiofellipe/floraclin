@@ -16,13 +16,19 @@ import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expen
 import type { PaymentMethod } from '@/types'
 import { brToday, startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
 
+/** Runs inside the caller's transaction when it has one (reconciliation), else in its own. */
+function inTransaction<T>(outer: typeof db | undefined, fn: (tx: typeof db) => Promise<T>): Promise<T> {
+  return outer ? fn(outer) : withTransaction(fn)
+}
+
 export async function createExpense(
   tenantId: string,
   userId: string,
-  data: CreateExpenseInput
+  data: CreateExpenseInput,
+  outerTx?: typeof db,
 ) {
   // Verify category belongs to this tenant or is a system default
-  const [category] = await db
+  const [category] = await (outerTx ?? db)
     .select({ id: expenseCategories.id })
     .from(expenseCategories)
     .where(
@@ -38,7 +44,7 @@ export async function createExpense(
     throw new Error('Categoria não encontrada ou não pertence a esta clínica')
   }
 
-  return withTransaction(async (tx) => {
+  return inTransaction(outerTx, async (tx) => {
     const [expense] = await tx
       .insert(expenses)
       .values({
@@ -235,8 +241,9 @@ export async function payExpenseInstallment(
   userId: string,
   paidAt?: string,
   accountId?: string,
+  outerTx?: typeof db,
 ) {
-  return withTransaction(async (tx) => {
+  return inTransaction(outerTx, async (tx) => {
     // 1. Lock installment row with FOR UPDATE to prevent concurrent payments
     const lockResult = await tx.execute(
       sql`SELECT ei.id, ei.expense_id, ei.amount, ei.status, ei.installment_number, e.category_id
