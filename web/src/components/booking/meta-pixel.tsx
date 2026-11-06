@@ -12,6 +12,10 @@ interface MetaPixelProps {
  * Standard Meta Pixel snippet, PageView only. Lead is emitted server-side
  * in the booking route with a deterministic event_id; firing it here too
  * would double-count since there is no dedup coordination with the browser.
+ *
+ * PageView goes through trackSingle: a visitor who reached this page by client
+ * navigation from the app may already have the platform pixel initialised, and
+ * a plain 'track' would send the clinic's visit to it too.
  */
 export function MetaPixel({ datasetId }: MetaPixelProps) {
   const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => 'unset')
@@ -34,7 +38,7 @@ export function MetaPixel({ datasetId }: MetaPixelProps) {
         'https://connect.facebook.net/en_US/fbevents.js');
         fbq('consent', 'grant');
         fbq('init', ${JSON.stringify(datasetId)});
-        fbq('track', 'PageView');
+        fbq('trackSingle', ${JSON.stringify(datasetId)}, 'PageView');
       `}
     </Script>
   )
