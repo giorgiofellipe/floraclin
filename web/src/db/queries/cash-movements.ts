@@ -118,6 +118,13 @@ export async function listCashMovements(
         accountId: cashMovements.accountId,
         accountName: financialAccounts.name,
         isTransfer: sql<boolean>`${cashMovements.transferGroupId} IS NOT NULL`,
+        // Matched to a bank statement line: it can't change account until undone.
+        isReconciled: sql<boolean>`EXISTS (
+          SELECT 1 FROM floraclin.bank_reconciliation_allocations bra
+          WHERE bra.tenant_id = ${cashMovements.tenantId}
+            AND bra.movement_id = ${cashMovements.id}
+            AND bra.undone_at IS NULL
+        )`,
         runningBalance,
       })
       .from(cashMovements)

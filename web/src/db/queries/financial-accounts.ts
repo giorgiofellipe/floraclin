@@ -177,6 +177,53 @@ export async function paymentInflowAccountId(
   return reversalAccountId(tx, tenantId, original?.accountId)
 }
 
+export interface PaymentMovement {
+  movementId: string
+  accountId: string | null
+  /** Matched to a bank statement line: it can't change account until undone. */
+  isReconciled: boolean
+}
+
+/**
+ * The inflow each payment wrote, keyed by payment record, so the payment
+ * history can offer "Trocar conta". Card payments have none: their money lands
+ * through repasses, on the terminal's account.
+ */
+export async function getPaymentMovements(
+  tenantId: string,
+  paymentRecordIds: string[],
+): Promise<Map<string, PaymentMovement>> {
+  const byPayment = new Map<string, PaymentMovement>()
+  if (!paymentRecordIds.length) return byPayment
+  const rows = await db
+    .select({
+      movementId: cashMovements.id,
+      paymentRecordId: cashMovements.paymentRecordId,
+      accountId: cashMovements.accountId,
+      isReconciled: sql<boolean>`EXISTS (
+        SELECT 1 FROM floraclin.bank_reconciliation_allocations bra
+        WHERE bra.tenant_id = ${cashMovements.tenantId}
+          AND bra.movement_id = ${cashMovements.id}
+          AND bra.undone_at IS NULL
+      )`,
+    })
+    .from(cashMovements)
+    .where(
+      and(
+        eq(cashMovements.tenantId, tenantId),
+        inArray(cashMovements.paymentRecordId, paymentRecordIds),
+        eq(cashMovements.type, 'inflow'),
+        isNull(cashMovements.transferGroupId),
+      ),
+    )
+    .orderBy(desc(cashMovements.recordedAt))
+  // Newest first, like paymentInflowAccountId: the first row per payment wins.
+  for (const { paymentRecordId, ...movement } of rows) {
+    if (paymentRecordId && !byPayment.has(paymentRecordId)) byPayment.set(paymentRecordId, movement)
+  }
+  return byPayment
+}
+
 // ─── BALANCES ────────────────────────────────────────────────────────
 
 const signedAmount = sql`CASE WHEN ${cashMovements.type} = 'inflow' THEN ${cashMovements.amount}::numeric ELSE -${cashMovements.amount}::numeric END`

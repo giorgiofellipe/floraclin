@@ -18,6 +18,8 @@ import { cn, formatCurrency, formatDate, formatDateTime } from '@/lib/utils'
 import { round2 } from '@/lib/financial/penalties'
 import type { CardPaymentSummary } from '@/lib/financial/card-repasses'
 import { PartialPaymentDialog } from './partial-payment-dialog'
+import { MoveMovementsDialog, type MoveTarget } from './move-movements-dialog'
+import { useFinancialAccounts } from '@/hooks/queries/use-financial-accounts'
 import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
 import { NfsePaymentChip } from '@/components/nfse/nfse-payment-chip'
 import type { NfseDocumentSummary } from '@/lib/nfse/types'
@@ -30,6 +32,7 @@ import {
   ClockIcon,
   AlertTriangleIcon,
   ChevronDownIcon,
+  ArrowLeftRightIcon,
 } from 'lucide-react'
 import { useReversePayment } from '@/hooks/mutations/use-financial-mutations'
 import { useNfseStatus } from '@/hooks/queries/use-nfse-documents'
@@ -47,6 +50,8 @@ interface PaymentRecord {
   notes: string | null
   card?: CardPaymentSummary | null
   nfse?: NfseDocumentSummary | null
+  /** The inflow it wrote; none for card payments, whose money lands through repasses. */
+  movement?: { movementId: string; accountId: string | null; isReconciled: boolean } | null
 }
 
 function cardLabel(card: CardPaymentSummary): string {
@@ -126,6 +131,12 @@ export function InstallmentTable({
   const { promptAfterPayment, openEmit, openNotConfigured } = useNfsePrompt()
   const { data: nfseStatus } = useNfseStatus()
   const reversePayment = useReversePayment()
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null)
+  const { data: accountsResponse } = useFinancialAccounts()
+  const liveAccounts = (accountsResponse?.data ?? []).filter((a) => !a.archivedAt)
+  const accountNames = new Map(liveAccounts.map((a) => [a.id, a.name]))
+  // Same gate as the Extrato's "Trocar conta": owner/financeiro, two accounts or more.
+  const canMove = (accountsResponse?.canManage ?? false) && liveAccounts.length >= 2
 
   const { data: entryData, isLoading } = useQuery({
     queryKey: ['financial', 'detail', entryId],
@@ -303,7 +314,7 @@ export function InstallmentTable({
                     return (
                       <div
                         key={pr.id}
-                        className="flex items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group"
+                        className="flex flex-wrap items-center gap-3 px-3 py-2 border-t border-[#E8ECEF]/50 group sm:flex-nowrap"
                       >
                         {/* Payment dot */}
                         <div className="w-7 flex justify-center shrink-0">
@@ -321,6 +332,9 @@ export function InstallmentTable({
                             </span>
                             <span className="text-[10px] text-mid">
                               {paymentRecordLabel(pr)}
+                              {pr.movement?.accountId && accountNames.has(pr.movement.accountId) && (
+                                <> · {accountNames.get(pr.movement.accountId)}</>
+                              )}
                             </span>
                           </div>
                           {/* Allocation breakdown */}
@@ -352,6 +366,28 @@ export function InstallmentTable({
                           canCancel={nfseStatus?.canCancel === true}
                           onEmit={handleEmit}
                         />
+
+                        {canMove && pr.movement && (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-6 px-2 text-[10px] text-charcoal hover:bg-[#F0F7F1]"
+                              data-testid="payment-move-account"
+                              disabled={pr.movement.isReconciled}
+                              onClick={() => {
+                                const { movementId, accountId } = pr.movement!
+                                setMoveTarget({ mode: 'movements', movementIds: [movementId], fromAccountId: accountId })
+                              }}
+                            >
+                              <ArrowLeftRightIcon className="h-3 w-3" />
+                              Trocar conta
+                            </Button>
+                            {pr.movement.isReconciled && (
+                              <span className="text-[10px] text-mid">Já conciliado</span>
+                            )}
+                          </div>
+                        )}
 
                         {/* Reverse button */}
                         <Button
@@ -453,6 +489,13 @@ export function InstallmentTable({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <MoveMovementsDialog
+        open={moveTarget !== null}
+        onOpenChange={(open) => !open && setMoveTarget(null)}
+        accounts={liveAccounts}
+        target={moveTarget}
+      />
 
       {payDialogInstallment && (
         <PartialPaymentDialog

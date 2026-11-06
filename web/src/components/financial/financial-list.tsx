@@ -16,6 +16,8 @@ import { InstallmentTable } from './installment-table'
 import { PaymentForm } from './payment-form'
 import { BulkActionBar } from './bulk-action-bar'
 import { RenegotiationDialog } from './renegotiation-dialog'
+import { ChargeActionDialogs, type ChargeDialog } from './charge-action-dialogs'
+import { ChargeRowMenu } from './charge-row-menu'
 import {
   ChevronDownIcon,
   PlusIcon,
@@ -113,6 +115,9 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   const [showPaymentForm, setShowPaymentForm] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [renegDialogOpen, setRenegDialogOpen] = useState(false)
+  // Set when Renegociar comes from one row's menu instead of the selection.
+  const [renegRowEntry, setRenegRowEntry] = useState<FinancialEntry | null>(null)
+  const [rowAction, setRowAction] = useState<{ dialog: ChargeDialog; entry: FinancialEntry } | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
   const updateParam = useCallback(
@@ -234,9 +239,8 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   )
 
   const renegotiationEntries = useMemo(
-    // eslint-disable-next-line react-hooks/preserve-manual-memoization -- pre-existing memoization pattern; cleanup tracked separately
     () =>
-      renegotiableEntries.map((e) => ({
+      (renegRowEntry ? [renegRowEntry] : renegotiableEntries).map((e) => ({
         id: e.id,
         description: e.description,
         patientName: e.patientName,
@@ -244,7 +248,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
         fineAmount: Number(e.totalFineAmount ?? 0),
         interestAmount: Number(e.totalInterestAmount ?? 0),
       })),
-    [selectedEntries],
+    [renegotiableEntries, renegRowEntry],
   )
 
   return (
@@ -433,8 +437,8 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                   isExpanded && 'shadow-md border-sage/30',
                 )}
               >
-                {/* Main row */}
-                <div className="flex items-center gap-3 px-4 py-3">
+                {/* Main row: phones drop the status icon (the chip under the amount says it) to keep room for the name */}
+                <div className="flex items-center gap-2 px-3 py-3 sm:gap-3 sm:px-4">
                   {/* Checkbox */}
                   <div onClick={(e) => e.stopPropagation()}>
                     <Checkbox
@@ -445,7 +449,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                   </div>
 
                   {/* Status indicator */}
-                  <div className={cn('flex items-center justify-center w-8 h-8 rounded-full shrink-0', statusConf.bg)}>
+                  <div className={cn('hidden sm:flex items-center justify-center w-8 h-8 rounded-full shrink-0', statusConf.bg)}>
                     <StatusIcon className={cn('h-3.5 w-3.5', statusConf.text)} />
                   </div>
 
@@ -514,7 +518,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
 
                   {/* Amount */}
                   <div
-                    className="text-right shrink-0 w-28 cursor-pointer"
+                    className="text-right shrink-0 cursor-pointer sm:w-28"
                     onClick={() => setExpandedId(isExpanded ? null : entry.id)}
                   >
                     <span className={cn(
@@ -532,6 +536,15 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                       </span>
                     </div>
                   </div>
+
+                  <ChargeRowMenu
+                    entry={entry}
+                    onDialog={(dialog) => setRowAction({ dialog, entry })}
+                    onRenegotiate={() => {
+                      setRenegRowEntry(entry)
+                      setRenegDialogOpen(true)
+                    }}
+                  />
 
                   {/* Expand chevron */}
                   <button
@@ -595,7 +608,19 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
         canRenegotiate={canRenegotiate}
         canUncancel={canUncancel}
         onClear={() => setSelectedIds(new Set())}
-        onRenegotiate={() => setRenegDialogOpen(true)}
+        onRenegotiate={() => {
+          setRenegRowEntry(null)
+          setRenegDialogOpen(true)
+        }}
+        onSuccess={fetchEntries}
+      />
+
+      {/* One charge's actions, from its row menu */}
+      <ChargeActionDialogs
+        dialog={rowAction?.dialog ?? null}
+        onDialogChange={(dialog) => setRowAction((prev) => (dialog && prev ? { ...prev, dialog } : null))}
+        installmentIds={rowAction?.entry.pendingInstallmentIds ?? []}
+        entryIds={rowAction ? [rowAction.entry.id] : []}
         onSuccess={fetchEntries}
       />
 
@@ -603,10 +628,14 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
       {renegDialogOpen && renegotiationEntries.length > 0 && (
         <RenegotiationDialog
           open={renegDialogOpen}
-          onOpenChange={setRenegDialogOpen}
+          onOpenChange={(open) => {
+            setRenegDialogOpen(open)
+            if (!open) setRenegRowEntry(null)
+          }}
           entries={renegotiationEntries}
           onSuccess={() => {
-            setSelectedIds(new Set())
+            if (!renegRowEntry) setSelectedIds(new Set())
+            setRenegRowEntry(null)
             fetchEntries()
           }}
         />

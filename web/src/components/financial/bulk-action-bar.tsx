@@ -1,34 +1,17 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-  DialogDescription,
-} from '@/components/ui/dialog'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { InfoPopover } from '@/components/ui/info-popover'
-import { Label } from '@/components/ui/label'
-import { DatePicker } from '@/components/ui/date-picker'
-import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useQueryClient } from '@tanstack/react-query'
-import { ApiError, useBulkPay, useBulkCancel, useBulkUncancel } from '@/hooks/mutations/use-financial-mutations'
-import { queryKeys } from '@/hooks/queries/query-keys'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
-import { ReasonDialog } from './reason-dialog'
-import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
-import { brToday, toPaidAtIso } from '@/lib/dates'
-import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
-import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
-import { AccountSelect } from './account-select'
-import { isCardMethod } from '@/lib/financial/card-repasses'
-import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon } from 'lucide-react'
-import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
-import type { PaymentMethod } from '@/types'
+import { ChargeActionDialogs, type ChargeDialog } from './charge-action-dialogs'
+import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon, ChevronUpIcon } from 'lucide-react'
 
 interface BulkActionBarProps {
   selectedCount: number
@@ -41,22 +24,7 @@ interface BulkActionBarProps {
   onSuccess?: () => void
 }
 
-function QuoteProbe({
-  id,
-  paidAt,
-  onTotal,
-}: {
-  id: string
-  paidAt?: string
-  onTotal: (id: string, state: number | 'error' | null) => void
-}) {
-  const { data, error } = useInstallmentQuote(id, paidAt)
-  const state = error ? 'error' : (data?.totalDue ?? null)
-  useEffect(() => {
-    onTotal(id, state)
-  }, [id, state, onTotal])
-  return null
-}
+const RENEGOTIATE_REASON = 'Selecione cobranças do mesmo paciente'
 
 export function BulkActionBar({
   selectedCount,
@@ -68,91 +36,11 @@ export function BulkActionBar({
   onRenegotiate,
   onSuccess,
 }: BulkActionBarProps) {
-  const [payDialogOpen, setPayDialogOpen] = useState(false)
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false)
-  const [uncancelDialogOpen, setUncancelDialogOpen] = useState(false)
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
-  const [paidAt, setPaidAt] = useState('')
-  const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1, expectedRate: null })
-  const [accountId, setAccountId] = useState<string | undefined>()
-  const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
-  const [cancelReason, setCancelReason] = useState('')
-  const [uncancelReason, setUncancelReason] = useState('')
-  const { promptAfterPayment } = useNfsePrompt()
-
-  const queryClient = useQueryClient()
-  const bulkPay = useBulkPay()
-  const bulkCancel = useBulkCancel()
-  const bulkUncancel = useBulkUncancel()
-
-  const cardMethod =
-    isCardMethod(paymentMethod) ? paymentMethod : null
-  const paidAtIso = toPaidAtIso(paidAt)
-  const quoteStates = selectedInstallmentIds.map((id) => quotes[id] ?? null)
-  const quoteFailed = quoteStates.includes('error')
-  const quotesReady = quoteStates.every((q) => typeof q === 'number')
-  const cardGross = quotesReady
-    ? Math.round(quoteStates.reduce<number>((sum, q) => sum + (q as number) * 100, 0)) / 100
-    : 0
-
-  function handleQuote(id: string, state: number | 'error' | null) {
-    setQuotes((prev) => (prev[id] === state ? prev : { ...prev, [id]: state }))
-  }
-
-  async function handleBulkPay() {
-    try {
-      const result = await bulkPay.mutateAsync({
-        installmentIds: selectedInstallmentIds,
-        paymentMethod,
-        paidAt: paidAtIso,
-        card: toCardPayload(paymentMethod, card),
-        accountId: cardMethod ? undefined : accountId,
-      })
-      setPayDialogOpen(false)
-      onClear()
-      onSuccess?.()
-      promptAfterPayment(result?.nfse)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
-        queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
-      }
-      toast.error(err instanceof Error ? err.message : 'Erro ao processar')
-    }
-  }
-
-  async function handleBulkCancel() {
-    if (!cancelReason.trim()) return
-    try {
-      await bulkCancel.mutateAsync({
-        entryIds: selectedEntryIds,
-        reason: cancelReason,
-      })
-      setCancelDialogOpen(false)
-      setCancelReason('')
-      onClear()
-      onSuccess?.()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao processar')
-    }
-  }
-
-  async function handleBulkUncancel() {
-    if (!uncancelReason.trim()) return
-    try {
-      await bulkUncancel.mutateAsync({
-        entryIds: selectedEntryIds,
-        reason: uncancelReason,
-      })
-      setUncancelDialogOpen(false)
-      setUncancelReason('')
-      onClear()
-      onSuccess?.()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Erro ao processar')
-    }
-  }
+  const [dialog, setDialog] = useState<ChargeDialog | null>(null)
 
   if (selectedCount === 0) return null
+
+  const renegotiateReason = !canRenegotiate && selectedEntryIds.length > 0 ? RENEGOTIATE_REASON : null
 
   return (
     <>
@@ -162,7 +50,9 @@ export function BulkActionBar({
           // Insets keep it clear of the notch / home indicator (viewport-fit=cover).
           'fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] z-40 ml-0 md:ml-64',
           'border-t border-sage/20 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]',
-          'flex items-center justify-between gap-3 px-6 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+          // Phones stack the count over the actions so they never overflow at 375px.
+          'flex flex-col gap-2 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]',
+          'sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-6',
           'animate-in slide-in-from-bottom duration-200',
         )}
       >
@@ -183,30 +73,71 @@ export function BulkActionBar({
         <div className="flex items-center gap-2">
           <Button
             size="sm"
-            className="bg-forest text-cream hover:bg-sage transition-colors"
-            onClick={() => {
-              setCard({ terminalId: null, installmentCount: 1, expectedRate: null })
-              setPayDialogOpen(true)
-            }}
+            className="h-11 flex-1 bg-forest text-cream hover:bg-sage transition-colors sm:h-7 sm:flex-none"
+            onClick={() => setDialog('pay')}
             disabled={selectedInstallmentIds.length === 0}
           >
             <CheckCircleIcon data-icon="inline-start" />
             Marcar como pago ({selectedInstallmentIds.length})
           </Button>
+
+          {/* Phones: the other actions sit behind "Mais". */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  className="h-11 border-sage/30 px-4 text-charcoal sm:hidden"
+                  data-testid="bulk-more"
+                >
+                  Mais
+                  <ChevronUpIcon data-icon="inline-end" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent side="top" align="end" className="w-64">
+              <DropdownMenuItem
+                variant="destructive"
+                className="min-h-11"
+                disabled={selectedEntryIds.length === 0}
+                onClick={() => setDialog('cancel')}
+              >
+                <XCircleIcon />
+                Cancelar ({selectedEntryIds.length})
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="min-h-11 flex-wrap"
+                disabled={!canRenegotiate}
+                onClick={onRenegotiate}
+              >
+                <RefreshCwIcon />
+                Renegociar ({selectedEntryIds.length})
+                {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
+              </DropdownMenuItem>
+              {canUncancel && (
+                <DropdownMenuItem className="min-h-11" onClick={() => setDialog('uncancel')}>
+                  <Undo2Icon />
+                  Reativar ({selectedEntryIds.length})
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => setCancelDialogOpen(true)}
+            className="hidden sm:inline-flex"
+            onClick={() => setDialog('cancel')}
             disabled={selectedEntryIds.length === 0}
           >
             <XCircleIcon data-icon="inline-start" />
             Cancelar ({selectedEntryIds.length})
           </Button>
-          <InfoPopover content={!canRenegotiate && selectedEntryIds.length > 0 ? 'Selecione cobranças do mesmo paciente' : null}>
+          <InfoPopover content={renegotiateReason} className="hidden sm:inline-flex">
             <Button
               size="sm"
               variant="outline"
-              className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
+              className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
               onClick={onRenegotiate}
               disabled={!canRenegotiate}
             >
@@ -218,8 +149,8 @@ export function BulkActionBar({
             <Button
               size="sm"
               variant="outline"
-              className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors"
-              onClick={() => setUncancelDialogOpen(true)}
+              className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
+              onClick={() => setDialog('uncancel')}
             >
               <Undo2Icon data-icon="inline-start" />
               Reativar ({selectedEntryIds.length})
@@ -228,100 +159,15 @@ export function BulkActionBar({
         </div>
       </div>
 
-      {/* Bulk Pay Dialog */}
-      <Dialog open={payDialogOpen} onOpenChange={setPayDialogOpen}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-charcoal">Pagamento em Lote</DialogTitle>
-            <DialogDescription className="text-mid">
-              Registrar pagamento para {selectedInstallmentIds.length} parcela(s).
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Método de Pagamento</Label>
-              <Select items={PAYMENT_METHOD_ITEMS} value={paymentMethod} onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent />
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
-              <DatePicker
-                value={paidAt}
-                onChange={(v) => setPaidAt(v)}
-                className="w-full"
-                data-testid="bulk-pay-date"
-              />
-            </div>
-            {cardMethod && payDialogOpen && (
-              <>
-                {selectedInstallmentIds.map((id) => (
-                  <QuoteProbe key={id} id={id} paidAt={paidAtIso} onTotal={handleQuote} />
-                ))}
-                {quotesReady ? (
-                  <CardPaymentFields
-                    method={cardMethod}
-                    gross={cardGross}
-                    paymentYmd={paidAt || brToday()}
-                    value={card}
-                    onChange={setCard}
-                  />
-                ) : (
-                  <p className="text-sm text-mid">
-                    {quoteFailed ? 'Total pendente indisponível' : 'Calculando...'}
-                  </p>
-                )}
-              </>
-            )}
-            {!cardMethod && payDialogOpen && (
-              <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} />
-            )}
-          </div>
-          <DialogFooter className="pt-2">
-            <Button variant="outline" className="border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors" onClick={() => setPayDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay}
-              disabled={bulkPay.isPending || (cardMethod !== null && (!quotesReady || card.terminalId === null))}
-            >
-              {bulkPay.isPending ? 'Processando...' : 'Confirmar'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <ReasonDialog
-        open={cancelDialogOpen}
-        onOpenChange={setCancelDialogOpen}
-        title="Cancelar Cobranças"
-        description={`Cancelar ${selectedEntryIds.length} cobrança(s). Cobranças canceladas podem ser reativadas depois, exceto as que vieram de uma renegociação.`}
-        reasonLabel="Motivo do cancelamento"
-        reason={cancelReason}
-        onReasonChange={setCancelReason}
-        reasonTestId="cancel-reason"
-        confirmLabel="Confirmar Cancelamento"
-        pendingLabel="Cancelando..."
-        isPending={bulkCancel.isPending}
-        destructive
-        onConfirm={handleBulkCancel}
-      />
-
-      <ReasonDialog
-        open={uncancelDialogOpen}
-        onOpenChange={setUncancelDialogOpen}
-        title="Reativar Cobranças"
-        description={`Reativar ${selectedEntryIds.length} cobrança(s).`}
-        reasonLabel="Motivo da reativação"
-        reason={uncancelReason}
-        onReasonChange={setUncancelReason}
-        reasonTestId="uncancel-reason"
-        confirmLabel="Confirmar Reativação"
-        pendingLabel="Reativando..."
-        isPending={bulkUncancel.isPending}
-        onConfirm={handleBulkUncancel}
+      <ChargeActionDialogs
+        dialog={dialog}
+        onDialogChange={setDialog}
+        installmentIds={selectedInstallmentIds}
+        entryIds={selectedEntryIds}
+        onSuccess={() => {
+          onClear()
+          onSuccess?.()
+        }}
       />
     </>
   )
