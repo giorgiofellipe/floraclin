@@ -1,11 +1,12 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { and, count, eq, isNotNull } from 'drizzle-orm'
+import { and, count, eq, inArray, isNotNull } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { cashMovements, tenants, users } from '@/db/schema'
 import {
   createFinancialAccount,
   createTransfer,
   listFinancialAccounts,
+  moveMovementsToAccount,
   resolveMovementAccountId,
   reversalAccountId,
   setFinancialAccountArchived,
@@ -182,5 +183,59 @@ describeIntegration('financial accounts (integration, requires test DB)', () => 
         [main, 'bank', 'Banco', true],
       ].sort(),
     )
+  })
+
+  describe('moving movements between accounts', () => {
+    const day = new Date('2026-11-03T15:00:00Z')
+
+    it('moves a payment and its reversal together, leaving amount and date alone', async () => {
+      const [original] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '70.00', day)).returning()
+      const [counter] = await db
+        .insert(cashMovements)
+        .values({ ...inflow(CLINIC, cash.id, '70.00', day), type: 'outflow' })
+        .returning()
+      await db.update(cashMovements).set({ reversedByMovementId: counter.id }).where(eq(cashMovements.id, original.id))
+
+      // Picking only the counter still moves the pair.
+      const result = await moveMovementsToAccount(CLINIC, USER, { toAccountId: bank.id, movementIds: [counter.id] })
+      expect(result).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+
+      const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, [original.id, counter.id]))
+      expect(rows.map((r) => r.accountId)).toEqual([bank.id, bank.id])
+      expect(rows.map((r) => r.amount)).toEqual(['70.00', '70.00'])
+    })
+
+    it('skips transfer legs and refuses another clinic or an unknown movement', async () => {
+      await createTransfer(CLINIC, USER, { fromAccountId: cash.id, toAccountId: bank.id, amount: 5, date: '2026-11-03' })
+      const legs = await db
+        .select({ id: cashMovements.id })
+        .from(cashMovements)
+        .where(and(eq(cashMovements.tenantId, CLINIC), isNotNull(cashMovements.transferGroupId)))
+      const result = await moveMovementsToAccount(CLINIC, USER, {
+        toAccountId: cash.id,
+        movementIds: legs.map((l) => l.id),
+      })
+      expect(result.moved).toBe(0)
+      expect(result.skippedTransfers).toBe(legs.length)
+
+      await expect(
+        moveMovementsToAccount(CLINIC, USER, { toAccountId: otherBank.id, movementIds: legs.map((l) => l.id) }),
+      ).rejects.toMatchObject({ code: 'FINANCIAL_ACCOUNT_NOT_FOUND' })
+    })
+
+    it('moves a whole account for a period', async () => {
+      const [inside] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '10.00', new Date('2026-11-10T15:00:00Z'))).returning()
+      const [outside] = await db.insert(cashMovements).values(inflow(CLINIC, cash.id, '11.00', new Date('2026-10-02T15:00:00Z'))).returning()
+
+      await moveMovementsToAccount(CLINIC, USER, {
+        toAccountId: bank.id,
+        fromAccountId: cash.id,
+        dateFrom: '2026-11-01',
+        dateTo: '2026-11-30',
+      })
+
+      const rows = await db.select().from(cashMovements).where(inArray(cashMovements.id, [inside.id, outside.id]))
+      expect(Object.fromEntries(rows.map((r) => [r.id, r.accountId]))).toEqual({ [inside.id]: bank.id, [outside.id]: cash.id })
+    })
   })
 })

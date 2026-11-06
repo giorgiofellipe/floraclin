@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ArchiveIcon, ArchiveRestoreIcon, Loader2Icon, PencilIcon, PlusIcon } from 'lucide-react'
+import { ArchiveIcon, ArchiveRestoreIcon, ArrowLeftRightIcon, Loader2Icon, PencilIcon, PlusIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   useFinancialAccounts,
@@ -12,6 +12,7 @@ import {
 import { ACCOUNT_KIND_LABELS } from '@/lib/financial/account-labels'
 import { cn, formatCurrency } from '@/lib/utils'
 import { FinancialAccountDialog } from './financial-account-dialog'
+import { MoveMovementsDialog } from '../move-movements-dialog'
 
 function describeAccount(account: FinancialAccount): string {
   const bank = [account.bankName, account.bankAgency && `ag. ${account.bankAgency}`, account.bankAccount && `cc ${account.bankAccount}`]
@@ -25,6 +26,8 @@ export function FinancialAccountsManager() {
   const accounts = data?.data ?? []
   const canManage = data?.canManage ?? false
   const setArchived = useSetFinancialAccountArchived()
+  const liveAccounts = accounts.filter((a) => !a.archivedAt)
+  const [moving, setMoving] = useState(false)
 
   // null: closed; { account: null }: creating; { account }: editing that row.
   const [editing, setEditing] = useState<{ account: FinancialAccount | null } | null>(null)
@@ -121,11 +124,21 @@ export function FinancialAccountsManager() {
       </div>
 
       {canManage && (
-        <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ account: null })}>
-          <PlusIcon className="h-3.5 w-3.5" />
-          Adicionar conta
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={() => setEditing({ account: null })}>
+            <PlusIcon className="h-3.5 w-3.5" />
+            Adicionar conta
+          </Button>
+          {liveAccounts.length >= 2 && (
+            <Button type="button" variant="outline" size="sm" onClick={() => setMoving(true)}>
+              <ArrowLeftRightIcon className="h-3.5 w-3.5" />
+              Mover pagamentos entre contas
+            </Button>
+          )}
+        </div>
       )}
+
+      <MoveMovementsDialog open={moving} onOpenChange={setMoving} accounts={liveAccounts} target={{ mode: 'account' }} />
 
       <FinancialAccountDialog
         open={editing !== null}

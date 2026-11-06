@@ -19,6 +19,7 @@ import { LedgerSummaryCards } from './ledger-summary-cards'
 import { LedgerExport } from './ledger-export'
 import { AccountBalances } from './account-balances'
 import { TransferDialog, type TransferPreset } from './transfer-dialog'
+import { MoveMovementsDialog, type MoveTarget } from '../move-movements-dialog'
 import {
   ArrowUpRightIcon,
   ArrowDownRightIcon,
@@ -50,6 +51,7 @@ export function LedgerView() {
   const [accountId, setAccountId] = useState('')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferPreset, setTransferPreset] = useState<TransferPreset | null>(null)
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null)
   const [page, setPage] = useState(1)
 
   const filters = {
@@ -331,7 +333,20 @@ export function LedgerView() {
                         <span className="text-mid">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-mid whitespace-nowrap">{m.accountName ?? '—'}</td>
+                    <td className="px-4 py-3 text-mid whitespace-nowrap">
+                      {m.accountName ?? '—'}
+                      {canManageAccounts && liveAccounts.length >= 2 && !m.isTransfer && (
+                        <Button
+                          type="button"
+                          variant="link"
+                          size="sm"
+                          className="h-auto px-2 py-0 text-xs"
+                          onClick={() => setMoveTarget({ mode: 'movements', movementIds: [m.id], fromAccountId: m.accountId })}
+                        >
+                          Trocar
+                        </Button>
+                      )}
+                    </td>
                     <td className={`px-4 py-3 text-right font-medium tabular-nums ${isInflow ? 'text-[#4A6B52]' : 'text-red-600'}`}>
                       {isInflow ? '+' : '-'}{formatCurrency(Number(m.amount))}
                     </td>
@@ -374,6 +389,12 @@ export function LedgerView() {
       )}
 
       <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} accounts={liveAccounts} preset={transferPreset} />
+      <MoveMovementsDialog
+        open={moveTarget !== null}
+        onOpenChange={(open) => !open && setMoveTarget(null)}
+        accounts={liveAccounts}
+        target={moveTarget}
+      />
     </div>
   )
 }

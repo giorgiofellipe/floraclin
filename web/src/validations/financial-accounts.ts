@@ -62,9 +62,30 @@ export const transferSchema = z.object({
   description: z.string().trim().max(255, 'Descrição muito longa').optional(),
 })
 
+/**
+ * Move payments to another account: the ones picked, or every movement of one
+ * account (optionally in a date range) for a clinic that registered a stretch
+ * of payments on the wrong account.
+ */
+export const moveMovementsSchema = z
+  .object({
+    toAccountId: z.string().uuid('Conta de destino inválida'),
+    movementIds: z.array(z.string().uuid()).min(1).max(500).optional(),
+    fromAccountId: z.string().uuid('Conta de origem inválida').optional(),
+    dateFrom: ymd.optional(),
+    dateTo: ymd.optional(),
+  })
+  .refine((v) => Boolean(v.movementIds) !== Boolean(v.fromAccountId), {
+    message: 'Informe as movimentações ou a conta de origem',
+  })
+  .refine((v) => !v.movementIds || (!v.dateFrom && !v.dateTo), { message: 'Datas só valem com a conta de origem' })
+  .refine((v) => v.fromAccountId !== v.toAccountId, { message: 'Escolha contas diferentes' })
+  .refine((v) => !v.dateFrom || !v.dateTo || v.dateFrom <= v.dateTo, { message: 'Período inválido' })
+
 /** An optional account picked in a payment dialog; omitted means the default. */
 export const accountIdField = z.string().uuid('Conta inválida').optional()
 
 export type CreateFinancialAccountInput = z.infer<typeof createFinancialAccountSchema>
 export type UpdateFinancialAccountInput = z.infer<typeof updateFinancialAccountSchema>
 export type TransferInput = z.infer<typeof transferSchema>
+export type MoveMovementsInput = z.infer<typeof moveMovementsSchema>
