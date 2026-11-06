@@ -2,6 +2,7 @@ import { z } from 'zod'
 import type { PaymentMethod } from '@/types'
 import { brToday, endOfBrDay } from '@/lib/dates'
 import { isCardMethod } from '@/lib/financial/card-repasses'
+import { accountIdField } from './financial-accounts'
 
 export const paymentMethods: PaymentMethod[] = ['pix', 'credit_card', 'debit_card', 'cash', 'transfer']
 const financialStatuses = ['pending', 'partial', 'paid', 'overdue', 'cancelled', 'renegotiated'] as const
@@ -87,6 +88,7 @@ export const recordPaymentSchema = z.object({
     .refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'),
   acceptOverpayment: z.boolean().optional(),
   card: cardPaymentField,
+  accountId: accountIdField,
 }).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
 
 export const renegotiateSchema = z.object({
@@ -115,6 +117,7 @@ export const bulkPaySchema = z.object({
   }),
   paidAt: paidAtField,
   card: cardPaymentField,
+  accountId: accountIdField,
 }).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
 
 export const bulkCancelSchema = z.object({
@@ -150,6 +153,7 @@ export const ledgerFilterSchema = z.object({
   paymentMethod: z.enum(paymentMethods as [string, ...string[]]).optional(),
   patientId: z.string().uuid().optional(),
   categoryId: z.string().uuid().optional(),
+  accountId: z.string().uuid().optional(),
   dateFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data inicial inválida (esperado YYYY-MM-DD)'),
   dateTo: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Data final inválida (esperado YYYY-MM-DD)'),
   page: z.number().int().positive().optional().default(1),

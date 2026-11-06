@@ -12,6 +12,7 @@ interface LedgerExportProps {
     paymentMethod?: string
     patientId?: string
     categoryId?: string
+    accountId?: string
   }
 }
 

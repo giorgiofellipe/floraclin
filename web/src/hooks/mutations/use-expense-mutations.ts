@@ -33,8 +33,17 @@ export function useCreateExpense() {
 export function usePayExpenseInstallment() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, paymentMethod, paidAt }: { id: string; paymentMethod: string; paidAt?: string }) =>
-      mutateJson(`/api/expenses/installments/${id}/pay`, 'PUT', { paymentMethod, paidAt }),
+    mutationFn: ({
+      id,
+      paymentMethod,
+      paidAt,
+      accountId,
+    }: {
+      id: string
+      paymentMethod: string
+      paidAt?: string
+      accountId?: string
+    }) => mutateJson(`/api/expenses/installments/${id}/pay`, 'PUT', { paymentMethod, paidAt, accountId }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.expenses.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })

@@ -19,6 +19,14 @@ vi.mock('../card-payments', () => ({
   cancelCardPaymentTx: (...args: unknown[]) => cancelCardPaymentTxMock(...args),
 }))
 
+// How the original's account is found is covered in financial-accounts.test.ts.
+// Here it is one call with a fixed answer, so the scripted tx sequence stays
+// the reversal's own.
+const paymentInflowAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-original')
+vi.mock('../financial-accounts', () => ({
+  paymentInflowAccountId: (...args: unknown[]) => paymentInflowAccountIdMock(...args),
+}))
+
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const USER_ID = '00000000-0000-0000-0000-0000000000u1'
 const PATIENT_ID = '00000000-0000-0000-0000-00000000p001'
@@ -308,6 +316,38 @@ describe('reversePayment outflow link and card payments', () => {
     const link = log.find((q) => q.op === 'update' && tableOf(q) === cashMovements)
     expect(link?.capture.value).toEqual({ reversedByMovementId: 'out-1' })
     expect(whereParams(link!.capture)).toContain(PAYMENT_RECORD_ID)
+  })
+
+  // The outflow undoes the money where the payment landed, not on whatever
+  // account is the default today.
+  it("writes the reversal outflow on the original inflow's account", async () => {
+    const { reversePayment } = await import('../financial')
+    const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
+    const { tx, log } = routedTx((q) => {
+      const table = tableOf(q)
+      if (q.op === 'insert' && table === cashMovements) return [{ id: 'out-1' }]
+      if (q.op !== 'select') return undefined
+      if (table === paymentRecords) {
+        const fields = Object.keys((q.fields as object | undefined) ?? {})
+        if (fields.includes('reversedAt')) return [{ reversedAt: null }]
+        return (q.capture.calls ?? []).some(([m]) => m === 'orderBy')
+          ? []
+          : [{ id: PAYMENT_RECORD_ID, installmentId: INSTALLMENT_ID, amount: '100.00', paymentMethod: 'cash', cardPaymentId: null }]
+      }
+      if (table === installments) {
+        if (isLock(q)) return [installmentRow({ status: 'paid' })]
+        return [{ status: 'paid', amountPaid: '100.00' }]
+      }
+      if (table === financialEntries) return [{ id: ENTRY_ID, patientId: PATIENT_ID, description: 'x', status: 'paid' }]
+      return []
+    })
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+
+    await reversePayment(TENANT, USER_ID, PAYMENT_RECORD_ID, undefined, { cancelNfse: true })
+
+    expect(paymentInflowAccountIdMock).toHaveBeenCalledWith(tx, TENANT, PAYMENT_RECORD_ID)
+    const outflow = log.find((q) => q.op === 'insert' && tableOf(q) === cashMovements)
+    expect(outflow?.capture.value).toMatchObject({ type: 'outflow', accountId: 'acct-original' })
   })
 
   // Regression: reversing one record of a bulk card payment left the others

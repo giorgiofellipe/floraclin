@@ -33,6 +33,13 @@ vi.mock('../card-payments', () => ({
   createCardPaymentTx: (...args: unknown[]) => createCardPaymentTxMock(...args),
 }))
 
+// Account resolution is covered in financial-accounts.test.ts. Here it is one
+// call with a fixed answer, so the scripted tx sequence stays the batch's own.
+const resolveMovementAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-default')
+vi.mock('../financial-accounts', () => ({
+  resolveMovementAccountId: (...args: unknown[]) => resolveMovementAccountIdMock(...args),
+}))
+
 const reportSideEffectFailureMock = vi.fn()
 vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
@@ -151,7 +158,8 @@ describe('bulkPayInstallments', () => {
 
     const paymentInsert: { value?: unknown } = {}
     tx.insert.mockReturnValueOnce(chainCapturing([{ id: 'pay-1' }], paymentInsert))
-    tx.insert.mockReturnValueOnce(chain(undefined)) // cashMovements
+    const cashInsert: { value?: unknown } = {}
+    tx.insert.mockReturnValueOnce(chainCapturing(undefined, cashInsert)) // cashMovements
     tx.update.mockReturnValueOnce(chain(undefined)) // installments final
     tx.select.mockReturnValueOnce(chain([{ status: 'paid', amountPaid: '790.75' }])) // updateEntryStatus
     tx.update.mockReturnValueOnce(chain(undefined)) // financialEntries
@@ -163,9 +171,12 @@ describe('bulkPayInstallments', () => {
       installmentIds: [INSTALLMENT_ID],
       paymentMethod: 'pix',
       paidAt,
+      accountId: 'acct-picked',
     })
 
     expect(results).toHaveLength(1)
+    expect(resolveMovementAccountIdMock).toHaveBeenCalledWith(tx, TENANT, { accountId: 'acct-picked', method: 'pix' })
+    expect(cashInsert.value).toMatchObject({ amount: '790.75', accountId: 'acct-default' })
     expect(results[0].allocation).toEqual({ interestCovered: 25.75, fineCovered: 15, principalCovered: 750 })
     expect(paymentInsert.value).toMatchObject({ amount: '790.75', recordedAt: expect.any(Date) })
     // One audit row per installment paid, on the same transaction as the payments.

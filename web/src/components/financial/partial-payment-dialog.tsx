@@ -26,6 +26,7 @@ import { allocatePayment } from '@/lib/financial/penalties'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { brToday, toPaidAtIso } from '@/lib/dates'
 import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-payment-fields'
+import { AccountSelect } from './account-select'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import type { NfseIntake, PaymentMethod } from '@/types'
 
@@ -65,6 +66,7 @@ export function PartialPaymentDialog({
   })
   const [paidAt, setPaidAt] = useState('')
   const [notes, setNotes] = useState('')
+  const [accountId, setAccountId] = useState<string | undefined>()
 
   const paidAtIso = toPaidAtIso(paidAt)
 
@@ -133,6 +135,8 @@ export function PartialPaymentDialog({
         paymentMethod,
         paidAt: paidAtIso,
         card: toCardPayload(paymentMethod, card),
+        // A card's money arrives with its repasses, on the terminal's payout account.
+        accountId: cardMethod ? undefined : accountId,
         notes: notes || undefined,
         expectedTotalDue: quote.totalDue,
         acceptOverpayment: isOverpayment || undefined,
@@ -224,7 +228,7 @@ export function PartialPaymentDialog({
             </Select>
           </div>
 
-          {cardMethod && (
+          {cardMethod ? (
             <CardPaymentFields
               method={cardMethod}
               gross={parsedAmount}
@@ -232,6 +236,8 @@ export function PartialPaymentDialog({
               value={card}
               onChange={setCard}
             />
+          ) : (
+            <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} />
           )}
 
           {/* Backdated payment date */}

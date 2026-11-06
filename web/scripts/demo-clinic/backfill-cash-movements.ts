@@ -41,6 +41,7 @@ import { pathToFileURL } from 'node:url'
 import { and, count, eq, isNotNull } from 'drizzle-orm'
 import { db } from '@/db/client'
 import { cashMovements, expenseInstallments, expenses, financialEntries, installments, tenants } from '@/db/schema'
+import { defaultAccountResolver } from '@/db/queries/financial-accounts'
 import { DEMO_SLUG, DEMO_TENANT_ID } from '@/lib/demo-seed/config'
 
 const INSERT_CHUNK = 400
@@ -276,28 +277,40 @@ async function main(): Promise<number> {
     // friendlier error, this one is the one that actually holds.
     await assertNoExistingCashMovements()
 
-    const inflowRows = inflows.map((row) => ({
-      tenantId: DEMO_TENANT_ID,
-      type: 'inflow' as const,
-      amount: row.amount,
-      description: row.description,
-      paymentMethod: row.paymentMethod,
-      movementDate: row.movementDate,
-      patientId: row.patientId,
-      recordedBy: row.recordedBy,
-    }))
+    // cash_movements.account_id is NOT NULL: each row goes to the account the
+    // app picks for its method, provisioned on first use the same way.
+    const accountFor = defaultAccountResolver(tx, DEMO_TENANT_ID)
 
-    const outflowRows = outflows.map((row) => ({
-      tenantId: DEMO_TENANT_ID,
-      type: 'outflow' as const,
-      amount: row.amount,
-      description: row.description,
-      paymentMethod: row.paymentMethod,
-      movementDate: row.movementDate,
-      expenseInstallmentId: row.expenseInstallmentId,
-      expenseCategoryId: row.expenseCategoryId,
-      recordedBy: row.recordedBy,
-    }))
+    const inflowRows = []
+    for (const row of inflows) {
+      inflowRows.push({
+        tenantId: DEMO_TENANT_ID,
+        type: 'inflow' as const,
+        amount: row.amount,
+        description: row.description,
+        paymentMethod: row.paymentMethod,
+        movementDate: row.movementDate,
+        patientId: row.patientId,
+        recordedBy: row.recordedBy,
+        accountId: await accountFor(row.paymentMethod),
+      })
+    }
+
+    const outflowRows = []
+    for (const row of outflows) {
+      outflowRows.push({
+        tenantId: DEMO_TENANT_ID,
+        type: 'outflow' as const,
+        amount: row.amount,
+        description: row.description,
+        paymentMethod: row.paymentMethod,
+        movementDate: row.movementDate,
+        expenseInstallmentId: row.expenseInstallmentId,
+        expenseCategoryId: row.expenseCategoryId,
+        recordedBy: row.recordedBy,
+        accountId: await accountFor(row.paymentMethod),
+      })
+    }
 
     await inChunks([...inflowRows, ...outflowRows], (chunk) => tx.insert(cashMovements).values(chunk))
   })

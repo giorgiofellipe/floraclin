@@ -172,6 +172,10 @@ vi.mock('@/db/schema', () => ({
   consentTemplates: { __table: 'consentTemplates' },
 }))
 
+vi.mock('@/db/queries/financial-accounts', () => ({
+  provisionDefaultAccounts: vi.fn(async () => undefined),
+}))
+
 vi.mock('@/lib/audit', () => ({
   createAuditLog: vi.fn(async () => undefined),
 }))

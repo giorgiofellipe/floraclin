@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { LedgerView } from '../ledger-view'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -15,6 +15,9 @@ const mockLedgerData = {
       movementDate: '2026-03-15',
       patientName: 'Maria Silva',
       categoryName: null,
+      accountId: 'acc-bank',
+      accountName: 'Itaú',
+      isTransfer: false,
       runningBalance: 1500,
     },
     {
@@ -26,13 +29,32 @@ const mockLedgerData = {
       movementDate: '2026-03-16',
       patientName: null,
       categoryName: 'Materiais/Insumos',
+      accountId: 'acc-bank',
+      accountName: 'Itaú',
+      isTransfer: false,
       runningBalance: 1200,
+    },
+    {
+      id: 'mov-3',
+      type: 'outflow' as const,
+      amount: '100.00',
+      description: 'Transferência: Itaú → Caixa',
+      paymentMethod: null,
+      movementDate: '2026-03-17',
+      patientName: null,
+      categoryName: null,
+      accountId: 'acc-bank',
+      accountName: 'Itaú',
+      isTransfer: true,
+      runningBalance: 1100,
     },
   ],
   summary: {
     totalInflows: 1500,
     totalOutflows: 300,
     netResult: 1200,
+    transfersIn: 100,
+    transfersOut: 100,
     overdueReceivables: 0,
   },
   pagination: {
@@ -57,6 +79,19 @@ vi.mock('@/hooks/queries/use-financial', () => ({
 
 vi.mock('@/hooks/queries/use-financial-settings', () => ({
   useExpenseCategories: () => ({ data: [] }),
+}))
+
+const mockAccounts = {
+  data: [
+    { id: 'acc-bank', kind: 'bank', name: 'Itaú', isDefault: true, archivedAt: null, balance: 1200 },
+    { id: 'acc-cash', kind: 'cash', name: 'Caixa', isDefault: true, archivedAt: null, balance: -50 },
+    { id: 'acc-old', kind: 'bank', name: 'Bradesco', isDefault: false, archivedAt: '2026-10-01T00:00:00Z', balance: 0 },
+  ],
+  canManage: true,
+}
+vi.mock('@/hooks/queries/use-financial-accounts', () => ({
+  useFinancialAccounts: () => ({ data: mockAccounts }),
+  useCreateTransfer: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -85,7 +120,7 @@ describe('LedgerView', () => {
     expect(screen.getByText('Compra de materiais')).toBeInTheDocument()
     expect(screen.getByText('Materiais/Insumos')).toBeInTheDocument()
 
-    const outflowIcon = screen.getByTestId('outflow-icon')
+    const [outflowIcon] = screen.getAllByTestId('outflow-icon')
     expect(outflowIcon).toBeInTheDocument()
     expect(outflowIcon).toHaveClass('text-red-600')
   })
@@ -124,5 +159,22 @@ describe('LedgerView', () => {
     render(<LedgerView />)
 
     expect(screen.getByText('Exportar CSV')).toBeInTheDocument()
+  })
+
+  it("shows each live account's balance, but not archived ones", () => {
+    render(<LedgerView />)
+
+    const balances = within(screen.getByTestId('account-balances'))
+    expect(balances.getByText('R$ 1.200,00')).toBeInTheDocument()
+    expect(balances.getByText('-R$ 50,00')).toBeInTheDocument()
+    expect(balances.queryByText(/Bradesco/)).not.toBeInTheDocument()
+  })
+
+  it('marks a transfer leg and says transfers stay out of the totals', () => {
+    render(<LedgerView />)
+
+    expect(screen.getByText('Transferência')).toBeInTheDocument()
+    expect(screen.getByTestId('ledger-transfers')).toHaveTextContent('transferências entre contas')
+    expect(screen.getAllByText('Itaú').length).toBeGreaterThanOrEqual(3)
   })
 })

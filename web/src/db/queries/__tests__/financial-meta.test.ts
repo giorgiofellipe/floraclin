@@ -54,6 +54,13 @@ vi.mock('@/lib/observability', () => ({
   reportSideEffectFailure: (...args: unknown[]) => reportSideEffectFailureMock(...args),
 }))
 
+// Account resolution is covered in financial-accounts.test.ts and adds no
+// query to the scripted transactions here.
+vi.mock('../financial-accounts', () => ({
+  resolveMovementAccountId: async () => 'acct-default',
+  paymentInflowAccountId: async () => 'acct-original',
+}))
+
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const USER_ID = '00000000-0000-0000-0000-0000000000u1'
 const PATIENT_ID = '00000000-0000-0000-0000-00000000p001'

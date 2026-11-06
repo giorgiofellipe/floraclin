@@ -4,6 +4,7 @@ import { requireWrite } from '@/lib/write-access'
 import { createCardTerminal, listCardTerminals } from '@/db/queries/card-terminals'
 import { cardTerminalSchema } from '@/validations/card-terminals'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function GET(request: Request) {
   try {
@@ -32,6 +33,9 @@ export async function POST(request: Request) {
     const terminal = await createCardTerminal(ctx.tenantId, ctx.userId, parsed.data)
     return NextResponse.json({ success: true, data: terminal })
   } catch (error) {
+    if (error instanceof BusinessError && error.code === 'FINANCIAL_ACCOUNT_NOT_FOUND') {
+      return NextResponse.json({ error: error.message }, { status: 400 })
+    }
     return handleApiError(error, request)
   }
 }

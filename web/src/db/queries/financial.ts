@@ -40,6 +40,7 @@ import {
   getCardPaymentSummaries,
   sumCardFeesForPeriod,
 } from './card-payments'
+import { paymentInflowAccountId, resolveMovementAccountId } from './financial-accounts'
 import { cardInstallmentCountFor, isCardMethod } from '@/lib/financial/card-repasses'
 import {
   claimAndSendPendingEvent,
@@ -807,6 +808,10 @@ export async function recordPayment(
         paymentRecordId: paymentRecord.id,
         patientId: entry?.patientId,
         recordedBy: userId,
+        accountId: await resolveMovementAccountId(tx, tenantId, {
+          accountId: data.accountId,
+          method: data.paymentMethod,
+        }),
       })
     }
 
@@ -989,6 +994,7 @@ export async function reversePayment(
             movementDate: new Date(),
             patientId: entry?.patientId,
             recordedBy: userId,
+            accountId: await paymentInflowAccountId(tx, tenantId, record.id),
           })
           .returning({ id: cashMovements.id })
 
@@ -1057,7 +1063,13 @@ export async function reversePayment(
 export async function bulkPayInstallments(
   tenantId: string,
   userId: string,
-  data: { installmentIds: string[]; paymentMethod: string; paidAt?: string; card?: RecordPaymentInput['card'] }
+  data: {
+    installmentIds: string[]
+    paymentMethod: string
+    paidAt?: string
+    card?: RecordPaymentInput['card']
+    accountId?: string
+  }
 ) {
   const metaContexts = await prepareMetaPurchaseContexts(tenantId, data.installmentIds)
   const nfseIntake = await prepareNfseIntake(tenantId)
@@ -1122,6 +1134,12 @@ export async function bulkPayInstallments(
     const requestedPaidAt = data.paidAt
       ? new Date(Math.min(new Date(data.paidAt).getTime(), now.getTime()))
       : now
+
+    // A card batch is one card payment whose repasses land later, on the
+    // terminal's payout account; everything else is cash in hand now.
+    const accountId = card
+      ? undefined
+      : await resolveMovementAccountId(tx, tenantId, { accountId: data.accountId, method: data.paymentMethod })
 
     const results = []
     const purchases: PendingMetaEventRow[] = []
@@ -1191,6 +1209,7 @@ export async function bulkPayInstallments(
           paymentRecordId: paymentRecord.id,
           patientId: entry?.patientId,
           recordedBy: userId,
+          accountId,
         })
       }
 

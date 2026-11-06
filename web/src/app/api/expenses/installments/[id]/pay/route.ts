@@ -4,6 +4,7 @@ import { payExpenseInstallment, revertExpenseInstallmentPayment } from '@/db/que
 import { payExpenseInstallmentSchema, revertExpenseInstallmentSchema } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
 import { handleApiError } from '@/lib/api-error'
+import { BusinessError } from '@/lib/errors'
 
 export async function PUT(
   request: Request,
@@ -19,6 +20,7 @@ export async function PUT(
       installmentId: id,
       paymentMethod: body.paymentMethod,
       paidAt: body.paidAt,
+      accountId: body.accountId,
     })
     if (!parsed.success) {
       return NextResponse.json(
@@ -32,13 +34,14 @@ export async function PUT(
       parsed.data.installmentId,
       parsed.data.paymentMethod as PaymentMethod,
       ctx.userId,
-      parsed.data.paidAt
+      parsed.data.paidAt,
+      parsed.data.accountId,
     )
 
     return NextResponse.json({ success: true, data: installment })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
-    if (msg.includes('não encontrada') || msg.includes('já foi paga')) {
+    if (error instanceof BusinessError || msg.includes('não encontrada') || msg.includes('já foi paga')) {
       return NextResponse.json({ error: msg }, { status: 400 })
     }
     return handleApiError(error, request)

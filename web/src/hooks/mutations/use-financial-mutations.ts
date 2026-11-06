@@ -71,6 +71,7 @@ export function usePayInstallment() {
       expectedTotalDue,
       acceptOverpayment,
       card,
+      accountId,
     }: {
       id: string
       amount: number
@@ -80,6 +81,7 @@ export function usePayInstallment() {
       expectedTotalDue: number
       acceptOverpayment?: boolean
       card?: CardPaymentPayload
+      accountId?: string
     }) =>
       mutateJson(`/api/financial/installments/${id}/pay`, 'PUT', {
         amount,
@@ -89,6 +91,7 @@ export function usePayInstallment() {
         expectedTotalDue,
         acceptOverpayment,
         card,
+        accountId,
       }) as Promise<{ data: { nfse?: NfseIntake } }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })
@@ -130,6 +133,7 @@ export function useBulkPay() {
       paymentMethod: string
       paidAt?: string
       card?: CardPaymentPayload
+      accountId?: string
     }) => mutateJson('/api/financial/bulk/pay', 'POST', data) as Promise<{ nfse?: NfseIntake }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.financial.all })

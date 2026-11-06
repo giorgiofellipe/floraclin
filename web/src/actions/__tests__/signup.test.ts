@@ -77,6 +77,10 @@ vi.mock('@/db/queries/admin-tenants', async (importOriginal) => {
   }
 })
 
+vi.mock('@/db/queries/financial-accounts', () => ({
+  provisionDefaultAccounts: vi.fn(),
+}))
+
 vi.mock('@/lib/email', () => ({
   sendNewSignupNotification: vi.fn(),
   sendConfirmationEmail: sendConfirmationEmailMock,

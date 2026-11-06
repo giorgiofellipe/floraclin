@@ -11,6 +11,7 @@ import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
+import { resolveMovementAccountId, reversalAccountId } from './financial-accounts'
 import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
 import { brToday, startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
@@ -232,7 +233,8 @@ export async function payExpenseInstallment(
   installmentId: string,
   paymentMethod: PaymentMethod,
   userId: string,
-  paidAt?: string
+  paidAt?: string,
+  accountId?: string,
 ) {
   return withTransaction(async (tx) => {
     // 1. Lock installment row with FOR UPDATE to prevent concurrent payments
@@ -290,6 +292,7 @@ export async function payExpenseInstallment(
       expenseInstallmentId: installmentId,
       expenseCategoryId: installment.categoryId,
       recordedBy: userId,
+      accountId: await resolveMovementAccountId(tx, tenantId, { accountId, method: paymentMethod }),
     })
 
     // Check if all installments are now paid -> update parent expense status
@@ -337,7 +340,7 @@ export async function revertExpenseInstallmentPayment(
       sql`SELECT ei.id, ei.expense_id, ei.amount, ei.status, ei.installment_number,
                  ei.paid_at, ei.payment_method,
                  e.status AS expense_status, e.category_id,
-                 cm.id AS movement_id
+                 cm.id AS movement_id, cm.account_id AS movement_account_id
           FROM floraclin.expense_installments ei
           INNER JOIN floraclin.expenses e ON e.id = ei.expense_id
           LEFT JOIN floraclin.cash_movements cm
@@ -381,6 +384,11 @@ export async function revertExpenseInstallmentPayment(
         expenseInstallmentId: installmentId,
         expenseCategoryId: categoryId,
         recordedBy: userId,
+        accountId: await reversalAccountId(
+          tx,
+          tenantId,
+          row.movement_account_id ? String(row.movement_account_id) : null,
+        ),
       })
       .returning({ id: cashMovements.id })
 

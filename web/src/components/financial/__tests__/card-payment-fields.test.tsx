@@ -10,6 +10,10 @@ vi.mock('@/hooks/queries/use-card-terminals', () => ({
   useCreateCardTerminal: () => ({ mutateAsync: createMutateAsync, isPending: false }),
   useUpdateCardTerminal: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
+// The terminal dialog offers the clinic's accounts as payout destinations.
+vi.mock('@/hooks/queries/use-financial-accounts', () => ({
+  useFinancialAccounts: () => ({ data: { data: [], canManage: true } }),
+}))
 
 const rates = (index: number, rate: string) =>
   Array.from({ length: 12 }, (_, i) => (i === index ? rate : '0.00'))

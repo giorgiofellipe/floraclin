@@ -1,4 +1,5 @@
 import { db } from '@/db/client'
+import { provisionDefaultAccounts } from '@/db/queries/financial-accounts'
 import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic-placeholder'
 import { tenants, users, tenantUsers, patients, financialEntries, plans, whatsappAutomations } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
@@ -173,6 +174,7 @@ export async function createTenantWithOwner(data: {
         slug,
       })
       .returning()
+    await provisionDefaultAccounts(tx, t.id)
 
     // 4. Insert tenant_users (owner)
     await tx.insert(tenantUsers).values({
@@ -414,6 +416,8 @@ export async function insertSelfSignupTenantBase(
   if (!row) {
     throw new Error('Failed to create tenant during signup')
   }
+
+  await provisionDefaultAccounts(tx, row.id)
 
   await tx.insert(whatsappAutomations).values({
     tenantId: row.id,

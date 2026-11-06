@@ -1,4 +1,4 @@
-import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, bigint, smallint, uniqueIndex, index, primaryKey, serial, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgSchema, uuid, varchar, text, boolean, timestamp, decimal, integer, date, time, jsonb, inet, bigint, smallint, unique, uniqueIndex, index, foreignKey, primaryKey, serial, type AnyPgColumn } from 'drizzle-orm/pg-core'
 import { relations, sql } from 'drizzle-orm'
 import type { CreditContext } from '@/lib/whatsapp-credit-ledger'
 import type { NfseDocumentStatus, NfseEmissionMode, NfseEnvironment, NfseServiceCodes, NfseServicePresetId, NfseSnapshot } from '@/lib/nfse/types'
@@ -492,6 +492,33 @@ export const installments = floraclinSchema.table('installments', {
   index('idx_installments_due').on(table.tenantId, table.dueDate, table.status),
 ])
 
+// ─── FINANCIAL ACCOUNTS ──────────────────────────────────────────────
+
+// 'legacy' is the one account per clinic that 0050 attributed pre-account
+// movements to. It is never a default and the app never creates one.
+export const FINANCIAL_ACCOUNT_KINDS = ['bank', 'cash', 'acquirer', 'legacy'] as const
+export type FinancialAccountKind = (typeof FINANCIAL_ACCOUNT_KINDS)[number]
+
+export const financialAccounts = floraclinSchema.table('financial_accounts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
+  kind: varchar('kind', { length: 20 }).$type<FinancialAccountKind>().notNull(), // CHECK in migration
+  name: varchar('name', { length: 100 }).notNull(),
+  bankName: varchar('bank_name', { length: 100 }),
+  bankAgency: varchar('bank_agency', { length: 20 }),
+  bankAccount: varchar('bank_account', { length: 30 }),
+  isDefault: boolean('is_default').notNull().default(false),
+  openingBalance: decimal('opening_balance', { precision: 12, scale: 2 }).notNull().default('0'),
+  openingBalanceDate: date('opening_balance_date'),
+  archivedAt: timestamp('archived_at', { withTimezone: true }),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  unique('financial_accounts_tenant_id_id_key').on(table.tenantId, table.id),
+  uniqueIndex('uq_financial_accounts_default').on(table.tenantId, table.kind).where(sql`is_default AND archived_at IS NULL`),
+  uniqueIndex('uq_financial_accounts_legacy').on(table.tenantId).where(sql`kind = 'legacy'`),
+])
+
 // ─── CASH MOVEMENTS (append-only ledger) ─────────────────────────────
 
 export const cashMovements = floraclinSchema.table('cash_movements', {
@@ -510,8 +537,19 @@ export const cashMovements = floraclinSchema.table('cash_movements', {
   recordedBy: uuid('recorded_by').notNull().references(() => users.id),
   reversedByMovementId: uuid('reversed_by_movement_id'),
   cardRepasseId: uuid('card_repasse_id').references((): AnyPgColumn => cardRepasses.id),
+  // Nullable until 0051 runs after every writer sets it.
+  accountId: uuid('account_id'),
+  // Both legs of an internal transfer share it; they are not revenue or expense.
+  transferGroupId: uuid('transfer_group_id'),
 }, (table) => [
+  // Carries the tenant so a movement can never point at another clinic's account.
+  foreignKey({
+    name: 'cash_movements_account_fk',
+    columns: [table.tenantId, table.accountId],
+    foreignColumns: [financialAccounts.tenantId, financialAccounts.id],
+  }),
   index('idx_cash_movements_tenant_date').on(table.tenantId, table.movementDate),
+  index('idx_cash_movements_account_date').on(table.tenantId, table.accountId, table.movementDate),
   index('idx_cash_movements_type').on(table.tenantId, table.type),
   uniqueIndex('uq_cash_movements_active_repasse_inflow').on(table.cardRepasseId).where(sql`type = 'inflow' AND reversed_by_movement_id IS NULL AND card_repasse_id IS NOT NULL`),
 ])
@@ -552,10 +590,17 @@ export const cardTerminals = floraclinSchema.table('card_terminals', {
   creditRates: jsonb('credit_rates').$type<string[]>().notNull(), // 12 percent strings, index 0 = 1x
   creditPayoutMode: varchar('credit_payout_mode', { length: 20 }).$type<'per_installment' | 'lump_sum'>().notNull(), // CHECK in migration
   creditLumpSumDays: integer('credit_lump_sum_days').notNull().default(1),
+  // Where repasses land; null means the default bank account.
+  payoutAccountId: uuid('payout_account_id'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
 }, (table) => [
+  foreignKey({
+    name: 'card_terminals_payout_account_fk',
+    columns: [table.tenantId, table.payoutAccountId],
+    foreignColumns: [financialAccounts.tenantId, financialAccounts.id],
+  }),
   uniqueIndex('uq_card_terminals_default').on(table.tenantId).where(sql`is_default AND deleted_at IS NULL`),
 ])
 

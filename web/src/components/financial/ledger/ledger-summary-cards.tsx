@@ -8,11 +8,15 @@ interface LedgerSummary {
   totalInflows: number
   totalOutflows: number
   netResult: number
+  transfersIn?: number
+  transfersOut?: number
   overdueReceivables: number
 }
 
 export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
   const netIsPositive = Number(summary.netResult ?? 0) >= 0
+  const transfersIn = Number(summary.transfersIn ?? 0)
+  const transfersOut = Number(summary.transfersOut ?? 0)
 
   return (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -55,6 +59,12 @@ export function LedgerSummaryCards({ summary }: { summary: LedgerSummary }) {
           <div className={`text-2xl font-bold tabular-nums tracking-tight ${netIsPositive ? 'text-[#1C2B1E]' : 'text-red-600'}`}>
             {formatCurrency(Number(summary.netResult ?? 0))}
           </div>
+          {(transfersIn > 0 || transfersOut > 0) && (
+            <p className="mt-1 text-xs text-mid" data-testid="ledger-transfers">
+              Fora dos totais: transferências entre contas, {formatCurrency(transfersIn)} entrando e{' '}
+              {formatCurrency(transfersOut)} saindo
+            </p>
+          )}
         </CardContent>
       </Card>
 

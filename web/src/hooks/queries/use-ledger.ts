@@ -10,6 +10,7 @@ interface LedgerFilters {
   paymentMethod?: string
   patientId?: string
   categoryId?: string
+  accountId?: string
   page?: number
   limit?: number
 }
@@ -23,13 +24,19 @@ interface LedgerMovement {
   movementDate: string
   patientName: string | null
   categoryName: string | null
+  accountId: string | null
+  accountName: string | null
+  isTransfer: boolean
   runningBalance: number
 }
 
-interface LedgerSummary {
+export interface LedgerSummary {
   totalInflows: number
   totalOutflows: number
   netResult: number
+  /** Transfers between the clinic's accounts, kept out of the three totals above. */
+  transfersIn: number
+  transfersOut: number
   overdueReceivables: number
 }
 
@@ -56,6 +63,7 @@ export function useLedger(filters: LedgerFilters) {
       if (filters.paymentMethod) params.set('paymentMethod', filters.paymentMethod)
       if (filters.patientId) params.set('patientId', filters.patientId)
       if (filters.categoryId) params.set('categoryId', filters.categoryId)
+      if (filters.accountId) params.set('accountId', filters.accountId)
       if (filters.page) params.set('page', String(filters.page))
       if (filters.limit) params.set('limit', String(filters.limit))
 
@@ -78,6 +86,7 @@ export function useLedgerExportUrl(filters: Omit<LedgerFilters, 'page' | 'limit'
   if (filters.paymentMethod) params.set('paymentMethod', filters.paymentMethod)
   if (filters.patientId) params.set('patientId', filters.patientId)
   if (filters.categoryId) params.set('categoryId', filters.categoryId)
+  if (filters.accountId) params.set('accountId', filters.accountId)
 
   return `/api/financial/ledger/export?${params}`
 }

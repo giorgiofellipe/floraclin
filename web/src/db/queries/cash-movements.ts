@@ -1,6 +1,7 @@
 import { db } from '@/db/client'
 import {
   cashMovements,
+  financialAccounts,
   patients,
   expenseCategories,
   procedureRecords,
@@ -20,10 +21,8 @@ import {
   toPaymentInputs,
 } from './financial'
 
-export async function listCashMovements(
-  tenantId: string,
-  filters: LedgerFilterInput
-) {
+/** The one filter every ledger read applies, so list, summary and export agree. */
+function ledgerConditions(tenantId: string, filters: Omit<LedgerFilterInput, 'page' | 'limit'>) {
   const conditions = [
     eq(cashMovements.tenantId, tenantId),
     gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
@@ -46,9 +45,60 @@ export async function listCashMovements(
     conditions.push(eq(cashMovements.expenseCategoryId, filters.categoryId))
   }
 
-  const whereClause = and(...conditions)
+  if (filters.accountId) {
+    conditions.push(eq(cashMovements.accountId, filters.accountId))
+  }
+
+  return conditions
+}
+
+// Both columns carry the tenant, so a movement only ever shows its own clinic's account.
+const accountJoin = and(
+  eq(financialAccounts.id, cashMovements.accountId),
+  eq(financialAccounts.tenantId, cashMovements.tenantId),
+)
+
+export async function listCashMovements(
+  tenantId: string,
+  filters: LedgerFilterInput,
+  opts: { accountBalance?: boolean } = {},
+) {
+  const whereClause = and(...ledgerConditions(tenantId, filters))
   const limit = filters.limit ?? 50
   const offset = ((filters.page ?? 1) - 1) * limit
+
+  // By default: the running sum of the rows the filters show, as before.
+  // With accountBalance and an account filter: that account's balance after
+  // each movement, counted the way listFinancialAccounts counts it (opening
+  // balance from the start of its BR day, every movement of the account since,
+  // whatever the other filters hide), so the newest row matches the account's
+  // balance. Only roles that may see account balances ask for it.
+  const runningBalance = filters.accountId && opts.accountBalance
+    ? sql<number>`(
+        SELECT COALESCE(SUM(CASE WHEN m2.type = 'inflow' THEN m2.amount::numeric ELSE -m2.amount::numeric END), 0)
+          + CASE WHEN fa.opening_balance_date IS NULL
+                   OR ${cashMovements.movementDate} >= (fa.opening_balance_date::timestamp AT TIME ZONE 'America/Sao_Paulo')
+                 THEN fa.opening_balance ELSE 0 END
+        FROM floraclin.financial_accounts fa
+        LEFT JOIN floraclin.cash_movements m2
+          ON m2.tenant_id = fa.tenant_id
+         AND m2.account_id = fa.id
+         AND (fa.opening_balance_date IS NULL
+              OR m2.movement_date >= (fa.opening_balance_date::timestamp AT TIME ZONE 'America/Sao_Paulo'))
+         AND (m2.movement_date, m2.recorded_at, m2.id)
+             <= (${cashMovements.movementDate}, ${cashMovements.recordedAt}, ${cashMovements.id})
+        WHERE fa.tenant_id = ${cashMovements.tenantId} AND fa.id = ${cashMovements.accountId}
+        GROUP BY fa.id
+      )`
+    : sql<number>`SUM(
+        CASE WHEN ${cashMovements.type} = 'inflow'
+          THEN ${cashMovements.amount}::numeric
+          ELSE -${cashMovements.amount}::numeric
+        END
+      ) OVER (
+        ORDER BY ${cashMovements.movementDate} ASC, ${cashMovements.recordedAt} ASC
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      )`
 
   const [totalResult, movements] = await Promise.all([
     db
@@ -65,21 +115,18 @@ export async function listCashMovements(
         movementDate: cashMovements.movementDate,
         patientName: patients.fullName,
         categoryName: expenseCategories.name,
-        runningBalance: sql<number>`SUM(
-          CASE WHEN ${cashMovements.type} = 'inflow'
-            THEN ${cashMovements.amount}::numeric
-            ELSE -${cashMovements.amount}::numeric
-          END
-        ) OVER (
-          ORDER BY ${cashMovements.movementDate} ASC, ${cashMovements.recordedAt} ASC
-          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-        )`,
+        accountId: cashMovements.accountId,
+        accountName: financialAccounts.name,
+        isTransfer: sql<boolean>`${cashMovements.transferGroupId} IS NOT NULL`,
+        runningBalance,
       })
       .from(cashMovements)
       .leftJoin(patients, eq(patients.id, cashMovements.patientId))
       .leftJoin(expenseCategories, eq(expenseCategories.id, cashMovements.expenseCategoryId))
+      .leftJoin(financialAccounts, accountJoin)
       .where(whereClause)
-      .orderBy(desc(cashMovements.movementDate), desc(cashMovements.recordedAt))
+      // id last: movements written in one transaction share recorded_at.
+      .orderBy(desc(cashMovements.movementDate), desc(cashMovements.recordedAt), desc(cashMovements.id))
       .limit(limit)
       .offset(offset),
   ])
@@ -99,35 +146,22 @@ export async function getLedgerSummary(
   tenantId: string,
   filters: LedgerFilterInput
 ) {
-  const conditions = [
-    eq(cashMovements.tenantId, tenantId),
-    gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
-    lte(cashMovements.movementDate, endOfBrDay(filters.dateTo)),
-  ]
-
-  if (filters.type && filters.type !== 'all') {
-    conditions.push(eq(cashMovements.type, filters.type))
-  }
-
-  if (filters.paymentMethod) {
-    conditions.push(eq(cashMovements.paymentMethod, filters.paymentMethod))
-  }
-
-  if (filters.patientId) {
-    conditions.push(eq(cashMovements.patientId, filters.patientId))
-  }
-
-  if (filters.categoryId) {
-    conditions.push(eq(cashMovements.expenseCategoryId, filters.categoryId))
-  }
+  const conditions = ledgerConditions(tenantId, filters)
+  // Transfers move money between the clinic's own accounts: they are not
+  // revenue or expense, so they stay out of the three totals and are summed
+  // apart, which is what an account-filtered view needs to reach its balance.
+  const notTransfer = sql`${cashMovements.transferGroupId} IS NULL`
+  const isTransfer = sql`${cashMovements.transferGroupId} IS NOT NULL`
 
   const now = new Date()
   const [summaryResult, overdueInstallments] = await Promise.all([
     db
       .select({
-        totalInflows: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'inflow' THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
-        totalOutflows: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'outflow' THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
-        netResult: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'inflow' THEN ${cashMovements.amount}::numeric ELSE -${cashMovements.amount}::numeric END), 0)`,
+        totalInflows: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'inflow' AND ${notTransfer} THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
+        totalOutflows: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'outflow' AND ${notTransfer} THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
+        netResult: sql<number>`COALESCE(SUM(CASE WHEN ${notTransfer} THEN (CASE WHEN ${cashMovements.type} = 'inflow' THEN ${cashMovements.amount}::numeric ELSE -${cashMovements.amount}::numeric END) ELSE 0 END), 0)`,
+        transfersIn: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'inflow' AND ${isTransfer} THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
+        transfersOut: sql<number>`COALESCE(SUM(CASE WHEN ${cashMovements.type} = 'outflow' AND ${isTransfer} THEN ${cashMovements.amount}::numeric ELSE 0 END), 0)`,
       })
       .from(cashMovements)
       .where(and(...conditions)),
@@ -148,12 +182,20 @@ export async function getLedgerSummary(
     overdueReceivables = round2(overdueReceivables + quote.totalDue)
   }
 
-  const summary = summaryResult[0] ?? { totalInflows: 0, totalOutflows: 0, netResult: 0 }
+  const summary = summaryResult[0] ?? {
+    totalInflows: 0,
+    totalOutflows: 0,
+    netResult: 0,
+    transfersIn: 0,
+    transfersOut: 0,
+  }
 
   return {
     totalInflows: summary.totalInflows,
     totalOutflows: summary.totalOutflows,
     netResult: summary.netResult,
+    transfersIn: summary.transfersIn ?? 0,
+    transfersOut: summary.transfersOut ?? 0,
     overdueReceivables,
   }
 }
@@ -304,27 +346,7 @@ export async function exportLedgerCSV(
   tenantId: string,
   filters: Omit<LedgerFilterInput, 'page' | 'limit'>
 ) {
-  const conditions = [
-    eq(cashMovements.tenantId, tenantId),
-    gte(cashMovements.movementDate, startOfBrDay(filters.dateFrom)),
-    lte(cashMovements.movementDate, endOfBrDay(filters.dateTo)),
-  ]
-
-  if (filters.type && filters.type !== 'all') {
-    conditions.push(eq(cashMovements.type, filters.type))
-  }
-
-  if (filters.paymentMethod) {
-    conditions.push(eq(cashMovements.paymentMethod, filters.paymentMethod))
-  }
-
-  if (filters.patientId) {
-    conditions.push(eq(cashMovements.patientId, filters.patientId))
-  }
-
-  if (filters.categoryId) {
-    conditions.push(eq(cashMovements.expenseCategoryId, filters.categoryId))
-  }
+  const conditions = ledgerConditions(tenantId, filters)
 
   const movements = await db
     .select({
@@ -335,10 +357,12 @@ export async function exportLedgerCSV(
       movementDate: cashMovements.movementDate,
       patientName: patients.fullName,
       categoryName: expenseCategories.name,
+      accountName: financialAccounts.name,
     })
     .from(cashMovements)
     .leftJoin(patients, eq(patients.id, cashMovements.patientId))
     .leftJoin(expenseCategories, eq(expenseCategories.id, cashMovements.expenseCategoryId))
+    .leftJoin(financialAccounts, accountJoin)
     .where(and(...conditions))
     .orderBy(asc(cashMovements.movementDate), asc(cashMovements.recordedAt))
 
@@ -350,7 +374,8 @@ export async function exportLedgerCSV(
     transfer: 'Transferencia',
   }
 
-  const header = 'Data,Tipo,Descricao,Paciente/Categoria,Metodo,Valor'
+  // Conta goes last so spreadsheets built on the earlier columns keep working.
+  const header = 'Data,Tipo,Descricao,Paciente/Categoria,Metodo,Valor,Conta'
   const rows = movements.map((m) => {
     const date = m.movementDate
       ? new Date(m.movementDate).toLocaleDateString('pt-BR')
@@ -365,8 +390,9 @@ export async function exportLedgerCSV(
     const method = paymentMethodLabels[m.paymentMethod ?? ''] ?? m.paymentMethod ?? ''
     const sign = m.type === 'outflow' ? '-' : ''
     const valor = `${sign}${m.amount}`
+    const conta = m.accountName ? `"${m.accountName.replace(/"/g, '""')}"` : ''
 
-    return `${date},${tipo},${desc},${ref},${method},${valor}`
+    return `${date},${tipo},${desc},${ref},${method},${valor},${conta}`
   })
 
   return `${header}\n${rows.join('\n')}`
