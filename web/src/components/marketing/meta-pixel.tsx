@@ -20,6 +20,15 @@ function pageKey(pathname: string, searchParams: URLSearchParams): string {
   return `${pathname}?${params}`
 }
 
+/**
+ * Public clinic booking pages (/c/<slug>) belong to the clinic: their visitors
+ * are the clinic's patients, tracked only by the clinic's own dataset (see
+ * components/booking/meta-pixel.tsx). The platform pixel stays off there.
+ */
+export function isClinicBookingPath(pathname: string): boolean {
+  return pathname === '/c' || pathname.startsWith('/c/')
+}
+
 interface MetaPixelProps {
   pixelId?: string
 }
@@ -30,7 +39,7 @@ export function MetaPixel({ pixelId = DEFAULT_META_PIXEL_ID }: MetaPixelProps) {
   const page = pageKey(pathname, searchParams)
   const trackedInitialPageView = useRef(false)
   const consentStatus = useSyncExternalStore(subscribeCookieConsent, cookieConsentStatus, () => 'unset')
-  const canUseMarketing = consentStatus === 'granted'
+  const canUseMarketing = consentStatus === 'granted' && !isClinicBookingPath(pathname)
 
   useEffect(() => {
     if (!canUseMarketing) return
