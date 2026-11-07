@@ -58,12 +58,16 @@ const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} })
 const dir = join(process.cwd(), 'src/db/migrations')
 const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
 
-// Columns production got by push that a migration reads before any migration
-// creates them: added right before that migration, with production's type.
+// Tables and columns production got by push that a migration reads before any
+// migration creates them: added right before that migration, with production's
+// shape (the 0006 snapshot for verification_tokens).
 const pushedBefore = {
   // Dropped again by 0008 itself, after copying it into prospect_procedure_types.
   '0008_prospect_value.sql': ['ALTER TABLE "floraclin"."prospects" ADD COLUMN IF NOT EXISTS "interested_procedures" jsonb'],
-  '0023_email_confirmation.sql': ['ALTER TABLE "floraclin"."users" ADD COLUMN IF NOT EXISTS "email_verified" timestamptz'],
+  '0023_email_confirmation.sql': [
+    'ALTER TABLE "floraclin"."users" ADD COLUMN IF NOT EXISTS "email_verified" timestamptz',
+    'CREATE TABLE IF NOT EXISTS "floraclin"."verification_tokens" ("identifier" varchar(255) NOT NULL, "token" varchar(255) NOT NULL CONSTRAINT "verification_tokens_token_unique" UNIQUE, "expires" timestamptz NOT NULL)',
+  ],
   '0034_installment_terms_snapshot.sql': [
     'ALTER TABLE "floraclin"."payment_records" ADD COLUMN IF NOT EXISTS "reversed_at" timestamptz',
   ],
