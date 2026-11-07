@@ -1,13 +1,14 @@
 import { randomUUID } from 'node:crypto'
 import { db } from '@/db/client'
-import { cashMovements, financialAccounts, type FinancialAccountKind } from '@/db/schema'
-import { and, asc, desc, eq, getTableColumns, inArray, isNull, sql } from 'drizzle-orm'
+import { bankReconciliationAllocations, cashMovements, financialAccounts, type FinancialAccountKind } from '@/db/schema'
+import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, ne, or, sql } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { BusinessError } from '@/lib/errors'
-import { parseBrDate } from '@/lib/dates'
+import { endOfBrDay, parseBrDate, startOfBrDay } from '@/lib/dates'
 import type {
   CreateFinancialAccountInput,
+  MoveMovementsInput,
   TransferInput,
   UpdateFinancialAccountInput,
 } from '@/validations/financial-accounts'
@@ -155,7 +156,12 @@ async function ensureLegacyAccount(tx: Pick<typeof db, 'select' | 'insert'>, ten
   return legacy.id
 }
 
-/** The account of the live inflow a payment record wrote, for its reversal. */
+/**
+ * The account of the live inflow a payment record wrote, for its reversal.
+ * Locks the inflow until the reversal commits: moveMovementsToAccount locks it
+ * too, so a move either sees the finished pair and moves both halves, or
+ * finishes first and the counter lands on the new account.
+ */
 export async function paymentInflowAccountId(
   tx: Pick<typeof db, 'select' | 'insert'>,
   tenantId: string,
@@ -173,7 +179,83 @@ export async function paymentInflowAccountId(
     )
     .orderBy(desc(cashMovements.recordedAt))
     .limit(1)
+    .for('update')
   return reversalAccountId(tx, tenantId, original?.accountId)
+}
+
+/**
+ * The live outflow an expense installment's payment wrote and the account its
+ * reversal goes to. Locks the outflow like paymentInflowAccountId does: the
+ * account is read behind the lock, so a move that commits first is seen and
+ * the counter follows it; a move that comes later sees the finished pair.
+ */
+export async function expenseOutflowForReversal(
+  tx: Pick<typeof db, 'select' | 'insert'>,
+  tenantId: string,
+  installmentId: string,
+): Promise<{ movementId: string | null; accountId: string }> {
+  const [original] = await tx
+    .select({ id: cashMovements.id, accountId: cashMovements.accountId })
+    .from(cashMovements)
+    .where(
+      and(
+        eq(cashMovements.tenantId, tenantId),
+        eq(cashMovements.expenseInstallmentId, installmentId),
+        eq(cashMovements.type, 'outflow'),
+        isNull(cashMovements.reversedByMovementId),
+      ),
+    )
+    .orderBy(desc(cashMovements.recordedAt))
+    .limit(1)
+    .for('update')
+  return { movementId: original?.id ?? null, accountId: await reversalAccountId(tx, tenantId, original?.accountId) }
+}
+
+export interface PaymentMovement {
+  movementId: string
+  accountId: string | null
+  /** Matched to a bank statement line: it can't change account until undone. */
+  isReconciled: boolean
+}
+
+/**
+ * The inflow each payment wrote, keyed by payment record, so the payment
+ * history can offer "Trocar conta". Card payments have none: their money lands
+ * through repasses, on the terminal's account.
+ */
+export async function getPaymentMovements(
+  tenantId: string,
+  paymentRecordIds: string[],
+): Promise<Map<string, PaymentMovement>> {
+  const byPayment = new Map<string, PaymentMovement>()
+  if (!paymentRecordIds.length) return byPayment
+  const rows = await db
+    .select({
+      movementId: cashMovements.id,
+      paymentRecordId: cashMovements.paymentRecordId,
+      accountId: cashMovements.accountId,
+      isReconciled: sql<boolean>`EXISTS (
+        SELECT 1 FROM floraclin.bank_reconciliation_allocations bra
+        WHERE bra.tenant_id = ${cashMovements.tenantId}
+          AND bra.movement_id = ${cashMovements.id}
+          AND bra.undone_at IS NULL
+      )`,
+    })
+    .from(cashMovements)
+    .where(
+      and(
+        eq(cashMovements.tenantId, tenantId),
+        inArray(cashMovements.paymentRecordId, paymentRecordIds),
+        eq(cashMovements.type, 'inflow'),
+        isNull(cashMovements.transferGroupId),
+      ),
+    )
+    .orderBy(desc(cashMovements.recordedAt))
+  // Newest first, like paymentInflowAccountId: the first row per payment wins.
+  for (const { paymentRecordId, ...movement } of rows) {
+    if (paymentRecordId && !byPayment.has(paymentRecordId)) byPayment.set(paymentRecordId, movement)
+  }
+  return byPayment
 }
 
 // ─── BALANCES ────────────────────────────────────────────────────────
@@ -416,5 +498,211 @@ export async function createTransfer(tenantId: string, userId: string, data: Tra
     )
 
     return { transferGroupId }
+  })
+}
+
+// ─── MOVING MOVEMENTS BETWEEN ACCOUNTS ───────────────────────────────
+
+export interface MoveMovementsResult {
+  moved: number
+  /** Matched to a bank statement line: undo the reconciliation first. */
+  skippedReconciled: number
+  /** Internal transfers have their own two legs; they are not payments. */
+  skippedTransfers: number
+}
+
+export interface MoveMovementsPreview extends MoveMovementsResult {
+  /** What the source balances lose and the target gains (inflows minus outflows), e.g. "1250.00". */
+  total: string
+}
+
+type Tx = typeof db
+
+const movementRow = {
+  id: cashMovements.id,
+  type: cashMovements.type,
+  amount: cashMovements.amount,
+  accountId: cashMovements.accountId,
+  transferGroupId: cashMovements.transferGroupId,
+  reversedByMovementId: cashMovements.reversedByMovementId,
+}
+
+type MovementRow = { [K in keyof typeof movementRow]: (typeof cashMovements.$inferSelect)[K] }
+
+/** The rows plus the other half of each reversal pair: the original points at its counter through reversed_by_movement_id. */
+function withPairs(tenantId: string, ids: string[]) {
+  return and(
+    eq(cashMovements.tenantId, tenantId),
+    or(
+      inArray(cashMovements.id, ids),
+      inArray(cashMovements.reversedByMovementId, ids),
+      sql`${cashMovements.id} IN (
+        SELECT reversed_by_movement_id FROM floraclin.cash_movements
+        WHERE tenant_id = ${tenantId} AND id IN (${sql.join(ids.map((id) => sql`${id}::uuid`), sql`, `)})
+          AND reversed_by_movement_id IS NOT NULL)`,
+    ),
+  )
+}
+
+/**
+ * Picks the movements a move covers and decides which ones go. With `lock`,
+ * the picked rows and the other half of each pair are found first and then
+ * locked in one statement, in id order like allocateStatementLine: locking
+ * the picked half before finding its pair would let a match or another move
+ * hold one half while waiting on the other. Once they are locked, neither a
+ * concurrent match nor a concurrent reversal can slip between this read and
+ * the update.
+ */
+async function planMove(tx: Tx, tenantId: string, targetId: string, data: MoveMovementsInput, lock: boolean) {
+  const pickWhere = and(
+    eq(cashMovements.tenantId, tenantId),
+    data.movementIds
+      ? inArray(cashMovements.id, data.movementIds)
+      : and(
+          eq(cashMovements.accountId, data.fromAccountId!),
+          data.dateFrom ? gte(cashMovements.movementDate, startOfBrDay(data.dateFrom)) : undefined,
+          data.dateTo ? lte(cashMovements.movementDate, endOfBrDay(data.dateTo)) : undefined,
+        ),
+  )
+  const read = async () => {
+    const picked = (await tx
+      .select(movementRow)
+      .from(cashMovements)
+      .where(pickWhere)
+      .orderBy(asc(cashMovements.id))) as MovementRow[]
+    if (data.movementIds && picked.length !== new Set(data.movementIds).size) throw notFound()
+    const pickedIds = picked.filter((m) => !m.transferGroupId).map((m) => m.id)
+    const rows = pickedIds.length
+      ? ((await tx
+          .select(movementRow)
+          .from(cashMovements)
+          .where(withPairs(tenantId, pickedIds))
+          .orderBy(asc(cashMovements.id))) as MovementRow[])
+      : []
+    return { picked, rows }
+  }
+
+  let { picked, rows } = await read()
+  if (lock) {
+    // A row committed while this transaction waited for a lock (a reversal's
+    // counter, a payment landing in the period) is only visible to a later
+    // statement: read again behind the locks and lock what is new, until
+    // nothing is. A reversal locks the original before writing its counter
+    // (paymentInflowAccountId, expenseOutflowForReversal), so once the
+    // originals are locked no new pair can form.
+    const locked = new Set<string>()
+    for (;;) {
+      const fresh = rows.map((r) => r.id).filter((id) => !locked.has(id))
+      if (!fresh.length) break
+      await tx
+        .select({ id: cashMovements.id })
+        .from(cashMovements)
+        .where(and(eq(cashMovements.tenantId, tenantId), inArray(cashMovements.id, fresh)))
+        .orderBy(asc(cashMovements.id))
+        .for('update')
+      for (const id of fresh) locked.add(id)
+      ;({ picked, rows } = await read())
+    }
+  }
+
+  const skippedTransfers = picked.filter((m) => m.transferGroupId).length
+  if (!rows.length) return { rows, toMove: [] as MovementRow[], moved: 0, skippedReconciled: 0, skippedTransfers }
+
+  // Group each row with its pair so the pair is moved or skipped as one.
+  const groupOf = new Map<string, string>()
+  for (const r of rows) {
+    groupOf.set(r.id, groupOf.get(r.id) ?? r.id)
+    if (r.reversedByMovementId) groupOf.set(r.reversedByMovementId, groupOf.get(r.id)!)
+  }
+
+  // Read behind the locks: allocateStatementLine locks the movement before it
+  // writes an allocation, so none can appear for these rows from here on.
+  const reconciledRows = await tx
+    .select({ movementId: bankReconciliationAllocations.movementId })
+    .from(bankReconciliationAllocations)
+    .where(
+      and(
+        eq(bankReconciliationAllocations.tenantId, tenantId),
+        inArray(bankReconciliationAllocations.movementId, rows.map((r) => r.id)),
+        isNull(bankReconciliationAllocations.undoneAt),
+      ),
+    )
+  const blockedGroups = new Set(reconciledRows.map((r) => groupOf.get(r.movementId)))
+
+  const toMove = rows.filter((r) => !blockedGroups.has(groupOf.get(r.id)) && r.accountId !== targetId)
+  // Counted per pair, so a skipped reversed payment reads as one.
+  const skippedReconciled = new Set(
+    rows.filter((r) => blockedGroups.has(groupOf.get(r.id))).map((r) => groupOf.get(r.id)),
+  ).size
+  const moved = new Set(toMove.map((r) => groupOf.get(r.id))).size
+  return { rows, toMove, moved, skippedReconciled, skippedTransfers }
+}
+
+async function lockTarget(tx: Tx, tenantId: string, toAccountId: string, lock: boolean) {
+  // The legacy account only holds history: money can leave it, never land on it.
+  const query = tx
+    .select({ id: financialAccounts.id })
+    .from(financialAccounts)
+    .where(and(activeInTenant(tenantId), eq(financialAccounts.id, toAccountId), ne(financialAccounts.kind, 'legacy')))
+    .limit(1)
+  // SHARE holds off an archive but not the key-share lock that a reversal's or
+  // an allocation's foreign key takes on this account while holding a movement
+  // this move waits for: FOR UPDATE here would deadlock with them.
+  const [target] = lock ? await query.for('share') : await query
+  if (!target) throw notFound()
+  return target
+}
+
+/** What moveMovementsToAccount would do, without writing: shown before the user confirms. */
+export async function previewMoveMovements(tenantId: string, data: MoveMovementsInput): Promise<MoveMovementsPreview> {
+  const target = await lockTarget(db, tenantId, data.toAccountId, false)
+  const { toMove, moved, skippedReconciled, skippedTransfers } = await planMove(db, tenantId, target.id, data, false)
+  const cents = toMove.reduce((sum, r) => sum + Math.round(Number(r.amount) * 100) * (r.type === 'inflow' ? 1 : -1), 0)
+  return { moved, skippedReconciled, skippedTransfers, total: (cents / 100).toFixed(2) }
+}
+
+/**
+ * Re-points movements at another account, for a payment registered on the
+ * wrong one. Only account_id changes (amount, date and links are untouched)
+ * and the move is audited with each movement's previous account. A reversal
+ * pair always moves together, so a reversed payment never leaves +amount on
+ * one account and -amount on another. Movements matched to a bank statement
+ * line and transfer legs are skipped and counted.
+ */
+export async function moveMovementsToAccount(
+  tenantId: string,
+  userId: string,
+  data: MoveMovementsInput,
+): Promise<MoveMovementsResult> {
+  return withTransaction(async (tx) => {
+    // One move at a time per clinic. Moves lock in id order, but one that
+    // finds a new counter after locking has to lock it out of order.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('floraclin.move_movements'), hashtext(${tenantId}))`)
+    const target = await lockTarget(tx, tenantId, data.toAccountId, true)
+    const { toMove, moved, skippedReconciled, skippedTransfers } = await planMove(tx, tenantId, target.id, data, true)
+
+    if (toMove.length) {
+      await tx
+        .update(cashMovements)
+        .set({ accountId: target.id })
+        .where(and(eq(cashMovements.tenantId, tenantId), inArray(cashMovements.id, toMove.map((r) => r.id))))
+
+      await createAuditLog(
+        {
+          tenantId,
+          userId,
+          action: 'update',
+          entityType: 'cash_movement_account',
+          entityId: randomUUID(),
+          changes: {
+            // Movement id → its account before the move, so each one can be put back.
+            accountId: { old: Object.fromEntries(toMove.map((r) => [r.id, r.accountId])), new: target.id },
+          },
+        },
+        tx,
+      )
+    }
+
+    return { moved, skippedReconciled, skippedTransfers }
   })
 }

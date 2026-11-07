@@ -40,7 +40,7 @@ import {
   getCardPaymentSummaries,
   sumCardFeesForPeriod,
 } from './card-payments'
-import { paymentInflowAccountId, resolveMovementAccountId } from './financial-accounts'
+import { getPaymentMovements, paymentInflowAccountId, resolveMovementAccountId } from './financial-accounts'
 import { cardInstallmentCountFor, isCardMethod } from '@/lib/financial/card-repasses'
 import {
   claimAndSendPendingEvent,
@@ -1982,11 +1982,16 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
     [...paymentsByInstallment.values()].flat().map((p) => p.id),
   )
   const nfseByPayment = new Map(nfseDocuments.map((d) => [d.paymentRecordId, d]))
+  const movementByPayment = await getPaymentMovements(
+    tenantId,
+    [...paymentsByInstallment.values()].flat().map((p) => p.id),
+  )
   const withCard = (payments: (typeof paymentRecords.$inferSelect)[]) =>
     payments.map((p) => ({
       ...p,
       card: (p.cardPaymentId && cardSummaries.get(p.cardPaymentId)) || null,
       nfse: nfseByPayment.get(p.id) ?? null,
+      movement: movementByPayment.get(p.id) ?? null,
     }))
 
   const now = new Date()

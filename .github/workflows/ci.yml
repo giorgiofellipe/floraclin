@@ -66,3 +66,56 @@ jobs:
       - name: All checks passed
         if: needs.check.result != 'success'
         run: exit 1
+
+  db:
+    name: database tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # A throwaway Postgres: these tests write, lock and race real rows.
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: floraclin_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test -d floraclin_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/floraclin_test
+      RUN_DB_TESTS: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Configure private dependencies
+        run: bash scripts/configure-private-deps.sh
+        env:
+          FISCAL_REPO_TOKEN: ${{ secrets.FISCAL_REPO_TOKEN }}
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Migrate
+        working-directory: web
+        run: node scripts/setup-test-db.mjs
+
+      - name: Tests
+        working-directory: web
+        run: pnpm exec vitest run --no-file-parallelism src/db/queries/__tests__/financial-accounts-db.test.ts src/db/queries/__tests__/bank-reconciliation-db.test.ts
