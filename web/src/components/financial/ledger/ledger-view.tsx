@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useLedger } from '@/hooks/queries/use-ledger'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
 import { useExpenseCategories } from '@/hooks/queries/use-financial-settings'
@@ -8,6 +9,12 @@ import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DateRangePicker } from '@/components/ui/date-picker'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   Select,
   SelectContent,
@@ -19,11 +26,13 @@ import { LedgerSummaryCards } from './ledger-summary-cards'
 import { LedgerExport } from './ledger-export'
 import { AccountBalances } from './account-balances'
 import { TransferDialog, type TransferPreset } from './transfer-dialog'
+import { MoveMovementsDialog, type MoveTarget } from '../move-movements-dialog'
 import {
   ArrowUpRightIcon,
   ArrowDownRightIcon,
   ArrowLeftRightIcon,
   FilterXIcon,
+  MoreHorizontalIcon,
 } from 'lucide-react'
 import { startOfMonth, format } from 'date-fns'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
@@ -39,17 +48,25 @@ const TYPE_OPTIONS = [
   { value: 'outflow', label: 'Saídas' },
 ]
 
+const YMD = /^\d{4}-\d{2}-\d{2}$/
+
 export function LedgerView() {
   const now = useMemo(() => new Date(), [])
+  // "Ver no extrato" on a charge opens here with its patient and start date.
+  const searchParams = useSearchParams()
+  const linkedDateFrom = searchParams.get('dateFrom') ?? ''
   const [movementType, setMovementType] = useState('all')
-  const [dateFrom, setDateFrom] = useState(format(startOfMonth(now), 'yyyy-MM-dd'))
+  const [dateFrom, setDateFrom] = useState(
+    YMD.test(linkedDateFrom) ? linkedDateFrom : format(startOfMonth(now), 'yyyy-MM-dd'),
+  )
   const [dateTo, setDateTo] = useState(format(now, 'yyyy-MM-dd'))
   const [paymentMethod, setPaymentMethod] = useState('')
-  const [patientId, setPatientId] = useState('')
+  const [patientId, setPatientId] = useState(searchParams.get('patientId') ?? '')
   const [categoryId, setCategoryId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferPreset, setTransferPreset] = useState<TransferPreset | null>(null)
+  const [moveTarget, setMoveTarget] = useState<MoveTarget | null>(null)
   const [page, setPage] = useState(1)
 
   const filters = {
@@ -128,6 +145,8 @@ export function LedgerView() {
     overdueReceivables: 0,
   }
   const pagination = data?.pagination ?? { total: 0, page: 1, limit: 30, totalPages: 1 }
+  const canMove = canManageAccounts && liveAccounts.length >= 2
+  const columnCount = canMove ? 9 : 8
 
   return (
     <div className="space-y-6">
@@ -271,12 +290,17 @@ export function LedgerView() {
                 <th className="px-4 py-3 text-left text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Conta</th>
                 <th className="px-4 py-3 text-right text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Valor</th>
                 <th className="px-4 py-3 text-right text-[10px] uppercase tracking-[0.15em] text-[#7A7A7A] font-medium">Saldo</th>
+                {canMove && (
+                  <th className="sticky right-0 bg-white px-1 py-3">
+                    <span className="sr-only">Ações</span>
+                  </th>
+                )}
               </tr>
             </thead>
             <tbody>
               {isPending && (
                 <tr>
-                  <td colSpan={8} className="text-center text-mid py-12">
+                  <td colSpan={columnCount} className="text-center text-mid py-12">
                     <span className="flex items-center justify-center gap-2">
                       <span className="size-2 animate-pulse rounded-full bg-sage" />
                       Carregando extrato...
@@ -286,7 +310,7 @@ export function LedgerView() {
               )}
               {!isPending && movements.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="text-center text-mid py-12">
+                  <td colSpan={columnCount} className="text-center text-mid py-12">
                     Nenhuma movimentação encontrada no período.
                   </td>
                 </tr>
@@ -296,7 +320,7 @@ export function LedgerView() {
                 return (
                   <tr
                     key={m.id}
-                    className="border-b border-[#E8ECEF] last:border-b-0 hover:bg-[#F4F6F8] transition-colors"
+                    className="group border-b border-[#E8ECEF] last:border-b-0 hover:bg-[#F4F6F8] transition-colors"
                   >
                     <td className="px-4 py-3 text-charcoal whitespace-nowrap">
                       {formatDate(m.movementDate)}
@@ -331,13 +355,58 @@ export function LedgerView() {
                         <span className="text-mid">—</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-mid whitespace-nowrap">{m.accountName ?? '—'}</td>
+                    <td className="px-4 py-3 text-mid whitespace-nowrap">
+                      {m.accountName ?? '—'}
+                    </td>
                     <td className={`px-4 py-3 text-right font-medium tabular-nums ${isInflow ? 'text-[#4A6B52]' : 'text-red-600'}`}>
                       {isInflow ? '+' : '-'}{formatCurrency(Number(m.amount))}
                     </td>
                     <td className="px-4 py-3 text-right font-medium tabular-nums text-charcoal">
                       {formatCurrency(m.runningBalance)}
                     </td>
+                    {canMove && (
+                      // Pinned right so it stays in reach while the table scrolls sideways on a phone.
+                      <td className="sticky right-0 bg-white px-1 py-1 text-right transition-colors group-hover:bg-[#F4F6F8]">
+                        {!m.isTransfer && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  variant="ghost"
+                                  className="size-11 text-mid hover:text-charcoal"
+                                  aria-label="Mais ações"
+                                  data-testid={`ledger-row-menu-${m.id}`}
+                                >
+                                  <MoreHorizontalIcon className="size-4" />
+                                </Button>
+                              }
+                            />
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem
+                                className="min-h-11 flex-wrap"
+                                disabled={m.isReconciled}
+                                onClick={() =>
+                                  setMoveTarget({
+                                    mode: 'movements',
+                                    movementIds: [m.id],
+                                    fromAccountId: m.accountId,
+                                    fromAccountName: m.accountName,
+                                  })
+                                }
+                              >
+                                <ArrowLeftRightIcon />
+                                Trocar conta
+                                {m.isReconciled && (
+                                  <span className="basis-full pl-5.5 text-xs text-[#6B6B6B]">
+                                    Já conciliado: desfaça a conciliação para trocar
+                                  </span>
+                                )}
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 )
               })}
@@ -374,6 +443,12 @@ export function LedgerView() {
       )}
 
       <TransferDialog open={transferOpen} onOpenChange={setTransferOpen} accounts={liveAccounts} preset={transferPreset} />
+      <MoveMovementsDialog
+        open={moveTarget !== null}
+        onOpenChange={(open) => !open && setMoveTarget(null)}
+        accounts={liveAccounts}
+        target={moveTarget}
+      />
     </div>
   )
 }

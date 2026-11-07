@@ -10,10 +10,10 @@ vi.mock('@/lib/audit', () => ({ createAuditLog: vi.fn() }))
 
 // Resolution itself is covered in financial-accounts.test.ts.
 const resolveMovementAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-default')
-const reversalAccountIdMock = vi.fn(async (..._args: unknown[]) => 'acct-original')
+const expenseOutflowForReversalMock = vi.fn(async (..._args: unknown[]) => ({ movementId: 'mov-0', accountId: 'acct-drawer' }))
 vi.mock('../financial-accounts', () => ({
   resolveMovementAccountId: (...args: unknown[]) => resolveMovementAccountIdMock(...args),
-  reversalAccountId: (...args: unknown[]) => reversalAccountIdMock(...args),
+  expenseOutflowForReversal: (...args: unknown[]) => expenseOutflowForReversalMock(...args),
 }))
 
 const TENANT = '00000000-0000-0000-0000-00000000a001'
@@ -55,13 +55,12 @@ describe('expense payments and accounts', () => {
     const { tx, log } = expenseTx({
       id: INSTALLMENT_ID, expense_id: 'exp-1', amount: '120.00', status: 'paid', installment_number: 1,
       paid_at: '2026-10-01T15:00:00Z', payment_method: 'cash', expense_status: 'paid', category_id: 'cat-1',
-      movement_id: 'mov-0', movement_account_id: 'acct-drawer',
     })
 
     await revertExpenseInstallmentPayment(TENANT, INSTALLMENT_ID, USER_ID)
 
-    expect(reversalAccountIdMock).toHaveBeenCalledWith(tx, TENANT, 'acct-drawer')
+    expect(expenseOutflowForReversalMock).toHaveBeenCalledWith(tx, TENANT, INSTALLMENT_ID)
     const counter = log.find((q) => q.op === 'insert' && tableOf(q) === cashMovements)
-    expect(valuesOfLogged(counter!)).toMatchObject({ type: 'inflow', paymentMethod: null, accountId: 'acct-original' })
+    expect(valuesOfLogged(counter!)).toMatchObject({ type: 'inflow', paymentMethod: null, accountId: 'acct-drawer' })
   })
 })

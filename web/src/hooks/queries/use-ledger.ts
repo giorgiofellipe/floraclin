@@ -27,6 +27,7 @@ interface LedgerMovement {
   accountId: string | null
   accountName: string | null
   isTransfer: boolean
+  isReconciled: boolean
   runningBalance: number
 }
 

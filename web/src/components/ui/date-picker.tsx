@@ -289,6 +289,8 @@ interface DateRangePickerProps {
   onDateFromChange?: (value: string) => void
   onDateToChange?: (value: string) => void
   className?: string
+  /** Share the row's width instead of two fixed 160px fields, for narrow containers (a phone dialog). */
+  fluid?: boolean
 }
 
 function DateRangePicker({
@@ -297,7 +299,9 @@ function DateRangePicker({
   onDateFromChange,
   onDateToChange,
   className,
+  fluid = false,
 }: DateRangePickerProps) {
+  const fieldWidth = fluid ? "min-w-0 flex-1" : "w-[160px]"
   return (
     <div className={cn("flex items-center gap-1.5", className)}>
       <DatePicker
@@ -305,7 +309,7 @@ function DateRangePicker({
         onChange={onDateFromChange}
         placeholder="De"
         maxDate={dateTo}
-        className="w-[160px]"
+        className={fieldWidth}
       />
       <span className="text-mid text-xs select-none">—</span>
       <DatePicker
@@ -313,7 +317,7 @@ function DateRangePicker({
         onChange={onDateToChange}
         placeholder="Até"
         minDate={dateFrom}
-        className="w-[160px]"
+        className={fieldWidth}
       />
     </div>
   )

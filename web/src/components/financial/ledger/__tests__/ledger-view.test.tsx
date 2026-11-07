@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from 'vitest'
+import { beforeEach, describe, it, expect, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { LedgerView } from '../ledger-view'
 
 // ─── Mocks ─────────────────────────────────────────────────────────
@@ -18,6 +19,7 @@ const mockLedgerData = {
       accountId: 'acc-bank',
       accountName: 'Itaú',
       isTransfer: false,
+      isReconciled: false,
       runningBalance: 1500,
     },
     {
@@ -32,6 +34,7 @@ const mockLedgerData = {
       accountId: 'acc-bank',
       accountName: 'Itaú',
       isTransfer: false,
+      isReconciled: true,
       runningBalance: 1200,
     },
     {
@@ -46,6 +49,7 @@ const mockLedgerData = {
       accountId: 'acc-bank',
       accountName: 'Itaú',
       isTransfer: true,
+      isReconciled: false,
       runningBalance: 1100,
     },
   ],
@@ -65,11 +69,12 @@ const mockLedgerData = {
   },
 }
 
+const useLedgerMock = vi.fn()
 vi.mock('@/hooks/queries/use-ledger', () => ({
-  useLedger: () => ({
-    data: mockLedgerData,
-    isPending: false,
-  }),
+  useLedger: (filters: unknown) => {
+    useLedgerMock(filters)
+    return { data: mockLedgerData, isPending: false }
+  },
   useLedgerExportUrl: () => '/api/financial/ledger/export?dateFrom=2026-03-01&dateTo=2026-03-31',
 }))
 
@@ -92,13 +97,21 @@ const mockAccounts = {
 vi.mock('@/hooks/queries/use-financial-accounts', () => ({
   useFinancialAccounts: () => ({ data: mockAccounts }),
   useCreateTransfer: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMoveMovements: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMoveMovementsPreview: () => ({ isFetching: false, isError: false }),
 }))
 
+let searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn(), replace: vi.fn() }),
   usePathname: () => '/financeiro',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
 }))
+
+beforeEach(() => {
+  searchParams = new URLSearchParams()
+  useLedgerMock.mockClear()
+})
 
 // ─── Tests ─────────────────────────────────────────────────────────
 
@@ -176,5 +189,30 @@ describe('LedgerView', () => {
     expect(screen.getByText('Transferência')).toBeInTheDocument()
     expect(screen.getByTestId('ledger-transfers')).toHaveTextContent('transferências entre contas')
     expect(screen.getAllByText('Itaú').length).toBeGreaterThanOrEqual(3)
+  })
+
+  it('puts "Trocar conta" behind a row menu, never on a transfer leg', async () => {
+    render(<LedgerView />)
+
+    expect(screen.queryByTestId('ledger-row-menu-mov-3')).not.toBeInTheDocument()
+    await userEvent.click(screen.getByTestId('ledger-row-menu-mov-1'))
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Trocar conta' }))
+    expect(await screen.findByText('Trocar conta do pagamento')).toBeInTheDocument()
+  })
+
+  it('keeps "Trocar conta" off on a reconciled movement and says why', async () => {
+    render(<LedgerView />)
+
+    await userEvent.click(screen.getByTestId('ledger-row-menu-mov-2'))
+    const item = await screen.findByRole('menuitem', { name: /Trocar conta/ })
+    expect(item).toHaveAttribute('aria-disabled', 'true')
+    expect(item).toHaveTextContent('Já conciliado')
+  })
+
+  it('opens filtered to the patient and start date "Ver no extrato" links with', () => {
+    searchParams = new URLSearchParams('tab=ledger&patientId=p1&dateFrom=2026-10-31')
+    render(<LedgerView />)
+
+    expect(useLedgerMock).toHaveBeenCalledWith(expect.objectContaining({ patientId: 'p1', dateFrom: '2026-10-31' }))
   })
 })

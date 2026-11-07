@@ -5,6 +5,7 @@ import { queryKeys } from './query-keys'
 import type { FinancialAccountKind } from '@/db/schema'
 import type {
   CreateFinancialAccountInput,
+  MoveMovementsInput,
   TransferInput,
   UpdateFinancialAccountInput,
 } from '@/validations/financial-accounts'
@@ -74,6 +75,36 @@ export function useSetFinancialAccountArchived() {
   return useMutation({
     mutationFn: ({ id, archived }: { id: string; archived: boolean }) =>
       requestJson(`/api/financial/accounts/${id}`, 'PUT', { archived }),
+    onSuccess: invalidate,
+  })
+}
+
+export interface MoveMovementsResult {
+  moved: number
+  skippedReconciled: number
+  skippedTransfers: number
+}
+
+export interface MoveMovementsPreview extends MoveMovementsResult {
+  /** Net amount leaving the source for the target, e.g. "1250.00". */
+  total: string
+}
+
+/** What a move would do, counted on the server without moving anything. `null` waits for a complete form. */
+export function useMoveMovementsPreview(input: MoveMovementsInput | null) {
+  return useQuery({
+    queryKey: [...queryKeys.financial.all, 'move-preview', input],
+    queryFn: (): Promise<{ data: MoveMovementsPreview }> =>
+      requestJson('/api/financial/movements/move-account', 'POST', { ...input, preview: true }),
+    enabled: input !== null,
+  })
+}
+
+export function useMoveMovements() {
+  const invalidate = useInvalidateFinance()
+  return useMutation({
+    mutationFn: (data: MoveMovementsInput): Promise<{ data: MoveMovementsResult }> =>
+      requestJson('/api/financial/movements/move-account', 'POST', data),
     onSuccess: invalidate,
   })
 }

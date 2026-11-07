@@ -11,7 +11,7 @@ import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { addDays } from 'date-fns'
 import { verifyTenantOwnership } from './helpers'
-import { resolveMovementAccountId, reversalAccountId } from './financial-accounts'
+import { expenseOutflowForReversal, resolveMovementAccountId } from './financial-accounts'
 import type { CreateExpenseInput, ExpenseFilterInput } from '@/validations/expenses'
 import type { PaymentMethod } from '@/types'
 import { brToday, startOfBrDay, endOfBrDay, toLocalYmd } from '@/lib/dates'
@@ -346,14 +346,9 @@ export async function revertExpenseInstallmentPayment(
     const lockResult = await tx.execute(
       sql`SELECT ei.id, ei.expense_id, ei.amount, ei.status, ei.installment_number,
                  ei.paid_at, ei.payment_method,
-                 e.status AS expense_status, e.category_id,
-                 cm.id AS movement_id, cm.account_id AS movement_account_id
+                 e.status AS expense_status, e.category_id
           FROM floraclin.expense_installments ei
           INNER JOIN floraclin.expenses e ON e.id = ei.expense_id
-          LEFT JOIN floraclin.cash_movements cm
-            ON cm.expense_installment_id = ei.id
-            AND cm.type = 'outflow'
-            AND cm.reversed_by_movement_id IS NULL
           WHERE ei.id = ${installmentId}
             AND e.tenant_id = ${tenantId}
             AND e.deleted_at IS NULL
@@ -369,13 +364,15 @@ export async function revertExpenseInstallmentPayment(
     if (String(row.expense_status) === 'cancelled') throw new Error('Despesa cancelada')
     if (String(row.status) !== 'paid') throw new Error('Parcela não está paga')
 
-    const originalMovementId = row.movement_id ? String(row.movement_id) : null
     const prevPaidAt = row.paid_at ? new Date(row.paid_at as string | Date) : null
     const prevPaymentMethod = row.payment_method ? String(row.payment_method) : null
     const installmentNumber = Number(row.installment_number)
     const expenseId = String(row.expense_id)
     const amount = String(row.amount)
     const categoryId = row.category_id ? String(row.category_id) : null
+    // Locked and read after the installment: a concurrent account move either
+    // lands first (the counter follows the outflow) or waits and moves the pair.
+    const original = await expenseOutflowForReversal(tx, tenantId, installmentId)
 
     const [counter] = await tx
       .insert(cashMovements)
@@ -391,19 +388,15 @@ export async function revertExpenseInstallmentPayment(
         expenseInstallmentId: installmentId,
         expenseCategoryId: categoryId,
         recordedBy: userId,
-        accountId: await reversalAccountId(
-          tx,
-          tenantId,
-          row.movement_account_id ? String(row.movement_account_id) : null,
-        ),
+        accountId: original.accountId,
       })
       .returning({ id: cashMovements.id })
 
-    if (originalMovementId && counter) {
+    if (original.movementId && counter) {
       await tx
         .update(cashMovements)
         .set({ reversedByMovementId: counter.id })
-        .where(eq(cashMovements.id, originalMovementId))
+        .where(eq(cashMovements.id, original.movementId))
     }
 
     const [updated] = await tx

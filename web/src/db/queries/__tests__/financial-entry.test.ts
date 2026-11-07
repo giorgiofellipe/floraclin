@@ -39,6 +39,12 @@ vi.mock('../card-payments', () => ({
   getCardPaymentSummaries: (...args: unknown[]) => getCardPaymentSummariesMock(...args),
 }))
 
+const getPaymentMovementsMock = vi.fn()
+vi.mock('../financial-accounts', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../financial-accounts')>()),
+  getPaymentMovements: (...args: unknown[]) => getPaymentMovementsMock(...args),
+}))
+
 const TENANT = '00000000-0000-0000-0000-00000000a001'
 const PATIENT_ID = '00000000-0000-0000-0000-00000000p001'
 const ENTRY_ID = '00000000-0000-0000-0000-00000000e001'
@@ -88,6 +94,7 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   dbMock.select.mockReset()
+  getPaymentMovementsMock.mockResolvedValue(new Map())
 })
 
 /**
@@ -609,11 +616,16 @@ describe('getFinancialEntry card payments', () => {
       ],
     })
     getCardPaymentSummariesMock.mockResolvedValueOnce(new Map([['cp1', summary]]))
+    const cashMovement = { movementId: 'm-cash', accountId: 'acc-cash', isReconciled: true }
+    getPaymentMovementsMock.mockResolvedValueOnce(new Map([['p-cash', cashMovement]]))
 
     const result = await getFinancialEntry(TENANT, ENTRY_ID)
 
     expect(getCardPaymentSummariesMock).toHaveBeenCalledWith(expect.anything(), TENANT, ['cp1'])
     expect(result?.installments[0].paymentRecords.map((p) => p.card)).toEqual([summary, null])
+    // A card payment wrote no cash movement, so it offers no "Trocar conta".
+    expect(getPaymentMovementsMock).toHaveBeenCalledWith(TENANT, ['p-card', 'p-cash'])
+    expect(result?.installments[0].paymentRecords.map((p) => p.movement)).toEqual([null, cashMovement])
     expect(result).toMatchObject({ paymentMethod: 'credit_card', cardInstallmentCount: 6 })
   })
 })

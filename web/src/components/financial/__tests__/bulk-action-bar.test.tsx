@@ -1,5 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { BulkActionBar } from '../bulk-action-bar'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { createWrapper } from '@/tests/test-utils'
@@ -135,6 +136,34 @@ describe('BulkActionBar', () => {
     expect(screen.getByText(/Marcar como pago \(2\)/)).toBeInTheDocument()
     expect(screen.getByText(/Cancelar \(2\)/)).toBeInTheDocument()
     expect(screen.getByText(/Renegociar \(2\)/)).toBeInTheDocument()
+  })
+
+  it('holds Cancelar, Renegociar and Reativar behind "Mais" for phones, with the reason a disabled one is off', async () => {
+    const onRenegotiate = vi.fn()
+    render(
+      <BulkActionBar
+        selectedCount={2}
+        selectedInstallmentIds={[]}
+        selectedEntryIds={['e1', 'e2']}
+        canRenegotiate={false}
+        canUncancel={true}
+        onClear={() => {}}
+        onRenegotiate={onRenegotiate}
+      />,
+      { wrapper: createWrapper() },
+    )
+
+    await userEvent.click(screen.getByTestId('bulk-more'))
+    const items = await screen.findAllByRole('menuitem')
+    expect(items.map((i) => i.textContent)).toEqual([
+      'Cancelar (2)',
+      'Renegociar (2)Selecione cobranças do mesmo paciente',
+      'Reativar (2)',
+    ])
+    expect(items[1]).toHaveAttribute('aria-disabled', 'true')
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Reativar (2)' }))
+    expect(await screen.findByTestId('uncancel-reason')).toBeInTheDocument()
   })
 
   it('shows singular text for one selected', () => {

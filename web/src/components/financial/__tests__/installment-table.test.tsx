@@ -455,3 +455,90 @@ describe('InstallmentTable "Emitir NFS-e" without NFS-e configured', () => {
     expect(screen.queryByRole('link', { name: 'Configurar NFS-e' })).not.toBeInTheDocument()
   })
 })
+
+describe('InstallmentTable "Trocar conta" in the payment history', () => {
+  const ACCOUNTS = [
+    { id: 'acc-cash', kind: 'cash', name: 'Caixa', isDefault: true, archivedAt: null },
+    { id: 'acc-bank', kind: 'bank', name: 'Itaú', isDefault: true, archivedAt: null },
+  ]
+
+  function payment(id: string, movement: unknown) {
+    return {
+      id,
+      amount: '250.00',
+      paymentMethod: 'pix',
+      interestCovered: '0',
+      fineCovered: '0',
+      principalCovered: '250.00',
+      paidAt: '2026-09-01T12:00:00.000Z',
+      recordedAt: '2026-09-01T12:00:00.000Z',
+      notes: null,
+      nfse: null,
+      movement,
+    }
+  }
+
+  function serve(payments: unknown[], { canManage = true } = {}) {
+    vi.spyOn(globalThis, 'fetch').mockClear().mockImplementation(async (url) => {
+      if (String(url).includes('/api/financial/accounts')) {
+        return { ok: true, json: async () => ({ data: ACCOUNTS, canManage }) } as Response
+      }
+      return {
+        ok: true,
+        json: async () => ({ installments: [{ ...mockInstallments[0], paymentRecords: payments }] }),
+      } as Response
+    })
+  }
+
+  async function expandPayments() {
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+    await screen.findAllByTestId('payment-reverse')
+  }
+
+  it('opens the move dialog for the payment and names its account', async () => {
+    serve([payment('pay-1', { movementId: 'mov-1', accountId: 'acc-cash', isReconciled: false })])
+    await expandPayments()
+
+    expect(await screen.findByText(/PIX · Caixa/)).toBeInTheDocument()
+    await userEvent.click(await screen.findByTestId('payment-move-account'))
+    expect(await screen.findByText('Trocar conta do pagamento')).toBeInTheDocument()
+    expect(screen.getByTestId('move-current-account')).toHaveTextContent('Caixa')
+    expect(screen.getByRole('button', { name: 'Mover pagamento' })).toBeDisabled()
+  })
+
+  it('is off with "Já conciliado" once the payment matches a bank statement line', async () => {
+    serve([payment('pay-1', { movementId: 'mov-1', accountId: 'acc-cash', isReconciled: true })])
+    await expandPayments()
+
+    expect(await screen.findByTestId('payment-move-account')).toBeDisabled()
+    expect(screen.getByText('Já conciliado')).toBeInTheDocument()
+  })
+
+  it('is absent for a card payment, which wrote no cash movement', async () => {
+    serve([
+      {
+        ...payment('pay-card', null),
+        paymentMethod: 'credit_card',
+        card: { method: 'credit_card', terminalName: 'Stone', installmentCount: 3 },
+      },
+      payment('pay-1', { movementId: 'mov-1', accountId: 'acc-cash', isReconciled: false }),
+    ])
+    await expandPayments()
+
+    await screen.findByTestId('payment-move-account')
+    expect(screen.getAllByTestId('payment-move-account')).toHaveLength(1)
+    // Says why, instead of leaving the clinic looking for the button.
+    expect(screen.getByTestId('payment-move-card-note')).toHaveTextContent('Cai via repasse')
+  })
+
+  it('is absent for roles that do not manage accounts', async () => {
+    serve([payment('pay-1', { movementId: 'mov-1', accountId: 'acc-cash', isReconciled: false })], { canManage: false })
+    await expandPayments()
+
+    // The account name shows once accounts load; the action still stays out.
+    expect(await screen.findByText(/PIX · Caixa/)).toBeInTheDocument()
+    expect(screen.queryByTestId('payment-move-account')).not.toBeInTheDocument()
+  })
+})
