@@ -183,6 +183,34 @@ export async function paymentInflowAccountId(
   return reversalAccountId(tx, tenantId, original?.accountId)
 }
 
+/**
+ * The live outflow an expense installment's payment wrote and the account its
+ * reversal goes to. Locks the outflow like paymentInflowAccountId does: the
+ * account is read behind the lock, so a move that commits first is seen and
+ * the counter follows it; a move that comes later sees the finished pair.
+ */
+export async function expenseOutflowForReversal(
+  tx: Pick<typeof db, 'select' | 'insert'>,
+  tenantId: string,
+  installmentId: string,
+): Promise<{ movementId: string | null; accountId: string }> {
+  const [original] = await tx
+    .select({ id: cashMovements.id, accountId: cashMovements.accountId })
+    .from(cashMovements)
+    .where(
+      and(
+        eq(cashMovements.tenantId, tenantId),
+        eq(cashMovements.expenseInstallmentId, installmentId),
+        eq(cashMovements.type, 'outflow'),
+        isNull(cashMovements.reversedByMovementId),
+      ),
+    )
+    .orderBy(desc(cashMovements.recordedAt))
+    .limit(1)
+    .for('update')
+  return { movementId: original?.id ?? null, accountId: await reversalAccountId(tx, tenantId, original?.accountId) }
+}
+
 export interface PaymentMovement {
   movementId: string
   accountId: string | null
@@ -518,13 +546,14 @@ function withPairs(tenantId: string, ids: string[]) {
 
 /**
  * Picks the movements a move covers and decides which ones go. With `lock`,
- * every row is locked (in id order, like allocateStatementLine) before the
- * pairs and the reconciliation are read, so neither a concurrent match nor a
- * concurrent reversal can slip between this read and the update.
+ * the picked rows and the other half of each pair are found first and then
+ * locked in one statement, in id order like allocateStatementLine: locking
+ * the picked half before finding its pair would let a match or another move
+ * hold one half while waiting on the other. Once they are locked, neither a
+ * concurrent match nor a concurrent reversal can slip between this read and
+ * the update.
  */
 async function planMove(tx: Tx, tenantId: string, targetId: string, data: MoveMovementsInput, lock: boolean) {
-  const locked = <T extends { for: (strength: 'update') => unknown }>(query: T) => (lock ? query.for('update') : query)
-
   const pickWhere = and(
     eq(cashMovements.tenantId, tenantId),
     data.movementIds
@@ -535,28 +564,49 @@ async function planMove(tx: Tx, tenantId: string, targetId: string, data: MoveMo
           data.dateTo ? lte(cashMovements.movementDate, endOfBrDay(data.dateTo)) : undefined,
         ),
   )
-  const picked = (await locked(
-    tx.select(movementRow).from(cashMovements).where(pickWhere).orderBy(asc(cashMovements.id)),
-  )) as MovementRow[]
-  if (data.movementIds && picked.length !== new Set(data.movementIds).size) throw notFound()
+  const read = async () => {
+    const picked = (await tx
+      .select(movementRow)
+      .from(cashMovements)
+      .where(pickWhere)
+      .orderBy(asc(cashMovements.id))) as MovementRow[]
+    if (data.movementIds && picked.length !== new Set(data.movementIds).size) throw notFound()
+    const pickedIds = picked.filter((m) => !m.transferGroupId).map((m) => m.id)
+    const rows = pickedIds.length
+      ? ((await tx
+          .select(movementRow)
+          .from(cashMovements)
+          .where(withPairs(tenantId, pickedIds))
+          .orderBy(asc(cashMovements.id))) as MovementRow[])
+      : []
+    return { picked, rows }
+  }
+
+  let { picked, rows } = await read()
+  if (lock) {
+    // A row committed while this transaction waited for a lock (a reversal's
+    // counter, a payment landing in the period) is only visible to a later
+    // statement: read again behind the locks and lock what is new, until
+    // nothing is. A reversal locks the original before writing its counter
+    // (paymentInflowAccountId, expenseOutflowForReversal), so once the
+    // originals are locked no new pair can form.
+    const locked = new Set<string>()
+    for (;;) {
+      const fresh = rows.map((r) => r.id).filter((id) => !locked.has(id))
+      if (!fresh.length) break
+      await tx
+        .select({ id: cashMovements.id })
+        .from(cashMovements)
+        .where(and(eq(cashMovements.tenantId, tenantId), inArray(cashMovements.id, fresh)))
+        .orderBy(asc(cashMovements.id))
+        .for('update')
+      for (const id of fresh) locked.add(id)
+      ;({ picked, rows } = await read())
+    }
+  }
 
   const skippedTransfers = picked.filter((m) => m.transferGroupId).length
-  const pickedIds = picked.filter((m) => !m.transferGroupId).map((m) => m.id)
-  if (!pickedIds.length) return { rows: [] as MovementRow[], toMove: [] as MovementRow[], moved: 0, skippedReconciled: 0, skippedTransfers }
-
-  // A reversal locks the inflow before writing its counter (reversePayment),
-  // so once the picked rows are locked no new pair can form. A counter
-  // committed while this transaction waited for a lock is only visible to a
-  // later statement: read again until the set stops growing.
-  let rows: MovementRow[] = []
-  let ids = pickedIds
-  for (;;) {
-    rows = (await locked(
-      tx.select(movementRow).from(cashMovements).where(withPairs(tenantId, ids)).orderBy(asc(cashMovements.id)),
-    )) as MovementRow[]
-    if (rows.length === ids.length || !lock) break
-    ids = rows.map((r) => r.id)
-  }
+  if (!rows.length) return { rows, toMove: [] as MovementRow[], moved: 0, skippedReconciled: 0, skippedTransfers }
 
   // Group each row with its pair so the pair is moved or skipped as one.
   const groupOf = new Map<string, string>()
@@ -625,6 +675,9 @@ export async function moveMovementsToAccount(
   data: MoveMovementsInput,
 ): Promise<MoveMovementsResult> {
   return withTransaction(async (tx) => {
+    // One move at a time per clinic. Moves lock in id order, but one that
+    // finds a new counter after locking has to lock it out of order.
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('floraclin.move_movements'), hashtext(${tenantId}))`)
     const target = await lockTarget(tx, tenantId, data.toAccountId, true)
     const { toMove, moved, skippedReconciled, skippedTransfers } = await planMove(tx, tenantId, target.id, data, true)
 

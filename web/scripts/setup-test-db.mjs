@@ -58,38 +58,44 @@ const sql = postgres(url, { prepare: false, max: 1, onnotice: () => {} })
 const dir = join(process.cwd(), 'src/db/migrations')
 const files = readdirSync(dir).filter((f) => f.endsWith('.sql')).sort()
 
+// Columns production got by push that a migration reads before any migration
+// creates them: added right before that migration, with production's type.
+const pushedBefore = {
+  // Dropped again by 0008 itself, after copying it into prospect_procedure_types.
+  '0008_prospect_value.sql': ['ALTER TABLE "floraclin"."prospects" ADD COLUMN IF NOT EXISTS "interested_procedures" jsonb'],
+  '0023_email_confirmation.sql': ['ALTER TABLE "floraclin"."users" ADD COLUMN IF NOT EXISTS "email_verified" timestamptz'],
+  '0034_installment_terms_snapshot.sql': [
+    'ALTER TABLE "floraclin"."payment_records" ADD COLUMN IF NOT EXISTS "reversed_at" timestamptz',
+  ],
+}
+
+// The only error a fresh database may give: an object a migration creates
+// again (0000 creates the floraclin schema made above). Anything else stops
+// the setup, so the tests never run on a half-built database.
+const ALREADY_EXISTS = new Set(['42P06', '42P07', '42701', '42710'])
+
 async function run(statement, where) {
   try {
     await sql.unsafe(statement)
-    return true
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    // Supabase-only objects (auth schema, roles, policies) don't exist on plain Postgres.
-    if (!message.includes('already exists') && !message.includes('duplicate key')) {
-      console.warn(`${where}: ${message}`)
-      return false
-    }
-    return true
+    if (ALREADY_EXISTS.has(err?.code)) return
+    throw new Error(`${where}: ${err instanceof Error ? err.message : String(err)}`, { cause: err })
   }
 }
 
-let failed = 0
 try {
   await sql`CREATE SCHEMA IF NOT EXISTS floraclin`
   for (const file of files) {
+    for (const statement of pushedBefore[file] ?? []) await run(statement, `${file} (pushed column)`)
     const statements = readFileSync(join(dir, file), 'utf-8')
       .split('--> statement-breakpoint')
       .map((s) => s.trim())
       .filter(Boolean)
-    for (const statement of statements) {
-      if (!(await run(statement, file))) failed += 1
-    }
+    for (const statement of statements) await run(statement, file)
   }
   const columns = await columnStatements()
-  for (const statement of columns) {
-    if (!(await run(statement, 'schema.ts'))) failed += 1
-  }
-  console.log(`Applied ${files.length} migrations and ${columns.length} schema.ts statements (${failed} skipped)`)
+  for (const statement of columns) await run(statement, 'schema.ts')
+  console.log(`Applied ${files.length} migrations and ${columns.length} schema.ts statements`)
 } finally {
   await sql.end()
 }

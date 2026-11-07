@@ -6,6 +6,9 @@ import {
   auditLogs,
   bankReconciliationAllocations,
   cashMovements,
+  expenseCategories,
+  expenseInstallments,
+  expenses,
   financialEntries,
   installments,
   patients,
@@ -28,17 +31,43 @@ import {
 } from '../financial-accounts'
 import { exportLedgerCSV, getLedgerSummary, listCashMovements } from '../cash-movements'
 import { allocateStatementLine, commitStatementImport, listStatementLines } from '../bank-reconciliation'
+import { payExpenseInstallment, revertExpenseInstallmentPayment } from '../expenses'
 
-/** Set by the rollback test: the audit insert, the move's last write, fails. */
-const audit = vi.hoisted(() => ({ fail: false }))
+/**
+ * The audit insert is the last write of a move and of a reversal. `fail` makes
+ * it fail (rollback test); `pause` holds the next one of an entity type until
+ * released, keeping that transaction open with every lock it took (races).
+ */
+const audit = vi.hoisted(() => ({
+  fail: false,
+  pause: null as null | { entityType: string; reached: () => void; gate: Promise<void> },
+}))
 vi.mock('@/lib/audit', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/audit')>()
   return {
     ...actual,
-    createAuditLog: (...args: Parameters<typeof actual.createAuditLog>) =>
-      audit.fail ? Promise.reject(new Error('audit down')) : actual.createAuditLog(...args),
+    createAuditLog: async (...args: Parameters<typeof actual.createAuditLog>) => {
+      if (audit.fail) throw new Error('audit down')
+      const pause = audit.pause
+      if (pause && args[0].entityType === pause.entityType) {
+        audit.pause = null
+        pause.reached()
+        await pause.gate
+      }
+      return actual.createAuditLog(...args)
+    },
   }
 })
+
+/** Pauses the next audited write of `entityType` just before it commits. */
+function pauseBeforeCommit(entityType: string) {
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  let reached!: () => void
+  const paused = new Promise<void>((resolve) => (reached = resolve))
+  audit.pause = { entityType, reached, gate }
+  return { paused, release }
+}
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
 const describeIntegration = RUN_INTEGRATION ? describe : describe.skip
@@ -51,6 +80,7 @@ const MOVE_CLINIC = '00000000-0000-0000-0000-0000000fa005'
 const PATIENT = '00000000-0000-0000-0000-0000000fa006'
 const ENTRY = '00000000-0000-0000-0000-0000000fa007'
 const INSTALLMENT = '00000000-0000-0000-0000-0000000fa008'
+const CATEGORY = '00000000-0000-0000-0000-0000000fa009'
 
 const PERIOD = { dateFrom: '2026-10-01', dateTo: '2026-11-30', type: 'all' as const }
 
@@ -282,11 +312,40 @@ describeIntegration('moving movements between accounts (integration, requires te
     return { release, done }
   }
 
-  /** Resolves once some session is blocked on a lock, i.e. the racing call reached the held rows. */
-  async function waitForLockWait() {
+  /** A paid expense installment: its outflow left the drawer through payExpenseInstallment. */
+  async function paidExpense(amount: string) {
+    const [expense] = await db
+      .insert(expenses)
+      .values({ tenantId: MOVE_CLINIC, categoryId: CATEGORY, description: 'Aluguel', totalAmount: amount, createdBy: USER })
+      .returning()
+    const [installment] = await db
+      .insert(expenseInstallments)
+      .values({ expenseId: expense.id, installmentNumber: 1, amount, dueDate: '2026-11-03' })
+      .returning()
+    await payExpenseInstallment(MOVE_CLINIC, installment.id, 'cash', USER, day.toISOString(), drawer.id)
+    const [outflow] = await db.select().from(cashMovements).where(eq(cashMovements.expenseInstallmentId, installment.id))
+    return { installmentId: installment.id, outflowId: outflow.id }
+  }
+
+  async function expenseCounterId(installmentId: string) {
+    const [counter] = await db
+      .select({ id: cashMovements.id })
+      .from(cashMovements)
+      .where(and(eq(cashMovements.expenseInstallmentId, installmentId), eq(cashMovements.type, 'inflow')))
+    return counter.id
+  }
+
+  /**
+   * Resolves once some session is blocked on a lock, i.e. the racing call
+   * reached the held rows. With `event`, only a wait on that kind of lock
+   * ('advisory', 'transactionid'...) counts.
+   */
+  async function waitForLockWait(event?: string) {
     for (let i = 0; i < 200; i++) {
       const rows = await db.execute<{ n: number }>(
-        sql`SELECT count(*)::int AS n FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND datname = current_database()`,
+        sql`SELECT count(*)::int AS n FROM pg_stat_activity
+            WHERE wait_event_type = 'Lock' AND datname = current_database()
+              AND (${event ?? null}::text IS NULL OR wait_event = ${event ?? null}::text)`,
       )
       if (Number(rows[0]?.n) > 0) return
       await new Promise((resolve) => setTimeout(resolve, 25))
@@ -322,6 +381,7 @@ describeIntegration('moving movements between accounts (integration, requires te
       appliedInterestRate: '0',
       appliedGracePeriodDays: 0,
     })
+    await db.insert(expenseCategories).values({ id: CATEGORY, tenantId: MOVE_CLINIC, name: 'Aluguel' })
   })
 
   it('moves a payment and its reversal together, leaving amount and date alone, and audits each old account', async () => {
@@ -525,6 +585,57 @@ describeIntegration('moving movements between accounts (integration, requires te
       await moving.done
 
       expect(await reversalAccount).toBe(itau.id)
+    })
+
+    it('writes an expense reversal on the account a move committed while the reversal waited', async () => {
+      const { installmentId, outflowId } = await paidExpense('25.00')
+
+      // The move has re-pointed the outflow at Itaú and holds it, about to commit.
+      const pause = pauseBeforeCommit('cash_movement_account')
+      const move = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [outflowId] })
+      await pause.paused
+      const reversal = revertExpenseInstallmentPayment(MOVE_CLINIC, installmentId, USER)
+      await waitForLockWait('transactionid')
+      pause.release()
+
+      expect(await move).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+      await reversal
+      const counterId = await expenseCounterId(installmentId)
+      expect(await accountsOf([outflowId, counterId])).toEqual({ [outflowId]: itau.id, [counterId]: itau.id })
+    })
+
+    it('moves both halves of an expense reversal that commits while the move waits', async () => {
+      const { installmentId, outflowId } = await paidExpense('26.00')
+
+      // The reversal has written its counter on the drawer and holds the outflow, about to commit.
+      const pause = pauseBeforeCommit('expense_installment')
+      const reversal = revertExpenseInstallmentPayment(MOVE_CLINIC, installmentId, USER)
+      await pause.paused
+      const move = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [outflowId] })
+      await waitForLockWait('transactionid')
+      pause.release()
+      await reversal
+
+      expect(await move).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+      const counterId = await expenseCounterId(installmentId)
+      expect(await accountsOf([outflowId, counterId])).toEqual({ [outflowId]: itau.id, [counterId]: itau.id })
+    })
+
+    it('runs two moves of opposite halves of a pair one after the other, never split and never deadlocked', async () => {
+      const { original, counter } = await reversedPair(drawer.id, '27.00')
+
+      // The first move took the original (and with it the counter) and is about to commit.
+      const pause = pauseBeforeCommit('cash_movement_account')
+      const first = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: itau.id, movementIds: [original.id] })
+      await pause.paused
+      // The second one waits for the first before locking any row.
+      const second = moveMovementsToAccount(MOVE_CLINIC, USER, { toAccountId: drawer.id, movementIds: [counter.id] })
+      await waitForLockWait('advisory')
+      pause.release()
+
+      expect(await first).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+      expect(await second).toEqual({ moved: 1, skippedReconciled: 0, skippedTransfers: 0 })
+      expect(await accountsOf([original.id, counter.id])).toEqual({ [original.id]: drawer.id, [counter.id]: drawer.id })
     })
   })
 })
