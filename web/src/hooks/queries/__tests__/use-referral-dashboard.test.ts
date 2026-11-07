@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { focusManager } from '@tanstack/react-query'

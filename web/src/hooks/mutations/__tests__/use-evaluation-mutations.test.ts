@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 /**
  * The template editor decides between create and update from the cached
  * template. If saving resolves before that cache refetches, a second Salvar

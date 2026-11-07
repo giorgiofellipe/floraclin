@@ -9,11 +9,29 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Each check runs as its own job so they run in parallel; CI takes as long as
+# the slowest one instead of the sum. Web tests are split into shards.
 jobs:
-  ci:
-    name: lint · typecheck · test
+  check:
+    name: ${{ matrix.name }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Lint
+            run: pnpm --filter @floraclin/web lint
+          - name: Typecheck
+            run: pnpm --filter @floraclin/web typecheck
+          - name: Tests (1/3)
+            run: pnpm --filter @floraclin/web test:run --shard=1/3
+          - name: Tests (2/3)
+            run: pnpm --filter @floraclin/web test:run --shard=2/3
+          - name: Tests (3/3)
+            run: pnpm --filter @floraclin/web test:run --shard=3/3
+          - name: Site tests
+            run: pnpm --filter @floraclin/site test:run
 
     steps:
       - uses: actions/checkout@v4
@@ -35,17 +53,19 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm --filter @floraclin/web lint
+      - name: ${{ matrix.name }}
+        run: ${{ matrix.run }}
 
-      - name: Typecheck
-        run: pnpm --filter @floraclin/web typecheck
-
-      - name: Tests
-        run: pnpm --filter @floraclin/web test:run
-
-      - name: Site tests
-        run: pnpm --filter @floraclin/site test:run
+  # Keeps the old job name as the single status to require on PRs.
+  ci:
+    name: lint · typecheck · test
+    if: always()
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: All checks passed
+        if: needs.check.result != 'success'
+        run: exit 1
 
   db:
     name: database tests
