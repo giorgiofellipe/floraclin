@@ -1,5 +1,7 @@
 // Applies every migration to a disposable Postgres for the database tests in
-// CI, the same way e2e/helpers/test-db.ts does for the e2e suite.
+// CI, the same way e2e/helpers/test-db.ts does for the e2e suite. CI runs it
+// after `drizzle-kit push`, so "already exists" is the normal outcome for
+// tables and columns; what lands here is triggers, checks and indexes.
 // Usage: DATABASE_URL=postgresql://test:test@localhost:5432/floraclin_test node scripts/setup-test-db.mjs
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

@@ -92,6 +92,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # The SQL migrations alone don't build today's tables (some columns were
+      # only ever pushed), so the schema comes from schema.ts first and the
+      # migrations then add what it can't express: triggers, checks, indexes.
+      - name: Create tables from schema.ts
+        working-directory: web
+        run: pnpm exec drizzle-kit push --dialect=postgresql --schema=./src/db/schema.ts --url="$DATABASE_URL" --schemaFilters=floraclin --force
+
       - name: Migrate
         working-directory: web
         run: node scripts/setup-test-db.mjs
