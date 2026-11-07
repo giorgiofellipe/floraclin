@@ -10,7 +10,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { addDays } from 'date-fns'
 import { formatInTimeZone } from 'date-fns-tz'
 import { toBrYmd } from '@/lib/dates'
-import type { calendar_v3 } from 'googleapis'
+import type { calendar_v3 } from 'googleapis/build/src/apis/calendar'
 
 async function isOurOwnEvent(
   tenantId: string,

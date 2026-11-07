@@ -71,6 +71,10 @@ function makeTx() {
   }
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { reversePayment } = await import('../financial')
+
 describe('reversePayment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -80,7 +84,7 @@ describe('reversePayment', () => {
   // match it: a R$900 overpayment against a R$791 charge writes a R$900
   // outflow, or the cash ledger would be short by the excess forever.
   it('reversing a R$900 overpayment writes a R$900 outflow, not the amount it allocated', async () => {
-    const { reversePayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -114,7 +118,7 @@ describe('reversePayment', () => {
   // triggered it is reversed: fineApplied is recomputed from scratch against
   // whatever payments are left.
   it('reversing the payment that triggered the fine leaves the remaining payment covering it', async () => {
-    const { reversePayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -159,7 +163,7 @@ describe('reversePayment', () => {
   })
 
   it('keeps a renegotiated original renegotiated and its cancelled installment cancelled when its payment is reversed', async () => {
-    const { reversePayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -217,7 +221,7 @@ describe('reversePayment locking', () => {
 
   async function reverse(opts: { entryStatus?: string; locked?: Record<string, unknown>; live?: unknown[] } = {}) {
     const locked = { ...LOCKED, ...opts.locked }
-    const { reversePayment } = await import('../financial')
+
     const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -289,7 +293,7 @@ describe('reversePayment outflow link and card payments', () => {
   // Regression: the reversal wrote an outflow but left the original inflow
   // looking live, so the ledger could not tell which line was corrected.
   it('a pix reversal marks the original inflow as reversed by the new outflow', async () => {
-    const { reversePayment } = await import('../financial')
+
     const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -321,7 +325,7 @@ describe('reversePayment outflow link and card payments', () => {
   // The outflow undoes the money where the payment landed, not on whatever
   // account is the default today.
   it("writes the reversal outflow on the original inflow's account", async () => {
-    const { reversePayment } = await import('../financial')
+
     const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -353,7 +357,7 @@ describe('reversePayment outflow link and card payments', () => {
   // Regression: reversing one record of a bulk card payment left the others
   // paid and cancelled the repasses from under them, or cancelled once per record.
   it('reversing one record of a 3-record card payment reverses all three, cancels the repasses once and writes no outflow', async () => {
-    const { reversePayment } = await import('../financial')
+
     const { cashMovements, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const ids = [
       { record: PAYMENT_RECORD_ID, installment: 'i1' },

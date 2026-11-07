@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * connection, and for an owner also the clinic-wide feed URL.
  */
 
-vi.mock('googleapis', () => ({ google: { auth: { OAuth2: function () { return { revokeToken: vi.fn() } } } } }))
+vi.mock('googleapis/build/src/apis/calendar', () => ({ auth: { OAuth2: function () { return { revokeToken: vi.fn() } } } }))
 vi.mock('@/db/queries/calendar', () => ({
   getConnectionById: vi.fn(),
   getConnectionByUserId: vi.fn(),

@@ -10,7 +10,7 @@ process.env.GOOGLE_CLIENT_ID = 'test-client-id'
 process.env.GOOGLE_CLIENT_SECRET = 'test-client-secret'
 process.env.CALENDAR_STATE_SECRET = 'test-state-secret'
 
-vi.mock('googleapis', () => {
+vi.mock('googleapis/build/src/apis/calendar', () => {
   const mockOAuth2Instance = {
     generateAuthUrl: vi.fn().mockReturnValue('https://accounts.google.com/o/oauth2/v2/auth?mock'),
     getToken: vi.fn().mockResolvedValue({ tokens: { access_token: 'at', refresh_token: 'rt', expiry_date: Date.now() + 3600000 } }),
@@ -24,7 +24,6 @@ vi.mock('googleapis', () => {
   }
 
   return {
-    google: {
       auth: { OAuth2 },
       calendar: vi.fn().mockReturnValue({
         events: {
@@ -34,7 +33,6 @@ vi.mock('googleapis', () => {
           stop: vi.fn().mockResolvedValue(undefined),
         },
       }),
-    },
   }
 })
 

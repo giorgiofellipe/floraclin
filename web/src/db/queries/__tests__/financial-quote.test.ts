@@ -67,6 +67,11 @@ function queueQuoteSelects(opts: {
   dbMock.select.mockReturnValueOnce(chain(opts.payments ?? []))
 }
 
+// Finish cold module loading before timed tests mutate shared query fixtures.
+const { getInstallmentQuote } = await import('../financial-quote')
+const { financialSettings, installments, paymentRecords } = await import('@/db/schema')
+const { BusinessError } = await import('@/lib/errors')
+
 describe('getInstallmentQuote', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -74,7 +79,6 @@ describe('getInstallmentQuote', () => {
   })
 
   it('prices an unpaid overdue installment as of the given instant', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
     queueQuoteSelects({ installment: [installmentRow()] })
 
     const quote = await getInstallmentQuote(
@@ -91,8 +95,6 @@ describe('getInstallmentQuote', () => {
   // already issued. Rows are served by table so a settings read anywhere in
   // the path would see the new, harsher terms.
   it('prices with the terms written at creation, not the tenant settings changed since', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    const { financialSettings, installments, paymentRecords } = await import('@/db/schema')
     const byTable = new Map<unknown, unknown[]>([
       [installments, [installmentRow({ appliedGracePeriodDays: 0 })]],
       [financialSettings, [{ ...financialSettingsRow, fineValue: '1.00', gracePeriodDays: 10 }]],
@@ -111,7 +113,6 @@ describe('getInstallmentQuote', () => {
   })
 
   it('refuses a date before an existing payment and names the installment and the later date', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
     queueQuoteSelects({
       installment: [installmentRow()],
       payments: [livePayment('2026-08-01T15:00:00.000Z')],
@@ -130,7 +131,6 @@ describe('getInstallmentQuote', () => {
   // A date picked in the UI is anchored to BR noon, so on the morning of a day
   // that already has a payment it sorts before it.
   it('prices an earlier instant on the latest payment\'s own BR day after that payment', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
     queueQuoteSelects({
       installment: [installmentRow()],
       payments: [livePayment('2026-09-03T15:00:00.000Z')],
@@ -150,8 +150,6 @@ describe('getInstallmentQuote', () => {
     { status: 'paid', error: ['INSTALLMENT_ALREADY_PAID', 'Parcela já está totalmente paga'] },
     { status: 'cancelled', error: ['INSTALLMENT_CANCELLED', 'Parcela cancelada não pode receber pagamento'] },
   ])('throws $error.0 for a $status installment without reaching the payments select', async ({ status, error }) => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    const { BusinessError } = await import('@/lib/errors')
     dbMock.select.mockReturnValueOnce(chain([installmentRow({ status })]))
 
     await expect(
@@ -161,8 +159,6 @@ describe('getInstallmentQuote', () => {
   })
 
   it('throws INSTALLMENT_NOT_FOUND when the installment is not found', async () => {
-    const { getInstallmentQuote } = await import('../financial-quote')
-    const { BusinessError } = await import('@/lib/errors')
     dbMock.select.mockReturnValueOnce(chain([]))
 
     await expect(
