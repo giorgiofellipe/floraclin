@@ -29,8 +29,10 @@ vi.mock('@/lib/last-login', () => ({ rememberLastLogin: vi.fn() }))
 
 type JwtArgs = Parameters<NonNullable<NonNullable<NextAuthConfig['callbacks']>['jwt']>>[0]
 
+// Load the module before timing callback behavior, as in the magic-link tests.
+await import('../auth-config')
+
 async function jwt(args: Partial<JwtArgs> & { token: JWT }) {
-  await import('../auth-config')
   return config.current!.callbacks!.jwt!(args as JwtArgs) as Promise<JWT>
 }
 
