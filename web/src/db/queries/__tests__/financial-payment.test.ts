@@ -112,6 +112,10 @@ function queuePrepareRows() {
   )
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { recordPayment } = await import('../financial')
+
 describe('recordPayment', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -125,7 +129,7 @@ describe('recordPayment', () => {
   })
 
   it('propagates the audit failure', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -159,7 +163,7 @@ describe('recordPayment', () => {
   })
 
   it('790.75 against 750 due 2026-05-22, no priors, pays it off exactly', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -231,7 +235,6 @@ describe('recordPayment', () => {
       vi.useFakeTimers()
       vi.setSystemTime(now)
 
-      const { recordPayment } = await import('../financial')
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -275,7 +278,7 @@ describe('recordPayment', () => {
   )
 
   it('refuses an overpayment the operator did not confirm, before any write', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -299,7 +302,7 @@ describe('recordPayment', () => {
   })
 
   it('refuses a payment dated before an existing one and names the installment and the later date', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -344,7 +347,7 @@ describe('recordPayment', () => {
     { status: 'paid', code: 'INSTALLMENT_ALREADY_PAID' },
     { status: 'cancelled', code: 'INSTALLMENT_CANCELLED' },
   ])('status $status throws $code', async ({ status, code }) => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -362,7 +365,7 @@ describe('recordPayment', () => {
   })
 
   it('throws QUOTE_CHANGED one cent off, before the payment writes', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -400,7 +403,7 @@ describe('recordPayment on an entry out of collection', () => {
   // The installment was paid, its payment reversed, and now paid again: the
   // renegotiation that replaced the entry still stands.
   it('repaying a reversed installment of a renegotiated entry leaves the entry renegotiated and sends no Purchase', async () => {
-    const { recordPayment } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -444,7 +447,7 @@ describe('recordPayment on an installment with legacy payment splits', () => {
   // p1 was stored as all principal by code that predates the engine. Replayed,
   // Jun 22 is 31 days late: interest 7.75, fine 15, principal 77.25.
   it('rewrites the stored split of an earlier payment to the replay and lists the change in the audit row', async () => {
-    const { recordPayment } = await import('../financial')
+
     const { paymentRecords, auditLogs } = await import('@/db/schema')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -526,7 +529,7 @@ describe('recordPayment locking and audit', () => {
   })
 
   async function pay(paidAt: string) {
-    const { recordPayment } = await import('../financial')
+
     const { financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -600,7 +603,7 @@ describe('recordPayment by card', () => {
   // Regression: the cash inflow at swipe time overstates cash by the fee and
   // dates it on the sale day instead of the repasse dates.
   it('credit 6x opens a card payment for the gross amount, links the record to it and writes no cash inflow', async () => {
-    const { recordPayment } = await import('../financial')
+
     const { cashMovements, paymentRecords, installments, financialEntries } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -648,7 +651,7 @@ describe('recordPayment by card', () => {
   })
 
   it('pix still writes the cash inflow and opens no card payment', async () => {
-    const { recordPayment } = await import('../financial')
+
     const { cashMovements, paymentRecords, installments, financialEntries } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)

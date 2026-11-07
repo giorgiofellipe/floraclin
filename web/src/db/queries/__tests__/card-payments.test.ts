@@ -63,9 +63,22 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
+// Load the query module before timed tests and fake timers start.
+const {
+  getCardTerminalTerms,
+  repasseLedgerDescription,
+  createCardPaymentTx,
+  postDueRepassesTx,
+  cancelCardPaymentTx,
+  adjustCardRepasse,
+  listCardRepasses,
+  getCardPaymentSummaries,
+  sumCardFeesForPeriod,
+  listTenantsWithDueRepasses,
+} = await import('../card-payments')
+
 describe('getCardTerminalTerms', () => {
   it('maps the numeric columns and scopes the read to tenant and live terminals', async () => {
-    const { getCardTerminalTerms } = await import('../card-payments')
     const { tx, log } = routedTx(() => [TERMINAL_ROW])
 
     const result = await getCardTerminalTerms(tx as never, TENANT, TERMINAL_ID)
@@ -77,7 +90,6 @@ describe('getCardTerminalTerms', () => {
   })
 
   it('throws CARD_TERMINAL_NOT_FOUND when the terminal is missing, deleted or from another tenant', async () => {
-    const { getCardTerminalTerms } = await import('../card-payments')
     const { tx } = routedTx(() => [])
 
     await expect(getCardTerminalTerms(tx as never, TENANT, TERMINAL_ID)).rejects.toMatchObject({
@@ -88,7 +100,6 @@ describe('getCardTerminalTerms', () => {
 
 describe('repasseLedgerDescription', () => {
   it('truncates to the 255 char column with an ellipsis', async () => {
-    const { repasseLedgerDescription } = await import('../card-payments')
     const prefix = `Repasse ${'T'.repeat(100)} 1/6: `
 
     const result = repasseLedgerDescription(prefix, 'd'.repeat(255))
@@ -148,7 +159,6 @@ describe('createCardPaymentTx', () => {
   }
 
   it('freezes the terminal rate, plans 6 repasses and writes no ledger row while all are in the future', async () => {
-    const { createCardPaymentTx } = await import('../card-payments')
     const { tx, log } = createPaymentTx()
 
     const result = await createCardPaymentTx(tx as never, TENANT, USER_ID, {
@@ -175,7 +185,6 @@ describe('createCardPaymentTx', () => {
   })
 
   it('refuses with CARD_RATE_CHANGED and writes nothing when the terminal rate differs from the one shown', async () => {
-    const { createCardPaymentTx } = await import('../card-payments')
     const { tx, log } = createPaymentTx()
 
     await expect(
@@ -190,7 +199,6 @@ describe('createCardPaymentTx', () => {
   })
 
   it('posts only the repasses already due for a backdated payment, each on its own BR day', async () => {
-    const { createCardPaymentTx } = await import('../card-payments')
     const { tx, log } = createPaymentTx()
 
     await createCardPaymentTx(tx as never, TENANT, USER_ID, {
@@ -248,7 +256,6 @@ describe('postDueRepassesTx', () => {
   }
 
   it('claims rows of the given tenant only, with a row lock that skips concurrent reversals', async () => {
-    const { postDueRepassesTx } = await import('../card-payments')
     const { tx, log } = stateful()
 
     await postDueRepassesTx(tx as never, TENANT, { todayYmd: TODAY })
@@ -267,7 +274,6 @@ describe('postDueRepassesTx', () => {
   // The sale wrote no movement, so this inflow is the only place the cash
   // lands: the terminal's payout account, never also a bank default.
   it("posts the repasse once, to the terminal's payout account", async () => {
-    const { postDueRepassesTx } = await import('../card-payments')
     const { tx, log } = stateful()
 
     await postDueRepassesTx(tx as never, TENANT, { todayYmd: TODAY })
@@ -281,7 +287,6 @@ describe('postDueRepassesTx', () => {
 
 describe('cancelCardPaymentTx', () => {
   it('cancels only the pending repasses and leaves the ledger alone', async () => {
-    const { cancelCardPaymentTx } = await import('../card-payments')
     const rows = [
       ...[1, 2].map((n) => ({ id: `rep-${n}`, status: 'received' })),
       ...[3, 4, 5, 6].map((n) => ({ id: `rep-${n}`, status: 'pending' })),
@@ -356,7 +361,6 @@ describe('adjustCardRepasse', () => {
   }
 
   it('on a received repasse writes a counter outflow at the original date, marks the original reversed, then posts the new inflow', async () => {
-    const { adjustCardRepasse } = await import('../card-payments')
     const { log, repasse } = adjustTx({})
 
     await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, { netAmount: 440, expectedDate: '2026-10-12' })
@@ -399,7 +403,6 @@ describe('adjustCardRepasse', () => {
   })
 
   it('reverses the replacement, not the original, on a second adjustment', async () => {
-    const { adjustCardRepasse } = await import('../card-payments')
     const { log } = adjustTx({})
 
     await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, { netAmount: 440, expectedDate: '2026-10-12' })
@@ -412,7 +415,6 @@ describe('adjustCardRepasse', () => {
   })
 
   it('writes nothing when the net and date are unchanged', async () => {
-    const { adjustCardRepasse } = await import('../card-payments')
     const { log } = adjustTx({ status: 'received' })
 
     await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, { netAmount: 455.05, expectedDate: '2026-10-10' })
@@ -424,7 +426,6 @@ describe('adjustCardRepasse', () => {
   })
 
   it('edits a pending repasse in place without touching the ledger when the date stays in the future', async () => {
-    const { adjustCardRepasse } = await import('../card-payments')
     const { log, repasse } = adjustTx({ status: 'pending', cashMovementId: null, expectedDate: '2026-11-17' })
 
     await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, { netAmount: 450, expectedDate: '2026-11-20' })
@@ -439,7 +440,6 @@ describe('adjustCardRepasse', () => {
     ['repasse is cancelled', { status: 'cancelled', cashMovementId: null }, { netAmount: 400, expectedDate: '2026-10-12' }, 'REPASSE_CANCELLED'],
     ['received repasse gets a future date', {}, { netAmount: 400, expectedDate: '2026-10-19' }, 'REPASSE_DATE_IN_FUTURE'],
   ])('rejects when %s', async (_name, initial, data, code) => {
-    const { adjustCardRepasse } = await import('../card-payments')
     const { log } = adjustTx(initial)
 
     const error = await adjustCardRepasse(TENANT, USER_ID, REPASSE_ID, data).catch((e) => e)
@@ -467,7 +467,6 @@ describe('listCardRepasses', () => {
   }
 
   it('scopes all three queries to the tenant and rows and count to the date window', async () => {
-    const { listCardRepasses } = await import('../card-payments')
     const log = mockDb('0')
 
     await listCardRepasses(TENANT, filters)
@@ -480,7 +479,6 @@ describe('listCardRepasses', () => {
   })
 
   it('sums pendingNetTotal over all pending repasses, outside the date window', async () => {
-    const { listCardRepasses } = await import('../card-payments')
     const log = mockDb('900.00')
 
     await listCardRepasses(TENANT, filters)
@@ -492,7 +490,6 @@ describe('listCardRepasses', () => {
   })
 
   it('applies the status filter to rows and total but keeps pendingNetTotal on pending, as numbers', async () => {
-    const { listCardRepasses } = await import('../card-payments')
     const log = mockDb('1234.50')
 
     const result = await listCardRepasses(TENANT, { ...filters, status: 'received' })
@@ -508,7 +505,6 @@ describe('listCardRepasses', () => {
   })
 
   it('applies the terminal filter to all three queries, and pages with limit and offset', async () => {
-    const { listCardRepasses } = await import('../card-payments')
     const log = mockDb(null)
 
     const result = await listCardRepasses(TENANT, { ...filters, terminalId: OTHER_TERMINAL })
@@ -524,7 +520,6 @@ describe('listCardRepasses', () => {
   })
 
   it('does not filter by terminal or status when none are given', async () => {
-    const { listCardRepasses } = await import('../card-payments')
     const log = mockDb('0')
 
     await listCardRepasses(TENANT, filters)
@@ -562,7 +557,6 @@ describe('getCardPaymentSummaries', () => {
   }
 
   it('counts pending and received repasses and linked records per payment as numbers, ignoring cancelled', async () => {
-    const { getCardPaymentSummaries } = await import('../card-payments')
     const { tx } = mockTx()
 
     const summaries = await getCardPaymentSummaries(tx as never, TENANT, [PAYMENT_ID, OTHER_PAYMENT])
@@ -583,7 +577,6 @@ describe('getCardPaymentSummaries', () => {
   })
 
   it('scopes every query to the tenant and excludes reversed payment records', async () => {
-    const { getCardPaymentSummaries } = await import('../card-payments')
     const { tx, log } = mockTx()
 
     await getCardPaymentSummaries(tx as never, TENANT, [PAYMENT_ID])
@@ -595,7 +588,6 @@ describe('getCardPaymentSummaries', () => {
   })
 
   it('returns an empty map without querying when given no ids', async () => {
-    const { getCardPaymentSummaries } = await import('../card-payments')
     const { tx, log } = mockTx()
 
     const summaries = await getCardPaymentSummaries(tx as never, TENANT, [])
@@ -610,7 +602,6 @@ describe('sumCardFeesForPeriod', () => {
   const RANGE_END = parseBrDate('2026-11-30', '23:59:59')
 
   async function sumSql(total: string | null) {
-    const { sumCardFeesForPeriod } = await import('../card-payments')
     const { tx, log } = routedTx(() => [{ total }])
     dbMock.select.mockImplementation(tx.select)
     const result = await sumCardFeesForPeriod(TENANT, RANGE_START, RANGE_END)
@@ -652,7 +643,6 @@ describe('listTenantsWithDueRepasses', () => {
   }
 
   it('returns the tenant ids of pending repasses due on or before today on non-reversed payments', async () => {
-    const { listTenantsWithDueRepasses } = await import('../card-payments')
     const log = mockDb([{ tenantId: TENANT }, { tenantId: 'tenant-2' }])
 
     const result = await listTenantsWithDueRepasses(TODAY)

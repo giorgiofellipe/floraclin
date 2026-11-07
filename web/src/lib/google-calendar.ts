@@ -1,4 +1,5 @@
-import { google } from 'googleapis'
+// Load only Calendar's client/types rather than declarations for every Google API.
+import * as google from 'googleapis/build/src/apis/calendar'
 import {
   getConnectionById,
   getConnectionByUserId,

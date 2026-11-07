@@ -113,6 +113,10 @@ function queueEntrySelects(opts: {
   dbMock.select.mockReturnValueOnce(chain([])) // renegotiatedFrom
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { getFinancialEntry, listFinancialEntries, createFinancialEntry, getRevenueOverview } = await import('../financial')
+
 describe('getFinancialEntry', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -127,7 +131,7 @@ describe('getFinancialEntry', () => {
   // The R$1 covers 1 of the 26 then owed, carrying 25, plus ten more days on
   // 750 through Sep 13 = 27.50.
   it('a pending installment with one live payment reports the engine carried-interest figure, not a fresh one', async () => {
-    const { getFinancialEntry } = await import('../financial')
+
 
     queueEntrySelects({
       entry: [entryRow()],
@@ -153,7 +157,7 @@ describe('getFinancialEntry', () => {
   // day count from the due date (114 days at Sep 13), not the row's stale
   // stored interestAmount.
   it('an overdue installment with no payments reports the engine figures, not the stored interestAmount', async () => {
-    const { getFinancialEntry } = await import('../financial')
+
 
     queueEntrySelects({
       entry: [entryRow({ status: 'overdue' })],
@@ -183,7 +187,7 @@ describe('getFinancialEntry on rows out of collection', () => {
   // Cancelled Jul 1, 40 days after the May 22 due date: interest 750 * 1%/30 * 40
   // = 10 and the fine of 15, frozen there. A paid row owes nothing.
   it('prices a cancelled installment through the engine up to its cancel date and a paid one at zero, whatever is stored', async () => {
-    const { getFinancialEntry } = await import('../financial')
+
 
     queueEntrySelects({
       entry: [entryRow({ status: 'cancelled' })],
@@ -221,7 +225,7 @@ describe('listFinancialEntries', () => {
   })
 
   it('prices each entry\'s fine and interest through the engine: grace and a fixed fine are honoured', async () => {
-    const { listFinancialEntries } = await import('../financial')
+
     const IN_GRACE = '00000000-0000-0000-0000-00000000e00a'
     const FIXED_FINE = '00000000-0000-0000-0000-00000000e00b'
 
@@ -299,7 +303,7 @@ describe('createFinancialEntry', () => {
       terms: { appliedFineType: 'percentage', appliedFineValue: '2.00', appliedInterestRate: '1.00', appliedGracePeriodDays: 0 },
     },
   ])('writes every installment with the fine, interest and grace terms of $name at creation', async ({ settings, terms }) => {
-    const { createFinancialEntry } = await import('../financial')
+
     dbMock.select.mockReturnValueOnce(chain([{ id: PATIENT_ID }])) // patient ownership
 
     const installmentsInsert: { value?: unknown } = {}
@@ -332,7 +336,7 @@ describe('createFinancialEntry dates and payment method', () => {
   })
 
   async function create(data: Record<string, unknown>) {
-    const { createFinancialEntry } = await import('../financial')
+
     dbMock.select.mockReturnValueOnce(chain([{ id: PATIENT_ID }])) // patient ownership
     const entryInsert: { value?: unknown } = {}
     const installmentsInsert: { value?: unknown } = {}
@@ -432,7 +436,7 @@ describe('listFinancialEntries overdue flag', () => {
     },
   ])('$name', async ({ now, installment, overdue }) => {
     vi.setSystemTime(new Date(now))
-    const { listFinancialEntries } = await import('../financial')
+
 
     dbMock.select.mockReturnValueOnce(chain([{ count: 1 }]))
     dbMock.select.mockReturnValueOnce(chain([entryRow({ isOverdue: false })]))
@@ -458,7 +462,7 @@ describe('getRevenueOverview pending and overdue', () => {
   })
 
   it('counts an installment due today, and one inside its grace, as pending rather than overdue', async () => {
-    const { getRevenueOverview } = await import('../financial')
+
 
     // What Postgres computed with CURRENT_DATE on a UTC host and no grace.
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 0, totalPending: 0, totalOverdue: 1500 }]))
@@ -493,7 +497,7 @@ describe('getRevenueOverview overdue amount', () => {
   // p1 paid 100 of principal on the due date. 650 left, 114 days late on Sep
   // 13: fine 15 on the installment, interest 650 * 1%/30 * 114 = 24.70.
   it('counts a partly paid overdue installment at what the engine says is owed, as the ledger does', async () => {
-    const { getRevenueOverview } = await import('../financial')
+
 
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 0 }]))
     dbMock.select.mockReturnValueOnce(chain([])) // monthly
@@ -525,7 +529,7 @@ describe('getRevenueOverview card fees', () => {
   })
 
   it('subtracts the card fees of the period from net profit, along with expenses', async () => {
-    const { getRevenueOverview } = await import('../financial')
+
 
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 3000 }]))
     dbMock.select.mockReturnValueOnce(chain([])) // monthly
@@ -554,7 +558,7 @@ describe('getRevenueOverview revenue basis', () => {
 
   // Charge created Oct 28, paid Nov 3: it belongs to November, gross and fee.
   it('counts a charge created in one month and paid in the next in the payment month, gross and card fee', async () => {
-    const { getRevenueOverview } = await import('../financial')
+
     const { tx, log } = routedTx((q) =>
       fromTable(q.capture) === paymentRecords && q.fields && 'totalReceived' in (q.fields as object)
         ? [{ totalReceived: '3000.00' }]
@@ -598,7 +602,7 @@ describe('getFinancialEntry card payments', () => {
   })
 
   it('attaches the card summary to a card payment record, null to a cash one, and exposes the planned method', async () => {
-    const { getFinancialEntry } = await import('../financial')
+
     const summary = {
       terminalName: 'Stone',
       method: 'credit_card',

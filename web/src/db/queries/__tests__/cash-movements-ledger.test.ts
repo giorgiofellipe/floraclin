@@ -40,6 +40,9 @@ function installmentRow(overrides: Record<string, unknown> = {}) {
   }
 }
 
+// Load dependencies before fake timers and timed test assertions.
+const { getLedgerSummary } = await import('../cash-movements')
+
 describe('getLedgerSummary overdue receivables', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -52,8 +55,6 @@ describe('getLedgerSummary overdue receivables', () => {
   })
 
   it('sums what the engine prices now, not the stored fine and interest snapshots', async () => {
-    const { getLedgerSummary } = await import('../cash-movements')
-
     dbMock.select.mockReturnValueOnce(chain([{ totalInflows: 0, totalOutflows: 0, netResult: 0 }]))
     dbMock.select.mockReturnValueOnce(
       chain([

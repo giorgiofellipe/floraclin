@@ -1,12 +1,5 @@
 import { describe, it, expect, vi } from 'vitest'
-import type { calendar_v3 } from 'googleapis'
-
-vi.mock('googleapis', () => ({
-  google: {
-    auth: { OAuth2: vi.fn() },
-    calendar: vi.fn(),
-  },
-}))
+import type { calendar_v3 } from 'googleapis/build/src/apis/calendar'
 
 vi.mock('@/lib/google-calendar', () => ({
   getGoogleCalendarClient: vi.fn(),

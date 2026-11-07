@@ -47,6 +47,10 @@ const cancelledInstallment = {
   appliedGracePeriodDays: 0,
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { uncancelEntries, bulkCancelEntries, cancelLinkedFinancials } = await import('../financial')
+
 describe('uncancelEntries', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -59,7 +63,7 @@ describe('uncancelEntries', () => {
   it('restores a cancelled entry: its cancelled installments go to pending, the time spent cancelled becomes a penalty pause, and the status is recomputed', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-03T15:00:00.000Z'))
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -106,7 +110,7 @@ describe('uncancelEntries', () => {
   it('restores a cancelled installment whose replayed payments settle the principal as paid', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-03T15:00:00.000Z'))
-    const { uncancelEntries } = await import('../financial')
+
     const { installments } = await import('@/db/schema')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
@@ -148,7 +152,7 @@ describe('uncancelEntries', () => {
   it('audits the status the recompute wrote and the pause each installment got', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-03T15:00:00.000Z'))
-    const { uncancelEntries } = await import('../financial')
+
     const { auditLogs, financialEntries, installments, paymentRecords } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       const table = tableOf(q)
@@ -183,7 +187,7 @@ describe('uncancelEntries', () => {
   })
 
   it('throws ENTRY_NOT_CANCELLED when a selected entry is not cancelled', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -196,7 +200,7 @@ describe('uncancelEntries', () => {
   })
 
   it('throws ENTRY_NOT_FOUND when an entry is not found', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -212,7 +216,7 @@ describe('uncancelEntries', () => {
   // the entry's own flag is the record that it was one. Anything else the
   // path reads comes back empty, so only that flag can refuse it.
   it('throws ENTRY_FROM_RENEGOTIATION for a renegotiation replacement', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -231,7 +235,7 @@ describe('uncancelEntries', () => {
   // make the same debt collectible twice, through both the original and its
   // replacement.
   it('throws ENTRY_HAS_REPLACEMENT when a renegotiation_links row has the entry as originalEntryId', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -245,7 +249,7 @@ describe('uncancelEntries', () => {
   })
 
   it('writes one audit log per entry, carrying the reason', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -287,7 +291,7 @@ describe('uncancelEntries', () => {
   })
 
   it('reads entry status only behind the installment lock bulkCancelEntries takes, in id order', async () => {
-    const { uncancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -320,7 +324,7 @@ describe('bulkCancelEntries', () => {
   })
 
   it('stamps cancelledAt on the installments it cancels, so the pause can start there', async () => {
-    const { bulkCancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -341,7 +345,7 @@ describe('bulkCancelEntries', () => {
   })
 
   it('turns the time a renegotiated original spent cancelled into a penalty pause when its replacement is cancelled', async () => {
-    const { bulkCancelEntries } = await import('../financial')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -402,7 +406,7 @@ describe('cancelLinkedFinancials', () => {
    * resolve by table, and every one is logged in call order.
    */
   async function cancelProcedureFinancials() {
-    const { cancelLinkedFinancials } = await import('../financial')
+
     const { financialEntries, installments, auditLogs } = await import('@/db/schema')
     const entries = [
       { id: ENTRY_ID, status: 'partial' },

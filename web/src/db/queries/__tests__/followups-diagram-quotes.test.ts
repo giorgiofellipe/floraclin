@@ -21,6 +21,11 @@ function stubSelect(rows: unknown[]) {
   return { capture, fields: () => fields }
 }
 
+// Load the query module before timed tests and fake timers start.
+const {
+  listOpenDiagramQuotes,
+} = await import('../followups')
+
 describe('listOpenDiagramQuotes', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -30,7 +35,6 @@ describe('listOpenDiagramQuotes', () => {
   // procedure_record_id, so it must stay out of the list; a standalone group
   // released by releaseStandaloneGroups has it nulled and must come back.
   it('only selects standalone groups of live patients with no atendimento, no session and not declined', async () => {
-    const { listOpenDiagramQuotes } = await import('../followups')
     const { capture, fields } = stubSelect([])
 
     await listOpenDiagramQuotes({ tenantId: TENANT })
@@ -47,7 +51,6 @@ describe('listOpenDiagramQuotes', () => {
   })
 
   it('maps a group to a quote row linking to the diagram, naming the first line plus the rest', async () => {
-    const { listOpenDiagramQuotes } = await import('../followups')
     const createdAt = new Date('2026-10-01T15:00:00.000Z')
     stubSelect([
       {
@@ -82,7 +85,6 @@ describe('listOpenDiagramQuotes', () => {
   })
 
   it('filters by practitioner and by any line of the quote when asked', async () => {
-    const { listOpenDiagramQuotes } = await import('../followups')
     const { capture } = stubSelect([])
 
     await listOpenDiagramQuotes({
