@@ -22,7 +22,7 @@ export type MatchCandidateView = Omit<MatchCandidate, 'movementDate'> & { moveme
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   const body = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error(body.error || `HTTP ${res.status}`)
+  if (!res.ok) throw Object.assign(new Error(body.error || `HTTP ${res.status}`), { code: body.code })
   return body.data as T
 }
 
@@ -54,7 +54,7 @@ export function useMatchCandidates(lineId: string | null, search: string) {
     queryKey: queryKeys.financial.reconciliationCandidates(lineId ?? '', search),
     enabled: Boolean(lineId),
     queryFn: () =>
-      request<MatchCandidateView[]>(
+      request<{ candidates: MatchCandidateView[]; remainingCents: number }>(
         `/api/financial/reconciliation/lines/${lineId}/candidates?search=${encodeURIComponent(search)}`,
       ),
   })

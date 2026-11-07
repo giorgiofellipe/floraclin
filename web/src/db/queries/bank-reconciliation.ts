@@ -12,6 +12,7 @@ import { withTransaction } from '@/lib/tenant'
 import { createAuditLog } from '@/lib/audit'
 import { BusinessError } from '@/lib/errors'
 import { parseBrDate } from '@/lib/dates'
+import { rankMatchCandidates, type MatchRanking } from '@/lib/financial/reconciliation-matching'
 import {
   lineFingerprint,
   lineIdentityKey,
@@ -579,7 +580,7 @@ const isReversalPair = sql`EXISTS (
     AND (p.reversed_by_movement_id = "cash_movements"."id" OR "cash_movements"."reversed_by_movement_id" = p.id)
 )`
 
-export interface MatchCandidate {
+export interface MatchCandidate extends MatchRanking {
   id: string
   description: string
   type: string
@@ -592,18 +593,28 @@ export interface MatchCandidate {
   reversalPair: boolean
 }
 
-/** Ledger movements on the line's account that can still take part of the line, closest first. */
-export async function findMatchCandidates(
+export interface MatchCandidatesResult {
+  candidates: MatchCandidate[]
+  /** Current statement balance accompanies even an empty list, so refresh can recover from stale allocations. */
+  remainingCents: number
+}
+
+/** Ledger movements on the line's account, ranked before the response is limited. */
+export async function findMatchCandidateResult(
   tenantId: string,
   lineId: string,
   opts: { search?: string; windowDays?: number } = {},
-): Promise<MatchCandidate[]> {
+): Promise<MatchCandidatesResult> {
   const [line] = await db
     .select({
       accountId: bankStatementLines.accountId,
       postedDate: bankStatementLines.postedDate,
       amountCents: bankStatementLines.amountCents,
       allocated: allocatedToLine,
+      memo: bankStatementLines.memo,
+      ignoredAt: bankStatementLines.ignoredAt,
+      suspectedDuplicateOf: bankStatementLines.suspectedDuplicateOf,
+      suspectReviewedAt: bankStatementLines.suspectReviewedAt,
     })
     .from(bankStatementLines)
     .where(and(eq(bankStatementLines.tenantId, tenantId), eq(bankStatementLines.id, lineId)))
@@ -611,6 +622,7 @@ export async function findMatchCandidates(
   if (!line) throw lineNotFound()
 
   const lineRemaining = Math.abs(line.amountCents) - Number(line.allocated)
+  if (lineRemaining <= 0 || line.ignoredAt) return { candidates: [], remainingCents: Math.max(0, lineRemaining) }
   const direction = line.amountCents > 0 ? 'inflow' : 'outflow'
   const dayDistance = sql<number>`abs((${cashMovements.movementDate} AT TIME ZONE 'America/Sao_Paulo')::date - ${line.postedDate}::date)`
   const search = opts.search?.trim()
@@ -646,9 +658,10 @@ export async function findMatchCandidates(
       desc(cashMovements.movementDate),
       asc(cashMovements.id),
     )
-    .limit(50)
+    // Retrieve a bounded pool, not just the first response page. Unknown competitors suppress preselection.
+    .limit(501)
 
-  return rows.map((r) => ({
+  const candidates = rows.slice(0, 500).map((r) => ({
     id: r.id,
     description: r.description,
     type: r.type,
@@ -659,6 +672,17 @@ export async function findMatchCandidates(
     dayDistance: Number(r.dayDistance),
     reversalPair: Boolean(r.reversalPair),
   }))
+  const ranked = rankMatchCandidates(
+    { memo: line.memo, remainingCents: lineRemaining, allocatedCents: Number(line.allocated), suspectedDuplicate: Boolean(line.suspectedDuplicateOf && !line.suspectReviewedAt) },
+    candidates,
+    { truncated: rows.length > 500, manualSearch: Boolean(search) },
+  )
+  return { candidates: ranked, remainingCents: lineRemaining }
+}
+
+/** Kept for query consumers that only need the candidate list. */
+export async function findMatchCandidates(tenantId: string, lineId: string, opts: { search?: string; windowDays?: number } = {}): Promise<MatchCandidate[]> {
+  return (await findMatchCandidateResult(tenantId, lineId, opts)).candidates
 }
 
 // ─── ALLOCATIONS ─────────────────────────────────────────────────────
