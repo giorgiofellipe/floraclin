@@ -194,7 +194,7 @@ function MoveForm({
         {bulk && (
           <div className="space-y-1">
             <Label>Período (opcional)</Label>
-            <DateRangePicker dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
+            <DateRangePicker fluid dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
             <p className="text-xs text-mid">Sem período, todos os pagamentos da conta de origem são movidos.</p>
           </div>
         )}

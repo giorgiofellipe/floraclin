@@ -322,8 +322,8 @@ export function InstallmentTable({
                         </div>
 
                         {/* Payment info */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-baseline gap-2">
+                        <div className="min-w-[calc(100%-2.5rem)] flex-1 sm:min-w-0">
+                          <div className="flex flex-wrap items-baseline gap-x-2">
                             <span className="text-xs font-medium text-charcoal tabular-nums">
                               {formatCurrency(Number(pr.amount ?? 0))}
                             </span>
@@ -405,7 +405,7 @@ export function InstallmentTable({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-6 px-2 text-[10px] text-red-600 hover:bg-red-50 hover:text-red-700"
+                          className="h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 sm:h-6 sm:text-[10px]"
                           data-testid="payment-reverse"
                           onClick={() => {
                             setReverseDialogPayment(pr)
