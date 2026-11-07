@@ -385,7 +385,14 @@ export function LedgerView() {
                               <DropdownMenuItem
                                 className="min-h-11 flex-wrap"
                                 disabled={m.isReconciled}
-                                onClick={() => setMoveTarget({ mode: 'movements', movementIds: [m.id], fromAccountId: m.accountId })}
+                                onClick={() =>
+                                  setMoveTarget({
+                                    mode: 'movements',
+                                    movementIds: [m.id],
+                                    fromAccountId: m.accountId,
+                                    fromAccountName: m.accountName,
+                                  })
+                                }
                               >
                                 <ArrowLeftRightIcon />
                                 Trocar conta

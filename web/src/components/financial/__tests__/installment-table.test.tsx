@@ -504,6 +504,8 @@ describe('InstallmentTable "Trocar conta" in the payment history', () => {
     expect(await screen.findByText(/PIX · Caixa/)).toBeInTheDocument()
     await userEvent.click(await screen.findByTestId('payment-move-account'))
     expect(await screen.findByText('Trocar conta do pagamento')).toBeInTheDocument()
+    expect(screen.getByTestId('move-current-account')).toHaveTextContent('Caixa')
+    expect(screen.getByRole('button', { name: 'Mover pagamento' })).toBeDisabled()
   })
 
   it('is off with "Já conciliado" once the payment matches a bank statement line', async () => {
@@ -516,13 +518,19 @@ describe('InstallmentTable "Trocar conta" in the payment history', () => {
 
   it('is absent for a card payment, which wrote no cash movement', async () => {
     serve([
-      payment('pay-card', null),
+      {
+        ...payment('pay-card', null),
+        paymentMethod: 'credit_card',
+        card: { method: 'credit_card', terminalName: 'Stone', installmentCount: 3 },
+      },
       payment('pay-1', { movementId: 'mov-1', accountId: 'acc-cash', isReconciled: false }),
     ])
     await expandPayments()
 
     await screen.findByTestId('payment-move-account')
     expect(screen.getAllByTestId('payment-move-account')).toHaveLength(1)
+    // Says why, instead of leaving the clinic looking for the button.
+    expect(screen.getByTestId('payment-move-card-note')).toHaveTextContent('Cai via repasse')
   })
 
   it('is absent for roles that do not manage accounts', async () => {

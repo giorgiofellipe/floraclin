@@ -462,7 +462,8 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                       <span className="font-medium text-sm text-charcoal truncate">
                         {entry.patientName}
                       </span>
-                      <span className="text-xs text-mid shrink-0">
+                      {/* At 375px the name only has ~120px next to the amount and the two buttons */}
+                      <span className="hidden text-xs text-mid shrink-0 sm:inline">
                         {formatDate(entry.createdAt)}
                       </span>
                     </div>

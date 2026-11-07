@@ -98,6 +98,7 @@ vi.mock('@/hooks/queries/use-financial-accounts', () => ({
   useFinancialAccounts: () => ({ data: mockAccounts }),
   useCreateTransfer: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useMoveMovements: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useMoveMovementsPreview: () => ({ isFetching: false, isError: false }),
 }))
 
 let searchParams = new URLSearchParams()

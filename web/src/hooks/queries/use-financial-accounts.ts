@@ -85,6 +85,21 @@ export interface MoveMovementsResult {
   skippedTransfers: number
 }
 
+export interface MoveMovementsPreview extends MoveMovementsResult {
+  /** Net amount leaving the source for the target, e.g. "1250.00". */
+  total: string
+}
+
+/** What a move would do, counted on the server without moving anything. `null` waits for a complete form. */
+export function useMoveMovementsPreview(input: MoveMovementsInput | null) {
+  return useQuery({
+    queryKey: [...queryKeys.financial.all, 'move-preview', input],
+    queryFn: (): Promise<{ data: MoveMovementsPreview }> =>
+      requestJson('/api/financial/movements/move-account', 'POST', { ...input, preview: true }),
+    enabled: input !== null,
+  })
+}
+
 export function useMoveMovements() {
   const invalidate = useInvalidateFinance()
   return useMutation({

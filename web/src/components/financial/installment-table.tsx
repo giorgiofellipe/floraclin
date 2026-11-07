@@ -367,17 +367,29 @@ export function InstallmentTable({
                           onEmit={handleEmit}
                         />
 
+                        {canMove && !pr.movement && pr.card && (
+                          <span className="text-[10px] text-mid shrink-0" data-testid="payment-move-card-note">
+                            Cai via repasse
+                          </span>
+                        )}
+
                         {canMove && pr.movement && (
                           <div className="flex items-center gap-1 shrink-0">
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-6 px-2 text-[10px] text-charcoal hover:bg-[#F0F7F1]"
+                              // A phone tap needs more than the 24px Estornar has.
+                              className="h-9 px-2 text-xs text-charcoal hover:bg-[#F0F7F1] sm:h-6 sm:text-[10px]"
                               data-testid="payment-move-account"
                               disabled={pr.movement.isReconciled}
                               onClick={() => {
                                 const { movementId, accountId } = pr.movement!
-                                setMoveTarget({ mode: 'movements', movementIds: [movementId], fromAccountId: accountId })
+                                setMoveTarget({
+                                  mode: 'movements',
+                                  movementIds: [movementId],
+                                  fromAccountId: accountId,
+                                  fromAccountName: accountId ? accountNames.get(accountId) : undefined,
+                                })
                               }}
                             >
                               <ArrowLeftRightIcon className="h-3 w-3" />
