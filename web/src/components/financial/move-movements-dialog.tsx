@@ -30,6 +30,11 @@ export type MoveTarget =
   | { mode: 'movements'; movementIds: string[]; fromAccountId?: string | null; fromAccountName?: string | null }
   | { mode: 'account' }
 
+// Phone taps need 44px; desktop keeps the default button height.
+const TAP = 'min-h-11 sm:min-h-0'
+// #6B6B6B instead of text-mid (#7A7A7A): small helper text that clears AA on white.
+const NOTE = 'text-xs text-[#6B6B6B]'
+
 const payments = (n: number) => (n === 1 ? '1 pagamento' : `${n} pagamentos`)
 
 /** "42 movidos · 3 já conciliados · 1 transferência": what happened, and what the clinic still has to act on. */
@@ -130,16 +135,18 @@ function MoveForm({
         <div role="status" aria-live="polite" className="space-y-1" data-testid="move-result">
           <p className="text-sm font-medium text-charcoal">{describeMoveResult(result)}</p>
           {result.skippedReconciled > 0 && (
-            <p className="text-xs text-mid">
+            <p className={NOTE}>
               Os já conciliados ficaram na conta de origem. Desfaça a conciliação no extrato e mova de novo.
             </p>
           )}
           {result.skippedTransfers > 0 && (
-            <p className="text-xs text-mid">Transferências entre contas não são pagamentos e não são movidas.</p>
+            <p className={NOTE}>Transferências entre contas não são pagamentos e não são movidas.</p>
           )}
         </div>
         <DialogFooter>
-          <Button autoFocus onClick={onDone}>Fechar</Button>
+          <Button autoFocus className={TAP} onClick={onDone}>
+            Fechar
+          </Button>
         </DialogFooter>
       </>
     )
@@ -156,7 +163,7 @@ function MoveForm({
     <>
       <DialogHeader>
         <DialogTitle>{bulk ? 'Mover pagamentos entre contas' : 'Trocar conta do pagamento'}</DialogTitle>
-        <DialogDescription>
+        <DialogDescription className="text-[#6B6B6B]">
           {bulk
             ? 'Corrige pagamentos registrados na conta errada. O valor e a data não mudam, só a conta onde o dinheiro caiu. Pagamentos já conciliados com o extrato ficam de fora.'
             : 'Corrige a conta onde o dinheiro caiu. O valor e a data não mudam. Se o pagamento já foi conciliado com o extrato, desfaça a conciliação antes.'}
@@ -195,7 +202,7 @@ function MoveForm({
           <div className="space-y-1">
             <Label>Período (opcional)</Label>
             <DateRangePicker fluid dateFrom={dateFrom} dateTo={dateTo} onDateFromChange={setDateFrom} onDateToChange={setDateTo} />
-            <p className="text-xs text-mid">Sem período, todos os pagamentos da conta de origem são movidos.</p>
+            <p className={NOTE}>Sem período, todos os pagamentos da conta de origem são movidos.</p>
           </div>
         )}
         {bulk && parsed.success && (
@@ -217,8 +224,9 @@ function MoveForm({
       </div>
 
       <DialogFooter>
-        <DialogClose render={<Button variant="outline" />}>Cancelar</DialogClose>
+        <DialogClose render={<Button variant="outline" className={TAP} />}>Cancelar</DialogClose>
         <Button
+          className={TAP}
           onClick={handleSave}
           disabled={move.isPending || !toAccountId || (bulk && (!bulkReady || counted.moved === 0))}
         >

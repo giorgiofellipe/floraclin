@@ -397,7 +397,7 @@ export function LedgerView() {
                                 <ArrowLeftRightIcon />
                                 Trocar conta
                                 {m.isReconciled && (
-                                  <span className="basis-full pl-5.5 text-xs text-mid">
+                                  <span className="basis-full pl-5.5 text-xs text-[#6B6B6B]">
                                     Já conciliado: desfaça a conciliação para trocar
                                   </span>
                                 )}

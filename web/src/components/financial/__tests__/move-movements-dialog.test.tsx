@@ -90,10 +90,26 @@ describe('MoveMovementsDialog, whole account', () => {
     const result = await screen.findByTestId('move-result')
     expect(result).toHaveAttribute('aria-live', 'polite')
     expect(result).toHaveTextContent('42 movidos · 3 já conciliados · 1 transferência')
+    expect(screen.getByRole('heading', { name: 'Pagamentos movidos' })).toBeInTheDocument()
+    // The confirm button is gone, so focus must land somewhere the keyboard can reach.
+    expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus()
     expect(onOpenChange).not.toHaveBeenCalled()
 
     await user.click(screen.getByRole('button', { name: 'Fechar' }))
     expect(onOpenChange).toHaveBeenCalledWith(false)
+  })
+
+  it('says nothing moved when the payments were reconciled between preview and confirm', async () => {
+    hooks.mutateAsync.mockResolvedValue({ data: { moved: 0, skippedReconciled: 3, skippedTransfers: 0 } })
+    const user = renderBulk()
+    await pick(user, fromTrigger(), 'Caixa')
+    await pick(user, toTrigger(), 'Itaú')
+    await user.click(screen.getByRole('button', { name: /^Mover 3 pagamentos/ }))
+
+    expect(await screen.findByTestId('move-result')).toHaveTextContent('0 movidos · 3 já conciliados')
+    expect(screen.getByRole('heading', { name: 'Nenhum pagamento movido' })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: 'Pagamentos movidos' })).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus()
   })
 })
 

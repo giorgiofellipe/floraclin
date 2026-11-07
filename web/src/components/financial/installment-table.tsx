@@ -378,8 +378,8 @@ export function InstallmentTable({
                             <Button
                               size="sm"
                               variant="ghost"
-                              // A phone tap needs more than the 24px Estornar has.
-                              className="h-9 px-2 text-xs text-charcoal hover:bg-[#F0F7F1] sm:h-6 sm:text-[10px]"
+                              // Phone taps need 44px; the desktop row keeps 24px.
+                              className="h-11 px-2 text-xs text-charcoal hover:bg-[#F0F7F1] sm:h-6 sm:text-[10px]"
                               data-testid="payment-move-account"
                               disabled={pr.movement.isReconciled}
                               onClick={() => {
@@ -396,7 +396,7 @@ export function InstallmentTable({
                               Trocar conta
                             </Button>
                             {pr.movement.isReconciled && (
-                              <span className="text-[10px] text-mid">Já conciliado</span>
+                              <span className="text-xs text-[#6B6B6B]">Já conciliado</span>
                             )}
                           </div>
                         )}
@@ -405,7 +405,7 @@ export function InstallmentTable({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-9 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 sm:h-6 sm:text-[10px]"
+                          className="h-11 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 sm:h-6 sm:text-[10px]"
                           data-testid="payment-reverse"
                           onClick={() => {
                             setReverseDialogPayment(pr)
