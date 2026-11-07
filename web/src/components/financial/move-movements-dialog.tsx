@@ -125,7 +125,7 @@ function MoveForm({
     return (
       <>
         <DialogHeader>
-          <DialogTitle>Pagamentos movidos</DialogTitle>
+          <DialogTitle>{result.moved === 0 ? 'Nenhum pagamento movido' : 'Pagamentos movidos'}</DialogTitle>
         </DialogHeader>
         <div role="status" aria-live="polite" className="space-y-1" data-testid="move-result">
           <p className="text-sm font-medium text-charcoal">{describeMoveResult(result)}</p>
@@ -139,7 +139,7 @@ function MoveForm({
           )}
         </div>
         <DialogFooter>
-          <Button onClick={onDone}>Fechar</Button>
+          <Button autoFocus onClick={onDone}>Fechar</Button>
         </DialogFooter>
       </>
     )
