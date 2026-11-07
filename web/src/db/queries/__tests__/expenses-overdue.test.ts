@@ -27,6 +27,9 @@ function chainCapturingWhere(result: unknown, capture: { where?: unknown }) {
 const dbMock = { select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
+// Load the query before the timed test and its fake clock.
+const { listExpenses } = await import('../expenses')
+
 describe('listExpenses overdue filter', () => {
   afterEach(() => {
     vi.useRealTimers()
@@ -37,7 +40,6 @@ describe('listExpenses overdue filter', () => {
   it('compares due dates with the BR day, not the database clock', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-05-23T01:00:00.000Z'))
-    const { listExpenses } = await import('../expenses')
 
     const countQuery: { where?: unknown } = {}
     dbMock.select.mockReturnValueOnce(chainCapturingWhere([{ count: 0 }], countQuery))
