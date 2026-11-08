@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Check, MessageCircle, X } from 'lucide-react'
 import { useReferralDashboard } from '@/hooks/queries/use-referral-dashboard'
@@ -56,6 +56,12 @@ export function ReferralSidebarCard({ onNavigate }: { onNavigate?: () => void })
   const [collapsed, setCollapsed] = useState(readCollapsed)
   const [copied, setCopied] = useState(false)
 
+  useEffect(() => {
+    if (!copied) return
+    const timer = setTimeout(() => setCopied(false), COPIED_MS)
+    return () => clearTimeout(timer)
+  }, [copied])
+
   if (!data) return null
   const sharing = data.enrollmentOpen && !!data.link
   if (!sharing && !data.subscribeToUnlock) return null
@@ -85,7 +91,6 @@ export function ReferralSidebarCard({ onNavigate }: { onNavigate?: () => void })
     try {
       await navigator.clipboard.writeText(data.link!)
       setCopied(true)
-      setTimeout(() => setCopied(false), COPIED_MS)
     } catch {
       // Clipboard blocked: the card still links to the tab, which shows the link to copy by hand.
     }

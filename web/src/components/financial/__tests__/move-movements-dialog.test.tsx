@@ -47,6 +47,7 @@ beforeEach(() => {
 })
 
 describe('MoveMovementsDialog, whole account', () => {
+  // Two real portal interactions can exceed five seconds on the shared runner.
   it('counts what would move before the user confirms', async () => {
     const user = renderBulk()
     expect(screen.getByRole('button', { name: 'Mover pagamentos' })).toBeDisabled()
@@ -57,7 +58,7 @@ describe('MoveMovementsDialog, whole account', () => {
     expect(screen.getByTestId('move-preview')).toHaveTextContent('3 pagamentos somando R$ 450,00')
     expect(screen.getByTestId('move-preview')).toHaveTextContent('1 já conciliado fica de fora')
     expect(screen.getByRole('button', { name: /^Mover 3 pagamentos \(R\$\s450,00\)$/ })).toBeEnabled()
-  })
+  }, 15000)
 
   it('stays off when nothing would move', async () => {
     hooks.preview = { moved: 0, skippedReconciled: 2, skippedTransfers: 0, total: '0.00' }

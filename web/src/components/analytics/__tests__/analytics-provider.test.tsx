@@ -4,7 +4,7 @@
  * both directions, with the real posthog-js underneath (network stubbed).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, waitFor } from '@testing-library/react'
+import { act, render, waitFor } from '@testing-library/react'
 import type { PostHog } from 'posthog-js'
 
 const KEY = 'phc_test_key'
@@ -28,12 +28,16 @@ async function load() {
   return { AnalyticsProvider, saveCookieConsent: consent.saveCookieConsent }
 }
 
-beforeEach(() => {
+let loaded: Awaited<ReturnType<typeof load>>
+
+// Keep cold SDK/module imports outside the timed consent assertions.
+beforeEach(async () => {
   localStorage.clear()
   sessionStorage.clear()
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_KEY', KEY)
   vi.stubEnv('NEXT_PUBLIC_POSTHOG_HOST', 'http://127.0.0.1:9')
   vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 200 })))
+  loaded = await load()
 })
 
 afterEach(() => {
@@ -50,7 +54,7 @@ afterEach(() => {
 
 describe('AnalyticsProvider', () => {
   it('starts cookieless with no banner choice, upgrades on accept and reverts on reject', async () => {
-    const { AnalyticsProvider, saveCookieConsent } = await load()
+    const { AnalyticsProvider, saveCookieConsent } = loaded
     render(<AnalyticsProvider userId="user-1" tenantId="tenant-1" />)
 
     await waitFor(() => expect(posthog.get_distinct_id()).toBe('user-1'))
@@ -58,12 +62,12 @@ describe('AnalyticsProvider', () => {
     expect(posthog.config.autocapture).toBe(false)
     expect(phEntries()).toEqual([])
 
-    saveCookieConsent(true)
+    act(() => saveCookieConsent(true))
     await waitFor(() => expect(posthog.config.persistence).toBe('localStorage+cookie'))
     expect(posthog.config.autocapture).toBe(true)
     expect(posthog.config.disable_session_recording).toBe(false)
 
-    saveCookieConsent(false)
+    act(() => saveCookieConsent(false))
     await waitFor(() => expect(posthog.config.persistence).toBe('memory'))
     expect(posthog.config.autocapture).toBe(false)
     expect(posthog.config.disable_session_recording).toBe(true)
@@ -71,8 +75,8 @@ describe('AnalyticsProvider', () => {
   })
 
   it('stays cookieless when the stored choice is a rejection', async () => {
-    const { AnalyticsProvider, saveCookieConsent } = await load()
-    saveCookieConsent(false)
+    const { AnalyticsProvider, saveCookieConsent } = loaded
+    act(() => saveCookieConsent(false))
     render(<AnalyticsProvider userId="user-1" tenantId="tenant-1" />)
 
     await waitFor(() => expect(posthog.get_distinct_id()).toBe('user-1'))
@@ -81,7 +85,7 @@ describe('AnalyticsProvider', () => {
   })
 
   it('sends nothing and identifies no one where tracking is disabled, even mid-session', async () => {
-    const { AnalyticsProvider } = await load()
+    const { AnalyticsProvider } = loaded
     const { track } = await import('@/lib/analytics/client')
     // The session starts on /login (tracked), then continues as a platform admin.
     const { rerender } = render(<AnalyticsProvider />)
@@ -101,8 +105,8 @@ describe('AnalyticsProvider', () => {
     ['no banner choice', null],
     ['a stored rejection', false],
   ] as const)('clears PostHog storage where tracking is disabled, with %s and no instance yet', async (_, choice) => {
-    const { AnalyticsProvider, saveCookieConsent } = await load()
-    if (choice !== null) saveCookieConsent(choice)
+    const { AnalyticsProvider, saveCookieConsent } = loaded
+    if (choice !== null) act(() => saveCookieConsent(choice))
     localStorage.setItem(`ph_${KEY}_posthog`, '{"distinct_id":"old"}')
     sessionStorage.setItem(`ph_${KEY}_window_id`, 'w')
     document.cookie = `ph_${KEY}_posthog=old; Path=/`

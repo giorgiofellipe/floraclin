@@ -26,7 +26,10 @@ beforeEach(() => {
   writeText.mockReset().mockResolvedValue(undefined)
   Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
 })
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
 
 describe('ReferralSidebarCard', () => {
   it.each([
@@ -48,6 +51,23 @@ describe('ReferralSidebarCard', () => {
     await waitFor(() => expect(screen.getByText('Copiado')).toBeTruthy())
     expect(writeText).toHaveBeenCalledWith(PAYING.link)
     expect(screen.getByRole('link', { name: 'Compartilhar no WhatsApp' }).getAttribute('href')).toBe(PAYING.whatsappShareUrl)
+  })
+
+  it('cancels the copied feedback timer when the card unmounts', async () => {
+    respond(200, PAYING)
+    const { unmount } = render(<ReferralSidebarCard />)
+    const button = await screen.findByRole('button', { name: 'Copiar link' })
+    const schedule = vi.spyOn(globalThis, 'setTimeout')
+    const cancel = vi.spyOn(globalThis, 'clearTimeout')
+    fireEvent.click(button)
+    await screen.findByText('Copiado')
+    const timerIndex = schedule.mock.calls.findIndex(([, delay]) => delay === 2000)
+    expect(timerIndex).toBeGreaterThanOrEqual(0)
+    const timer = schedule.mock.results[timerIndex].value
+
+    unmount()
+
+    expect(cancel).toHaveBeenCalledWith(timer)
   })
 
   it('asks a trial clinic to subscribe, linking to the billing tab', async () => {
