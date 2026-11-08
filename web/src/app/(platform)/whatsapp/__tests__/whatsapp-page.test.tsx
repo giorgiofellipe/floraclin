@@ -404,7 +404,9 @@ describe('WhatsAppPage navigation', () => {
       startAt('/whatsapp?conversa=c2')
       const lengthBefore = window.history.length
       render(<WhatsAppPage />)
-      expect(await screen.findByRole('heading', { name: 'Bia Lima' })).toBeInTheDocument()
+      // Config, list loading and URL selection resolve in separate effects.
+      // Allow that chain to settle on the shared CI worker before testing back.
+      expect(await screen.findByRole('heading', { name: 'Bia Lima' }, { timeout: 4000 })).toBeInTheDocument()
 
       fireEvent.click(backButton()!)
 

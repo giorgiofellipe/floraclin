@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { BulkActionBar } from '../bulk-action-bar'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { createWrapper } from '@/tests/test-utils'
@@ -153,7 +153,8 @@ describe('BulkActionBar', () => {
       { wrapper: createWrapper() },
     )
 
-    await userEvent.click(screen.getByTestId('bulk-more'))
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
+    await user.click(screen.getByTestId('bulk-more'))
     const items = await screen.findAllByRole('menuitem')
     expect(items.map((i) => i.textContent)).toEqual([
       'Cancelar (2)',
@@ -162,7 +163,7 @@ describe('BulkActionBar', () => {
     ])
     expect(items[1]).toHaveAttribute('aria-disabled', 'true')
 
-    await userEvent.click(screen.getByRole('menuitem', { name: 'Reativar (2)' }))
+    await user.click(screen.getByRole('menuitem', { name: 'Reativar (2)' }))
     expect(await screen.findByTestId('uncancel-reason')).toBeInTheDocument()
   })
 

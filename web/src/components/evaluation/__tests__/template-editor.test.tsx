@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { act, render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { TemplateEditor } from '../template-editor'
 import type { FormSection } from '@/lib/forms/types'
 
@@ -64,7 +64,7 @@ describe('TemplateEditor', () => {
   })
 
   it('copies a ficha into the editor and saves it only on "Salvar"', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
     const { onSave } = renderEditor()
 
     await user.click(screen.getByRole('button', { name: 'Copiar de outro procedimento' }))
@@ -82,7 +82,7 @@ describe('TemplateEditor', () => {
   })
 
   it('disables "Copiar de outro procedimento" while a save runs (previously a copy could replace the sections while the save still sent the old ones)', async () => {
-    const user = userEvent.setup()
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
     const { onSave } = renderEditor()
     let finishSave!: (value: { success: boolean }) => void
     onSave.mockReturnValueOnce(new Promise((resolve) => { finishSave = resolve }))

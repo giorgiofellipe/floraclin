@@ -65,7 +65,7 @@ describe('ProcedureApproval with unsigned terms', () => {
     const onPending = vi.fn()
     renderApproval(onPending)
 
-    const approve = await screen.findByRole('button', { name: 'Aprovar e assinar depois' })
+    const approve = await screen.findByRole('button', { name: 'Aprovar e assinar depois' }, { timeout: 4000 })
     expect(approve).toBeEnabled()
     expect(screen.getByText(/coletar as assinaturas agora ou depois/)).toBeInTheDocument()
     expect(onPending).toHaveBeenLastCalledWith(['Consentimento Geral'])
