@@ -87,7 +87,7 @@ export function ReconciliationView() {
   return (
     <div className="space-y-4" data-testid="reconciliation-view">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
+        <div className="min-w-0 max-w-full space-y-1">
           <Label>Conta</Label>
           <Select
             items={accountItems}
@@ -97,7 +97,7 @@ export function ReconciliationView() {
               setOffset(0)
             }}
           >
-            <SelectTrigger className="w-56" aria-label="Conta bancária">
+            <SelectTrigger className="w-56 max-w-full" aria-label="Conta bancária">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -116,12 +116,14 @@ export function ReconciliationView() {
             if (file) setImportFile(file)
           }}
         />
-        <Button onClick={() => fileInput.current?.click()}>
+        {/* Wraps instead of widening the page at large text sizes. */}
+        <Button className="h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-left" onClick={() => fileInput.current?.click()}>
           <UploadIcon className="h-4 w-4" />
           Importar extrato (OFX)
         </Button>
 
-        <div className="ml-auto flex gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1">
+        {/* The four filters don't fit one row on a phone, so they take two there. */}
+        <div className="ml-auto grid w-full grid-cols-2 gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1 sm:flex sm:w-auto">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -132,7 +134,7 @@ export function ReconciliationView() {
                 setOffset(0)
               }}
               className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium',
+                'min-w-0 rounded-md px-3 py-1.5 text-sm font-medium [overflow-wrap:anywhere]',
                 status === f.value ? 'bg-forest text-cream' : 'text-mid hover:bg-[#F4F6F8]',
               )}
             >

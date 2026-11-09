@@ -4,11 +4,34 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
+// Chrome leaves a partly visible control clipped when Tab reaches it, so
+// keyboard focus inside a horizontally scrolled table brings the whole
+// control into view, with some room from the edge.
+const REVEAL_GAP = 16
+
+function revealFocused(event: React.FocusEvent<HTMLDivElement>) {
+  const container = event.currentTarget
+  const target = event.target
+  if (container.scrollWidth <= container.clientWidth) return
+  // Mouse focus would move the control away mid-click.
+  if (!target.matches(":focus-visible")) return
+  const box = container.getBoundingClientRect()
+  const rect = target.getBoundingClientRect()
+  const left = box.left + container.clientLeft + REVEAL_GAP
+  const right = box.left + container.clientLeft + container.clientWidth - REVEAL_GAP
+  if (rect.left < left) {
+    container.scrollLeft -= left - rect.left
+  } else if (rect.right > right) {
+    container.scrollLeft += Math.min(rect.right - right, rect.left - left)
+  }
+}
+
 function Table({ className, ...props }: React.ComponentProps<"table">) {
   return (
     <div
       data-slot="table-container"
       className="relative w-full overflow-x-auto"
+      onFocus={revealFocused}
     >
       <table
         data-slot="table"
