@@ -154,7 +154,7 @@ function FinancialTabs({
         aria-label="Seções do financeiro"
         onScroll={measure}
         style={{ maskImage: mask, WebkitMaskImage: mask }}
-        className="scrollbar-hide relative flex max-w-full gap-1 overflow-x-auto p-1"
+        className="scrollbar-hide relative flex max-w-full snap-x scroll-px-4 gap-1 overflow-x-auto p-1"
         data-testid="financial-tabs"
       >
         {tabs.map((tab) => {
@@ -176,12 +176,14 @@ function FinancialTabs({
               data-testid={`financial-tab-${tab.value}`}
               onClick={() => onChange(tab.value)}
               onKeyDown={handleKeyDown}
+              // Mobile marks the active tab with an underline; from md up it
+              // keeps the filled pill.
               className={cn(
-                'flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 text-sm font-medium transition-all duration-200 md:h-auto md:gap-2 md:py-2',
+                'flex h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-all duration-200 md:h-auto md:gap-2 md:rounded-md md:border-b-0 md:py-2',
                 'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage',
                 isActive
-                  ? 'bg-forest text-cream shadow-sm'
-                  : 'text-mid hover:text-charcoal hover:bg-[#F4F6F8]'
+                  ? 'border-forest text-forest md:bg-forest md:text-cream md:shadow-sm'
+                  : 'border-transparent text-[#666666] hover:text-charcoal md:hover:bg-[#F4F6F8]'
               )}
             >
               <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
