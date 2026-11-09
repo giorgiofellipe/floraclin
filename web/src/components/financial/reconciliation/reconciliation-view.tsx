@@ -122,7 +122,8 @@ export function ReconciliationView() {
           Importar extrato (OFX)
         </Button>
 
-        <div className="ml-auto flex gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1">
+        {/* The four filters don't fit one row on a phone, so they take two there. */}
+        <div className="ml-auto grid w-full grid-cols-2 gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1 sm:flex sm:w-auto">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -133,7 +134,7 @@ export function ReconciliationView() {
                 setOffset(0)
               }}
               className={cn(
-                'rounded-md px-3 py-1.5 text-sm font-medium',
+                'min-w-0 rounded-md px-3 py-1.5 text-sm font-medium [overflow-wrap:anywhere]',
                 status === f.value ? 'bg-forest text-cream' : 'text-mid hover:bg-[#F4F6F8]',
               )}
             >
