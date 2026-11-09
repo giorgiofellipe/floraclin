@@ -1,6 +1,15 @@
 'use client'
 
-import { lazy, Suspense, useCallback } from 'react'
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from 'react'
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
@@ -72,6 +81,121 @@ function visibleTabs(role: string) {
   })
 }
 
+// The labeled tabs are wider than a phone (and than a tablet next to the
+// sidebar), so the row scrolls on its own instead of widening the page. A fade
+// on the cut-off edge shows there is more to scroll.
+function edgeMask(start: boolean, end: boolean) {
+  if (start && end) return 'linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent)'
+  if (end) return 'linear-gradient(to right, #000 calc(100% - 24px), transparent)'
+  if (start) return 'linear-gradient(to right, transparent, #000 24px)'
+  return undefined
+}
+
+function FinancialTabs({
+  tabs,
+  activeTab,
+  onChange,
+}: {
+  tabs: ReturnType<typeof visibleTabs>
+  activeTab: TabValue
+  onChange: (tab: TabValue) => void
+}) {
+  const listRef = useRef<HTMLDivElement>(null)
+  const tabRefs = useRef(new Map<TabValue, HTMLButtonElement>())
+  const [hidden, setHidden] = useState({ start: false, end: false })
+
+  const measure = useCallback(() => {
+    const list = listRef.current
+    if (!list) return
+    const max = list.scrollWidth - list.clientWidth
+    setHidden({ start: list.scrollLeft > 1, end: list.scrollLeft < max - 1 })
+  }, [])
+
+  // Keep the active tab in view, also when a link lands on one off-screen.
+  // Only the row scrolls, never the page.
+  useLayoutEffect(() => {
+    const list = listRef.current
+    const tab = tabRefs.current.get(activeTab)
+    if (!list || !tab) return
+    list.scrollLeft = tab.offsetLeft - (list.clientWidth - tab.offsetWidth) / 2
+    measure()
+  }, [activeTab, measure])
+
+  useEffect(() => {
+    const list = listRef.current
+    if (!list || typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(measure)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [measure])
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
+    const index = tabs.findIndex((t) => t.value === activeTab)
+    const next =
+      event.key === 'ArrowRight' ? (index + 1) % tabs.length
+      : event.key === 'ArrowLeft' ? (index - 1 + tabs.length) % tabs.length
+      : event.key === 'Home' ? 0
+      : event.key === 'End' ? tabs.length - 1
+      : -1
+    if (next < 0) return
+    event.preventDefault()
+    const value = tabs[next].value
+    onChange(value)
+    tabRefs.current.get(value)?.focus()
+  }
+
+  const mask = edgeMask(hidden.start, hidden.end)
+
+  return (
+    <div className="min-w-0 rounded-lg border border-[#E8ECEF] bg-white shadow-sm">
+      <div
+        ref={listRef}
+        role="tablist"
+        aria-label="Seções do financeiro"
+        onScroll={measure}
+        style={{ maskImage: mask, WebkitMaskImage: mask }}
+        className="scrollbar-hide relative flex max-w-full snap-x scroll-px-4 gap-1 overflow-x-auto p-1"
+        data-testid="financial-tabs"
+      >
+        {tabs.map((tab) => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.value
+          return (
+            <button
+              key={tab.value}
+              ref={(el) => {
+                if (el) tabRefs.current.set(tab.value, el)
+                else tabRefs.current.delete(tab.value)
+              }}
+              type="button"
+              role="tab"
+              id={`financial-tab-${tab.value}`}
+              aria-selected={isActive}
+              aria-controls="financial-tab-panel"
+              tabIndex={isActive ? 0 : -1}
+              data-testid={`financial-tab-${tab.value}`}
+              onClick={() => onChange(tab.value)}
+              onKeyDown={handleKeyDown}
+              // Mobile marks the active tab with an underline; from md up it
+              // keeps the filled pill.
+              className={cn(
+                'flex h-11 shrink-0 snap-start items-center gap-1.5 whitespace-nowrap border-b-2 px-3 text-sm font-medium transition-all duration-200 md:h-auto md:gap-2 md:rounded-md md:border-b-0 md:py-2',
+                'outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sage',
+                isActive
+                  ? 'border-forest text-forest md:bg-forest md:text-cream md:shadow-sm'
+                  : 'border-transparent text-[#666666] hover:text-charcoal md:hover:bg-[#F4F6F8]'
+              )}
+            >
+              <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+              {tab.label}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function TabFallback() {
   return (
     <div className="flex items-center justify-center gap-2 py-16">
@@ -115,34 +239,11 @@ export function FinanceiroPageClient() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Tab navigation */}
-      <div className="flex items-center gap-1 rounded-lg bg-white p-1 shadow-sm border border-[#E8ECEF]" data-testid="financial-tabs">
-        {tabs.map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.value
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              data-testid={`financial-tab-${tab.value}`}
-              onClick={() => handleTabChange(tab.value)}
-              className={cn(
-                'flex items-center gap-2 rounded-md px-4 py-2 text-sm font-medium transition-all duration-200',
-                isActive
-                  ? 'bg-forest text-cream shadow-sm'
-                  : 'text-mid hover:text-charcoal hover:bg-[#F4F6F8]'
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-            </button>
-          )
-        })}
-      </div>
+    <div className="min-w-0 space-y-4">
+      <FinancialTabs tabs={tabs} activeTab={activeTab} onChange={handleTabChange} />
 
       {/* Tab content */}
-      <div>
+      <div role="tabpanel" id="financial-tab-panel" aria-labelledby={`financial-tab-${activeTab}`}>
         {activeTab === 'receivables' && (
           <FinancialList patients={patients ?? []} />
         )}
