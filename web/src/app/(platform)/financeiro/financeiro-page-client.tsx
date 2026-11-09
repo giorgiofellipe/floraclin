@@ -113,21 +113,34 @@ function FinancialTabs({
 
   // Keep the active tab in view, also when a link lands on one off-screen.
   // Only the row scrolls, never the page.
-  useLayoutEffect(() => {
-    const list = listRef.current
-    const tab = tabRefs.current.get(activeTab)
-    if (!list || !tab) return
-    list.scrollLeft = tab.offsetLeft - (list.clientWidth - tab.offsetWidth) / 2
-    measure()
-  }, [activeTab, measure])
+  const revealActive = useCallback(
+    (onlyIfHidden: boolean) => {
+      const list = listRef.current
+      const tab = tabRefs.current.get(activeTab)
+      if (!list || !tab) return
+      const inView =
+        tab.offsetLeft >= list.scrollLeft &&
+        tab.offsetLeft + tab.offsetWidth <= list.scrollLeft + list.clientWidth
+      if (!onlyIfHidden || !inView) {
+        list.scrollLeft = tab.offsetLeft - (list.clientWidth - tab.offsetWidth) / 2
+      }
+      measure()
+    },
+    [activeTab, measure],
+  )
 
+  useLayoutEffect(() => {
+    revealActive(false)
+  }, [revealActive])
+
+  // A narrower row (window resized, phone rotated) can push the active tab out of view.
   useEffect(() => {
     const list = listRef.current
     if (!list || typeof ResizeObserver === 'undefined') return
-    const observer = new ResizeObserver(measure)
+    const observer = new ResizeObserver(() => revealActive(true))
     observer.observe(list)
     return () => observer.disconnect()
-  }, [measure])
+  }, [revealActive])
 
   const handleKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     const index = tabs.findIndex((t) => t.value === activeTab)

@@ -78,4 +78,42 @@ describe('FinanceiroPageClient tabs', () => {
     expect(mockReplace).toHaveBeenLastCalledWith('/financeiro?tab=notas-fiscais', { scroll: false })
     expect(screen.getByRole('tab', { name: 'Notas fiscais' })).toHaveFocus()
   })
+
+  it('brings the active tab back into view when the row gets narrower', async () => {
+    let onResize: () => void = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          onResize = callback
+        }
+        observe() {}
+        disconnect() {}
+      },
+    )
+    searchParamsValue = new URLSearchParams('tab=notas-fiscais')
+    await act(async () => {
+      render(<FinanceiroPageClient />)
+    })
+
+    // Opened wide (everything fits, row at 0), then the window shrinks to a
+    // phone: the last tab now sits past the right edge of a 286px row.
+    const list = screen.getByRole('tablist')
+    const tab = screen.getByRole('tab', { name: 'Notas fiscais' })
+    Object.defineProperty(list, 'clientWidth', { configurable: true, value: 286 })
+    Object.defineProperty(list, 'scrollWidth', { configurable: true, value: 961 })
+    Object.defineProperty(list, 'scrollLeft', { configurable: true, writable: true, value: 0 })
+    Object.defineProperty(tab, 'offsetLeft', { configurable: true, value: 833 })
+    Object.defineProperty(tab, 'offsetWidth', { configurable: true, value: 123 })
+
+    act(() => onResize())
+    expect(list.scrollLeft).toBe(833 - (286 - 123) / 2)
+
+    // Already in view: a resize leaves the row where the person scrolled it.
+    list.scrollLeft = 700
+    act(() => onResize())
+    expect(list.scrollLeft).toBe(700)
+
+    vi.unstubAllGlobals()
+  })
 })

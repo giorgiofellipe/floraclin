@@ -195,7 +195,8 @@ export function NfseDocumentsList() {
 
       <div
         className={cn(
-          'rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden transition-opacity duration-200',
+          // relative: keeps the table's sr-only header inside the clipped box, not on the page.
+          'relative rounded-[3px] bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] overflow-hidden transition-opacity duration-200',
           isFetching && !isPending && 'opacity-60',
         )}
       >

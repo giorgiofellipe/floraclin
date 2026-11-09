@@ -301,9 +301,10 @@ function DateRangePicker({
   className,
   fluid = false,
 }: DateRangePickerProps) {
-  const fieldWidth = fluid ? "min-w-0 flex-1" : "w-[160px]"
+  // On phones two 160px fields don't fit a 320px screen, so they share the row there too.
+  const fieldWidth = fluid ? "min-w-0 flex-1" : "min-w-0 flex-1 sm:w-[160px] sm:flex-none"
   return (
-    <div className={cn("flex items-center gap-1.5", className)}>
+    <div className={cn("flex items-center gap-1.5", !fluid && "w-full sm:w-auto", className)}>
       <DatePicker
         value={dateFrom}
         onChange={onDateFromChange}

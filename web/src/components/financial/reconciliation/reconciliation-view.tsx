@@ -87,7 +87,7 @@ export function ReconciliationView() {
   return (
     <div className="space-y-4" data-testid="reconciliation-view">
       <div className="flex flex-wrap items-end gap-3">
-        <div className="space-y-1">
+        <div className="min-w-0 max-w-full space-y-1">
           <Label>Conta</Label>
           <Select
             items={accountItems}
@@ -97,7 +97,7 @@ export function ReconciliationView() {
               setOffset(0)
             }}
           >
-            <SelectTrigger className="w-56" aria-label="Conta bancária">
+            <SelectTrigger className="w-56 max-w-full" aria-label="Conta bancária">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -116,7 +116,8 @@ export function ReconciliationView() {
             if (file) setImportFile(file)
           }}
         />
-        <Button onClick={() => fileInput.current?.click()}>
+        {/* Wraps instead of widening the page at large text sizes. */}
+        <Button className="h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-left" onClick={() => fileInput.current?.click()}>
           <UploadIcon className="h-4 w-4" />
           Importar extrato (OFX)
         </Button>
