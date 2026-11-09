@@ -176,9 +176,9 @@ export function ReconciliationView() {
               const credit = line.amountCents > 0
               const suspect = Boolean(line.suspectedDuplicateOf) && !line.suspectReviewedAt && line.status !== 'ignored'
               return (
-                <TableRow key={line.id} data-testid="statement-line" className="grid min-w-0 grid-cols-2 gap-2 p-4 md:table-row md:p-0">
-                  <TableCell className="order-1 block p-0 text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{brDate(line.postedDate)}</TableCell>
-                  <TableCell className="order-3 col-span-2 block min-w-0 whitespace-normal p-0 [overflow-wrap:anywhere] md:table-cell md:p-2">
+                <TableRow key={line.id} data-testid="statement-line" className="grid min-w-0 grid-cols-1 gap-2 p-4 md:table-row md:p-0">
+                  <TableCell className="order-1 block min-w-0 whitespace-normal p-0 [overflow-wrap:anywhere] text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{brDate(line.postedDate)}</TableCell>
+                  <TableCell className="order-3 block min-w-0 whitespace-normal p-0 [overflow-wrap:anywhere] md:table-cell md:p-2">
                     <div className="line-clamp-2 min-w-0 md:max-w-md" title={line.memo}>{line.memo}</div>
                     {suspect && (
                       <div className="flex items-start gap-1 text-xs text-amber-800" data-testid="suspect-note">
@@ -192,38 +192,38 @@ export function ReconciliationView() {
                       </div>
                     ))}
                   </TableCell>
-                  <TableCell className={cn('order-2 block min-w-0 whitespace-normal p-0 text-right font-semibold tabular-nums md:table-cell md:p-2', credit ? 'text-forest' : 'text-red-600')}>
+                  <TableCell className={cn('order-2 block min-w-0 whitespace-normal p-0 text-left font-semibold tabular-nums [overflow-wrap:anywhere] md:text-right md:table-cell md:p-2', credit ? 'text-forest' : 'text-red-600')}>
                     {credit ? '+' : '-'}
                     {formatCurrency(Math.abs(line.amountCents) / 100)}
                     {line.status === 'partial' && (
                       <div className="text-xs text-mid">falta {formatCurrency((Math.abs(line.amountCents) - line.allocatedCents) / 100)}</div>
                     )}
                   </TableCell>
-                  <TableCell className="order-4 col-span-2 block p-0 text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{STATUS_LABEL[line.status]}</TableCell>
-                  <TableCell className="order-5 col-span-2 flex min-w-0 flex-wrap gap-2 whitespace-normal p-0 md:table-cell md:space-x-1 md:whitespace-nowrap md:p-2 md:text-right">
+                  <TableCell className="order-4 block p-0 text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{STATUS_LABEL[line.status]}</TableCell>
+                  <TableCell className="order-5 flex min-w-0 flex-wrap gap-2 whitespace-normal p-0 md:table-cell md:space-x-1 md:whitespace-nowrap md:p-2 md:text-right">
                     {(line.status === 'open' || line.status === 'partial') && (
                       <>
-                        <Button className="min-h-11 flex-1 md:flex-none" size="sm" onClick={() => setDialog({ kind: 'match', line })}>Conciliar</Button>
+                        <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" onClick={() => setDialog({ kind: 'match', line })}>Conciliar</Button>
                         {!credit && line.status === 'open' && (
-                          <Button className="min-h-11 flex-1 md:flex-none" size="sm" variant="outline" onClick={() => setDialog({ kind: 'expense', line })}>Criar despesa</Button>
+                          <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" onClick={() => setDialog({ kind: 'expense', line })}>Criar despesa</Button>
                         )}
                       </>
                     )}
                     {line.status === 'open' && (
-                      <Button className="min-h-11 flex-1 md:flex-none" size="sm" variant="outline" onClick={() => setDialog({ kind: 'ignore', line })}>Ignorar</Button>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" onClick={() => setDialog({ kind: 'ignore', line })}>Ignorar</Button>
                     )}
                     {suspect && (
-                      <Button className="min-h-11 flex-1 md:flex-none" size="sm" variant="outline" disabled={confirmDistinct.isPending} onClick={() => run(confirmDistinct.mutateAsync(line.id), 'Mantido como lançamento distinto')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={confirmDistinct.isPending} onClick={() => run(confirmDistinct.mutateAsync(line.id), 'Mantido como lançamento distinto')}>
                         É outro lançamento
                       </Button>
                     )}
                     {(line.status === 'matched' || line.status === 'partial') && (
-                      <Button className="min-h-11 flex-1 md:flex-none" size="sm" variant="outline" disabled={undo.isPending} onClick={() => run(undo.mutateAsync({ lineId: line.id }), 'Conciliação desfeita. O pagamento não foi alterado')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={undo.isPending} onClick={() => run(undo.mutateAsync({ lineId: line.id }), 'Conciliação desfeita. O pagamento não foi alterado')}>
                         Desfazer
                       </Button>
                     )}
                     {line.status === 'ignored' && (
-                      <Button className="min-h-11 flex-1 md:flex-none" size="sm" variant="outline" disabled={unignore.isPending} onClick={() => run(unignore.mutateAsync(line.id), 'Lançamento restaurado')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={unignore.isPending} onClick={() => run(unignore.mutateAsync(line.id), 'Lançamento restaurado')}>
                         Restaurar
                       </Button>
                     )}
