@@ -97,7 +97,7 @@ export function ReconciliationView() {
               setOffset(0)
             }}
           >
-            <SelectTrigger className="w-56" aria-label="Conta bancária">
+            <SelectTrigger className="w-full max-w-full sm:w-56" aria-label="Conta bancária">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -121,7 +121,7 @@ export function ReconciliationView() {
           Importar extrato (OFX)
         </Button>
 
-        <div className="ml-auto flex gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1">
+        <div className="ml-auto flex max-w-full flex-wrap gap-1 rounded-lg border border-[#E8ECEF] bg-white p-1">
           {FILTERS.map((f) => (
             <button
               key={f.value}
@@ -198,7 +198,7 @@ export function ReconciliationView() {
                     )}
                   </TableCell>
                   <TableCell>{STATUS_LABEL[line.status]}</TableCell>
-                  <TableCell className="space-x-1 whitespace-nowrap text-right">
+                  <TableCell className="space-x-1 text-right">
                     {(line.status === 'open' || line.status === 'partial') && (
                       <>
                         <Button size="sm" onClick={() => setDialog({ kind: 'match', line })}>Conciliar</Button>
