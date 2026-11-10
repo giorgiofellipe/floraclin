@@ -211,6 +211,10 @@ function carriesValue(node: unknown, target: string, seen = new Set<unknown>()):
   )
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { recordPayment, bulkPayInstallments } = await import('../financial')
+
 describe('financial.ts meta conversions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -225,7 +229,7 @@ describe('financial.ts meta conversions', () => {
 
   describe('recordPayment', () => {
     it('paying installment 1 of 6 emits one Purchase carrying the full totalAmount, not the installment amount', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -263,7 +267,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('paying installment 2 of 6 also calls enqueueMetaEvent, with the identical eventId (the outbox unique index is the only dedup)', async () => {
-      const { recordPayment } = await import('../financial')
+
 
       for (const installmentId of [INSTALLMENT_ID, 'i-2']) {
         const tx = makeTx()
@@ -296,7 +300,7 @@ describe('financial.ts meta conversions', () => {
     // reconciler, mid-send) left behind, and delivering it here posts the same
     // Purchase to Meta twice.
     it('a second payment on the same entry does not deliver the row it did not insert', async () => {
-      const { recordPayment } = await import('../financial')
+
 
       for (const installmentId of [INSTALLMENT_ID, 'i-2']) {
         const tx = makeTx()
@@ -331,7 +335,7 @@ describe('financial.ts meta conversions', () => {
     // The enqueue holds the caller's tx and deliberately posts nothing, so the
     // send has to happen out here or the daily cron becomes the only delivery.
     it('sends the Purchase after the transaction commits, never inside it', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       const commit = vi.fn()
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
@@ -378,7 +382,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('a failing post-commit send neither fails the payment nor touches the row, which stays pending for the cron', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -416,7 +420,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('does not resend a Purchase an earlier installment already delivered', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -444,7 +448,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('a payment for a patient with no originating prospect still emits, with prospectId null', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -484,7 +488,6 @@ describe('financial.ts meta conversions', () => {
         return { inserted }
       })
 
-      const { recordPayment } = await import('../financial')
       for (const [installmentId, paidAt] of [
         [INSTALLMENT_ID, '2026-06-10T15:00:00.000Z'],
         ['i-2', now.toISOString()],
@@ -523,7 +526,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('a short payment that leaves the entry pending emits nothing', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -546,7 +549,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('a renegotiated entry emits nothing', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -573,7 +576,7 @@ describe('financial.ts meta conversions', () => {
 
   describe('pool safety', () => {
     it('resolves the prospect and the meta prerequisites before the transaction opens', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -604,7 +607,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('resolves once per financial entry, not once per installment, for a twelve-installment payment', async () => {
-      const { bulkPayInstallments } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -644,7 +647,7 @@ describe('financial.ts meta conversions', () => {
     // A prepare that never ran must still leave an outbox row behind, so the
     // payment is not silently dropped before the cron can reconcile it.
     it('a failure while preparing the meta context still writes the Purchase, bare', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       dbMock.select.mockImplementationOnce(() => {
@@ -686,7 +689,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('one unresolvable patient degrades only its own entry', async () => {
-      const { bulkPayInstallments } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -738,7 +741,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('a failed prerequisite resolution degrades to a bare row rather than dropping the event', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -771,7 +774,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('passes the patient phone to the prerequisite resolution so the opt-out can match on it', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -807,7 +810,7 @@ describe('financial.ts meta conversions', () => {
 
   describe('outbox failure inside the payment transaction', () => {
     it('leaves the payment committed and successful, and reports the failure', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       const commit = vi.fn()
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
@@ -849,7 +852,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('runs the insert in a savepoint, so the outer transaction keeps the payment writes', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       const commit = vi.fn()
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
@@ -886,7 +889,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('costs one entry its Purchase without rolling back the rest of a bulk payment', async () => {
-      const { bulkPayInstallments } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -951,7 +954,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('still propagates a failure outside the savepoint, which really has aborted the block', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
       queuePrepareRows()
@@ -989,7 +992,7 @@ describe('financial.ts meta conversions', () => {
 
   describe('bulkPayInstallments', () => {
     it('emits exactly two Purchase events across two entries', async () => {
-      const { bulkPayInstallments } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -1051,7 +1054,7 @@ describe('financial.ts meta conversions', () => {
     })
 
     it('sends both Purchase events after the single transaction commits', async () => {
-      const { bulkPayInstallments } = await import('../financial')
+
       const tx = makeTx()
       const commit = vi.fn()
       dbMock.transaction.mockImplementationOnce(transactionCommittingWith(tx, commit))
@@ -1116,7 +1119,7 @@ describe('financial.ts meta conversions', () => {
 
   describe('tenant scoping', () => {
     it('scopes every meta lookup by tenant', async () => {
-      const { recordPayment } = await import('../financial')
+
       const tx = makeTx()
       dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 

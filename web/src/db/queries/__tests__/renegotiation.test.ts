@@ -27,6 +27,10 @@ const financialSettingsRow = {
   gracePeriodDays: 0,
 }
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { renegotiateCharges } = await import('../renegotiation')
+
 describe('renegotiateCharges', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -39,7 +43,7 @@ describe('renegotiateCharges', () => {
   })
 
   it('prices penalties through the engine, matching what the payment dialog would quote', async () => {
-    const { renegotiateCharges } = await import('../renegotiation')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -120,7 +124,7 @@ describe('renegotiateCharges', () => {
   })
 
   it('refuses with ENTRY_ALREADY_PAID when a concurrent payment settles the entry after the first read', async () => {
-    const { renegotiateCharges } = await import('../renegotiation')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -172,7 +176,7 @@ describe('renegotiateCharges', () => {
   })
 
   it('refuses with NOTHING_TO_RENEGOTIATE when every installment is paid, even with newTotalAmount supplied', async () => {
-    const { renegotiateCharges } = await import('../renegotiation')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -231,7 +235,7 @@ describe('renegotiateCharges', () => {
   })
 
   it('stamps cancelledAt on the originals, flags the replacement as created from renegotiation, and writes the creation terms on its installments', async () => {
-    const { renegotiateCharges } = await import('../renegotiation')
+
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
 
@@ -292,7 +296,7 @@ describe('renegotiateCharges', () => {
     ])
   })
   it('cancels only the pending installments of the originals and leaves an already cancelled one, and its cancelled_at, alone', async () => {
-    const { renegotiateCharges } = await import('../renegotiation')
+
     const { installments } = await import('@/db/schema')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))

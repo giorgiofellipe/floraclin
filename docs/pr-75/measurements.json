@@ -1,0 +1,602 @@
+[
+  {
+    "width": 375,
+    "name": "1-statement",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Conta bancária",
+        "height": 44
+      },
+      {
+        "text": "Importar extrato (OFX)",
+        "height": 44
+      },
+      {
+        "text": "Pendentes",
+        "height": 44
+      },
+      {
+        "text": "Conciliados",
+        "height": 44
+      },
+      {
+        "text": "Ignorados",
+        "height": 44
+      },
+      {
+        "text": "Todos",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Ignorar",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Criar despesa",
+        "height": 44
+      },
+      {
+        "text": "Ignorar",
+        "height": 44
+      },
+      {
+        "text": "É outro lançamento",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "name": "2-suggestion",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 152
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 124
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 208
+      },
+      {
+        "text": "Conciliar R$ 250,00 com Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "name": "6-keyboard-focus",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 152
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 124
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 208
+      },
+      {
+        "text": "Conciliar R$ 250,00 com Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "name": "3-two-selected",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 152
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 100
+      },
+      {
+        "text": "Valor de Repasse Ana Costa",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 208
+      },
+      {
+        "text": "Conciliar 2 movimentações",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "name": "4-empty",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 375,
+    "name": "5-ofx",
+    "pageWidth": 375,
+    "viewport": 375,
+    "rootWidth": 375,
+    "rootScroll": 375,
+    "left": 0,
+    "right": 375,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver detalhes",
+        "height": 44
+      },
+      {
+        "text": "Importar mesmo assim",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "1-statement",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Conta bancária",
+        "height": 44
+      },
+      {
+        "text": "Importar extrato (OFX)",
+        "height": 44
+      },
+      {
+        "text": "Pendentes",
+        "height": 44
+      },
+      {
+        "text": "Conciliados",
+        "height": 44
+      },
+      {
+        "text": "Ignorados",
+        "height": 44
+      },
+      {
+        "text": "Todos",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Ignorar",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Criar despesa",
+        "height": 44
+      },
+      {
+        "text": "Ignorar",
+        "height": 44
+      },
+      {
+        "text": "É outro lançamento",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "2-suggestion",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 180
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 124
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 228
+      },
+      {
+        "text": "Conciliar R$ 250,00 com Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "6-keyboard-focus",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 180
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 124
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 228
+      },
+      {
+        "text": "Conciliar R$ 250,00 com Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "3-two-selected",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Escolher Pagamento Maria Silva",
+        "height": 180
+      },
+      {
+        "text": "Valor de Pagamento Maria Silva",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher Repasse Ana Costa",
+        "height": 100
+      },
+      {
+        "text": "Valor de Repasse Ana Costa",
+        "height": 44
+      },
+      {
+        "text": "Usar tudo",
+        "height": 44
+      },
+      {
+        "text": "Escolher NNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNNN",
+        "height": 228
+      },
+      {
+        "text": "Conciliar 2 movimentações",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "4-empty",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver tudo",
+        "height": 44
+      },
+      {
+        "text": "Como funciona",
+        "height": 44
+      },
+      {
+        "text": "Buscar movimentação",
+        "height": 44
+      },
+      {
+        "text": "Conciliar",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  },
+  {
+    "width": 320,
+    "name": "5-ofx",
+    "pageWidth": 320,
+    "viewport": 320,
+    "rootWidth": 320,
+    "rootScroll": 320,
+    "left": 0,
+    "right": 320,
+    "targets": [
+      {
+        "text": "Fechar",
+        "height": 44
+      },
+      {
+        "text": "Ver detalhes",
+        "height": 44
+      },
+      {
+        "text": "Importar mesmo assim",
+        "height": 44
+      },
+      {
+        "text": "Cancelar",
+        "height": 44
+      }
+    ]
+  }
+]

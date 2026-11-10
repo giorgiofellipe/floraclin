@@ -58,6 +58,9 @@ beforeEach(() => {
   captured.length = 0
 })
 
+// Module loading is setup; the tests time the real adapter and SQL assertions.
+const { adapter } = await import('../auth-config')
+
 /**
  * Runs the adapter's createUser and returns the column-to-value map drizzle
  * actually emitted. Column names are read off the statement and lined up with
@@ -65,7 +68,6 @@ beforeEach(() => {
  * 'default' rather than quietly looking like a bound value.
  */
 async function createUserColumns(data: Record<string, unknown>) {
-  const { adapter } = await import('../auth-config')
   await adapter.createUser!(data as never)
 
   const insert = captured.find((c) => c.sql.startsWith('insert into'))

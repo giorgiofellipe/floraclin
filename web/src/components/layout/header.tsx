@@ -107,7 +107,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
         data-testid="header"
       >
         {/* Left: hamburger (mobile) + page title */}
-        <div className="flex items-center gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-3">
           <Button
             variant="ghost"
             size="icon-sm"
@@ -118,7 +118,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
           >
             <Menu className="size-5" />
           </Button>
-          <div className="hidden md:block">
+          <div className="hidden min-w-0 md:block">
             <h2 className="text-[16px] font-medium leading-tight text-[#2A2A2A]" style={{ fontFamily: 'var(--font-sans)' }}>
               {title}
             </h2>
@@ -127,13 +127,13 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
             )}
           </div>
           {/* Mobile: centered title */}
-          <div className="md:hidden">
+          <div className="min-w-0 [overflow-wrap:anywhere] md:hidden">
             <h2 className="text-[15px] font-medium text-[#2A2A2A]">{title}</h2>
           </div>
         </div>
 
         {/* Right: help menu + user avatar */}
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           <ReadOnlyBadge />
           <HelpMenu />
           <UserMenu userName={userName} userEmail={userEmail} />

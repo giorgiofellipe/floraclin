@@ -30,8 +30,11 @@ vi.mock('next-auth/providers/resend', () => ({ default: () => ({}) }))
 
 type SignInArgs = Parameters<NonNullable<NonNullable<NextAuthConfig['callbacks']>['signIn']>>[0]
 
+// Load once before tests: an unfinished cold import must not outlive a test
+// and write into the next test's captured queries.
+await import('../auth-config')
+
 async function signInCallback(args: SignInArgs) {
-  await import('../auth-config')
   return nextAuthConfig.current!.callbacks!.signIn!(args)
 }
 

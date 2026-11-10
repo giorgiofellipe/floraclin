@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
+import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 
 const hooks = vi.hoisted(() => ({
   previewInput: null as unknown,
@@ -33,9 +33,11 @@ async function pick(user: ReturnType<typeof userEvent.setup>, trigger: HTMLEleme
   await user.click(await screen.findByRole('option', { name }))
 }
 
+// Cache the CSS ancestor check per target; repeated API calls otherwise recompute
+// the same portal styles in jsdom. Pointer-interaction checks remain enabled.
 function renderBulk() {
   render(<MoveMovementsDialog open onOpenChange={vi.fn()} accounts={ACCOUNTS} target={{ mode: 'account' }} />)
-  return userEvent.setup()
+  return userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
 }
 
 beforeEach(() => {
@@ -45,6 +47,7 @@ beforeEach(() => {
 })
 
 describe('MoveMovementsDialog, whole account', () => {
+  // Two real portal interactions can exceed five seconds on the shared runner.
   it('counts what would move before the user confirms', async () => {
     const user = renderBulk()
     expect(screen.getByRole('button', { name: 'Mover pagamentos' })).toBeDisabled()
@@ -55,7 +58,7 @@ describe('MoveMovementsDialog, whole account', () => {
     expect(screen.getByTestId('move-preview')).toHaveTextContent('3 pagamentos somando R$ 450,00')
     expect(screen.getByTestId('move-preview')).toHaveTextContent('1 já conciliado fica de fora')
     expect(screen.getByRole('button', { name: /^Mover 3 pagamentos \(R\$\s450,00\)$/ })).toBeEnabled()
-  })
+  }, 15000)
 
   it('stays off when nothing would move', async () => {
     hooks.preview = { moved: 0, skippedReconciled: 2, skippedTransfers: 0, total: '0.00' }
@@ -82,7 +85,7 @@ describe('MoveMovementsDialog, whole account', () => {
     hooks.mutateAsync.mockResolvedValue({ data: { moved: 42, skippedReconciled: 3, skippedTransfers: 1 } })
     const onOpenChange = vi.fn()
     render(<MoveMovementsDialog open onOpenChange={onOpenChange} accounts={ACCOUNTS} target={{ mode: 'account' }} />)
-    const user = userEvent.setup()
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
     await pick(user, fromTrigger(), 'Caixa')
     await pick(user, toTrigger(), 'Itaú')
     await user.click(screen.getByRole('button', { name: /^Mover 3 pagamentos/ }))
@@ -123,7 +126,7 @@ describe('MoveMovementsDialog, one payment', () => {
         target={{ mode: 'movements', movementIds: ['44444444-4444-4444-8444-444444444444'], fromAccountId: ACCOUNTS[0].id, fromAccountName: 'Caixa' }}
       />,
     )
-    const user = userEvent.setup()
+    const user = userEvent.setup({ pointerEventsCheck: PointerEventsCheckLevel.EachTarget })
 
     expect(screen.getByTestId('move-current-account')).toHaveTextContent('Caixa')
     await user.click(toTrigger())

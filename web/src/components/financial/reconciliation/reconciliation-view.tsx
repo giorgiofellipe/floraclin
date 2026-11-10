@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Loader2Icon, UploadIcon } from 'lucide-react'
+import { AlertTriangleIcon, Loader2Icon, UploadIcon } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -85,7 +85,7 @@ export function ReconciliationView() {
   }
 
   return (
-    <div className="space-y-4" data-testid="reconciliation-view">
+    <div className="min-w-0 space-y-4" data-testid="reconciliation-view">
       <div className="flex flex-wrap items-end gap-3">
         <div className="min-w-0 max-w-full space-y-1">
           <Label>Conta</Label>
@@ -97,7 +97,7 @@ export function ReconciliationView() {
               setOffset(0)
             }}
           >
-            <SelectTrigger className="w-56 max-w-full" aria-label="Conta bancária">
+            <SelectTrigger className="min-h-11 w-56 max-w-full" aria-label="Conta bancária">
               <SelectValue />
             </SelectTrigger>
             <SelectContent />
@@ -117,7 +117,7 @@ export function ReconciliationView() {
           }}
         />
         {/* Wraps instead of widening the page at large text sizes. */}
-        <Button className="h-auto min-h-8 max-w-full whitespace-normal py-1.5 text-left" onClick={() => fileInput.current?.click()}>
+        <Button className="h-auto min-h-11 max-w-full whitespace-normal py-1.5 text-left" onClick={() => fileInput.current?.click()}>
           <UploadIcon className="h-4 w-4" />
           Importar extrato (OFX)
         </Button>
@@ -134,7 +134,7 @@ export function ReconciliationView() {
                 setOffset(0)
               }}
               className={cn(
-                'min-w-0 rounded-md px-3 py-1.5 text-sm font-medium [overflow-wrap:anywhere]',
+                'min-h-11 min-w-0 rounded-md px-3 py-1.5 text-sm font-medium [overflow-wrap:anywhere]',
                 status === f.value ? 'bg-forest text-cream' : 'text-mid hover:bg-[#F4F6F8]',
               )}
             >
@@ -147,8 +147,8 @@ export function ReconciliationView() {
       {error && <p className="text-sm text-red-600">{error instanceof Error ? error.message : 'Erro ao carregar o extrato'}</p>}
 
       <div className="rounded-lg border border-[#E8ECEF] bg-white">
-        <Table>
-          <TableHeader>
+        <Table className="block md:table">
+          <TableHeader className="hidden md:table-header-group">
             <TableRow>
               <TableHead>Data</TableHead>
               <TableHead>Descrição do banco</TableHead>
@@ -157,7 +157,7 @@ export function ReconciliationView() {
               <TableHead className="text-right">Ações</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody className="block md:table-row-group">
             {isLoading && (
               <TableRow>
                 <TableCell colSpan={5} className="py-8 text-center text-mid">
@@ -176,13 +176,13 @@ export function ReconciliationView() {
               const credit = line.amountCents > 0
               const suspect = Boolean(line.suspectedDuplicateOf) && !line.suspectReviewedAt && line.status !== 'ignored'
               return (
-                <TableRow key={line.id} data-testid="statement-line">
-                  <TableCell className="whitespace-nowrap">{brDate(line.postedDate)}</TableCell>
-                  <TableCell>
-                    <div className="max-w-md truncate" title={line.memo}>{line.memo}</div>
+                <TableRow key={line.id} data-testid="statement-line" className="grid min-w-0 grid-cols-1 gap-2 p-4 md:table-row md:p-0">
+                  <TableCell className="order-1 block min-w-0 whitespace-normal p-0 [overflow-wrap:anywhere] text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{brDate(line.postedDate)}</TableCell>
+                  <TableCell className="order-3 block min-w-0 whitespace-normal p-0 [overflow-wrap:anywhere] md:table-cell md:p-2">
+                    <div className="line-clamp-2 min-w-0 md:max-w-md" title={line.memo}>{line.memo}</div>
                     {suspect && (
-                      <div className="text-xs text-amber-700" data-testid="suspect-note">
-                        Possível duplicado de outro lançamento já importado.
+                      <div className="flex items-start gap-1 text-xs text-amber-800" data-testid="suspect-note">
+                        <AlertTriangleIcon className="size-3 shrink-0" aria-hidden="true" />Possível duplicado de outro lançamento já importado.
                       </div>
                     )}
                     {line.status === 'ignored' && <div className="text-xs text-mid">Motivo: {line.ignoreReason}</div>}
@@ -192,38 +192,38 @@ export function ReconciliationView() {
                       </div>
                     ))}
                   </TableCell>
-                  <TableCell className={cn('text-right tabular-nums', credit ? 'text-forest' : 'text-red-600')}>
+                  <TableCell className={cn('order-2 block min-w-0 whitespace-normal p-0 text-left font-semibold tabular-nums [overflow-wrap:anywhere] md:text-right md:table-cell md:p-2', credit ? 'text-forest' : 'text-red-600')}>
                     {credit ? '+' : '-'}
                     {formatCurrency(Math.abs(line.amountCents) / 100)}
                     {line.status === 'partial' && (
                       <div className="text-xs text-mid">falta {formatCurrency((Math.abs(line.amountCents) - line.allocatedCents) / 100)}</div>
                     )}
                   </TableCell>
-                  <TableCell>{STATUS_LABEL[line.status]}</TableCell>
-                  <TableCell className="space-x-1 whitespace-nowrap text-right">
+                  <TableCell className="order-4 block p-0 text-xs text-[#6B6B6B] md:table-cell md:p-2 md:text-sm">{STATUS_LABEL[line.status]}</TableCell>
+                  <TableCell className="order-5 flex min-w-0 flex-wrap gap-2 whitespace-normal p-0 md:table-cell md:space-x-1 md:whitespace-nowrap md:p-2 md:text-right">
                     {(line.status === 'open' || line.status === 'partial') && (
                       <>
-                        <Button size="sm" onClick={() => setDialog({ kind: 'match', line })}>Conciliar</Button>
+                        <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" onClick={() => setDialog({ kind: 'match', line })}>Conciliar</Button>
                         {!credit && line.status === 'open' && (
-                          <Button size="sm" variant="outline" onClick={() => setDialog({ kind: 'expense', line })}>Criar despesa</Button>
+                          <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" onClick={() => setDialog({ kind: 'expense', line })}>Criar despesa</Button>
                         )}
                       </>
                     )}
                     {line.status === 'open' && (
-                      <Button size="sm" variant="outline" onClick={() => setDialog({ kind: 'ignore', line })}>Ignorar</Button>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" onClick={() => setDialog({ kind: 'ignore', line })}>Ignorar</Button>
                     )}
                     {suspect && (
-                      <Button size="sm" variant="outline" disabled={confirmDistinct.isPending} onClick={() => run(confirmDistinct.mutateAsync(line.id), 'Mantido como lançamento distinto')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={confirmDistinct.isPending} onClick={() => run(confirmDistinct.mutateAsync(line.id), 'Mantido como lançamento distinto')}>
                         É outro lançamento
                       </Button>
                     )}
                     {(line.status === 'matched' || line.status === 'partial') && (
-                      <Button size="sm" variant="outline" disabled={undo.isPending} onClick={() => run(undo.mutateAsync({ lineId: line.id }), 'Conciliação desfeita. O pagamento não foi alterado')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={undo.isPending} onClick={() => run(undo.mutateAsync({ lineId: line.id }), 'Conciliação desfeita. O pagamento não foi alterado')}>
                         Desfazer
                       </Button>
                     )}
                     {line.status === 'ignored' && (
-                      <Button size="sm" variant="outline" disabled={unignore.isPending} onClick={() => run(unignore.mutateAsync(line.id), 'Lançamento restaurado')}>
+                      <Button className="h-auto min-h-11 min-w-0 w-full whitespace-normal py-1.5 [overflow-wrap:anywhere] md:w-auto md:whitespace-nowrap" size="sm" variant="outline" disabled={unignore.isPending} onClick={() => run(unignore.mutateAsync(line.id), 'Lançamento restaurado')}>
                         Restaurar
                       </Button>
                     )}
@@ -237,8 +237,8 @@ export function ReconciliationView() {
 
       {data && (offset > 0 || data.hasMore) && (
         <div className="flex justify-end gap-2">
-          <Button variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Anterior</Button>
-          <Button variant="outline" size="sm" disabled={!data.hasMore} onClick={() => setOffset(offset + 50)}>Próxima</Button>
+          <Button className="min-h-11" variant="outline" size="sm" disabled={offset === 0} onClick={() => setOffset(Math.max(0, offset - 50))}>Anterior</Button>
+          <Button className="min-h-11" variant="outline" size="sm" disabled={!data.hasMore} onClick={() => setOffset(offset + 50)}>Próxima</Button>
         </div>
       )}
 

@@ -44,9 +44,14 @@ beforeEach(() => {
 
 // The claim is the only thing stopping two overlapping cron runs from sending
 // the same message: without the IS NULL guard both UPDATEs return the row.
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { claimPaymentReminder, getInstallmentsDueReminder } = await import('../financial')
+const { claimFollowUp, getSessionsDueFollowUp } = await import('../procedures')
+
 describe('automation claims', () => {
   it('claims a payment reminder only while its marker is unset, inside the tenant', async () => {
-    const { claimPaymentReminder } = await import('../financial')
+
     const where = captured('update', [{ id: 'i1' }])
 
     await claimPaymentReminder(TENANT, 'i1')
@@ -58,7 +63,7 @@ describe('automation claims', () => {
   })
 
   it('claims follow-up sessions only while their marker is unset, inside the tenant', async () => {
-    const { claimFollowUp } = await import('../procedures')
+
     const where = captured('update', [{ id: 's1' }])
 
     await claimFollowUp(TENANT, ['s1', 's2'])
@@ -72,7 +77,7 @@ describe('automation claims', () => {
 
 describe('due queries', () => {
   it('loads only pending, live, unreminded installments of the tenant', async () => {
-    const { getInstallmentsDueReminder } = await import('../financial')
+
     const where = captured('select')
 
     await getInstallmentsDueReminder(TENANT, '2026-10-18', '2026-10-21')
@@ -92,7 +97,7 @@ describe('due queries', () => {
   })
 
   it('loads only unsent sessions of live records and patients of the tenant', async () => {
-    const { getSessionsDueFollowUp } = await import('../procedures')
+
     const where = captured('select')
 
     await getSessionsDueFollowUp(TENANT, new Date('2026-10-11T03:00:00Z'), new Date('2026-10-14T02:59:59Z'))

@@ -10,7 +10,7 @@ vi.mock('@/db/queries/bank-reconciliation', () => ({
   previewStatementImport: vi.fn(),
   listStatementImports: vi.fn(),
   listStatementLines: vi.fn(),
-  findMatchCandidates: vi.fn(),
+  findMatchCandidateResult: vi.fn(),
   allocateStatementLine: vi.fn(),
   undoStatementLineMatch: vi.fn(),
   ignoreStatementLine: vi.fn(),
@@ -26,7 +26,7 @@ import {
   allocateStatementLine,
   commitStatementImport,
   createExpenseFromStatementLine,
-  findMatchCandidates,
+  findMatchCandidateResult,
   ignoreStatementLine,
   listStatementLines,
   previewStatementImport,
@@ -110,15 +110,16 @@ describe('reading', () => {
   })
 
   it('searches candidates for the session tenant', async () => {
-    vi.mocked(findMatchCandidates).mockResolvedValue([])
+    vi.mocked(findMatchCandidateResult).mockResolvedValue({ candidates: [], remainingCents: 0 })
     const res = await getCandidates(new Request('http://test/api?search=pix'), params)
 
     expect(res.status).toBe(200)
-    expect(findMatchCandidates).toHaveBeenCalledWith('tenant-from-session', LINE, { search: 'pix' })
+    expect(findMatchCandidateResult).toHaveBeenCalledWith('tenant-from-session', LINE, { search: 'pix' })
+    expect(await res.json()).toMatchObject({ data: { candidates: [], remainingCents: 0 } })
   })
 
   it('maps a missing line to a conflict response with the code', async () => {
-    vi.mocked(findMatchCandidates).mockRejectedValue(new BusinessError('STATEMENT_LINE_NOT_FOUND', 'Lançamento do extrato não encontrado'))
+    vi.mocked(findMatchCandidateResult).mockRejectedValue(new BusinessError('STATEMENT_LINE_NOT_FOUND', 'Lançamento do extrato não encontrado'))
     const res = await getCandidates(new Request('http://test/api'), params)
 
     expect(res.status).toBe(409)

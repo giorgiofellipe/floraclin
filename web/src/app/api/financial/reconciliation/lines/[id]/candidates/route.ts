@@ -1,4 +1,4 @@
-import { findMatchCandidates } from '@/db/queries/bank-reconciliation'
+import { findMatchCandidateResult } from '@/db/queries/bank-reconciliation'
 import { reconciliationRoute } from '@/lib/financial/reconciliation-route'
 import { BusinessError } from '@/lib/errors'
 import { candidatesQuerySchema } from '@/validations/bank-reconciliation'
@@ -11,6 +11,6 @@ export async function GET(request: Request, { params }: RouteContext) {
     const query = new URL(request.url).searchParams
     const parsed = candidatesQuerySchema.safeParse({ search: query.get('search') ?? undefined })
     if (!parsed.success) throw new BusinessError('INVALID_BODY', 'Filtro inválido')
-    return findMatchCandidates(ctx.tenantId, id, parsed.data)
+    return findMatchCandidateResult(ctx.tenantId, id, parsed.data)
   })
 }

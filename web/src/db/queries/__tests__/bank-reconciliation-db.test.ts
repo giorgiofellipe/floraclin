@@ -11,6 +11,7 @@ import {
   users,
 } from '@/db/schema'
 import { parseOfx } from '@/lib/financial/ofx'
+import { parseBrDate } from '@/lib/dates'
 import { createFinancialAccount, type FinancialAccountRow } from '../financial-accounts'
 import {
   allocateStatementLine,
@@ -18,6 +19,7 @@ import {
   confirmSuspectedLineIsDistinct,
   createExpenseFromStatementLine,
   findMatchCandidates,
+  findMatchCandidateResult,
   ignoreStatementLine,
   listStatementLines,
   previewStatementImport,
@@ -390,6 +392,56 @@ describeIntegration('bank reconciliation (integration, requires test DB)', () =>
       const ids = (await findMatchCandidates(CLINIC, (await lineBy('ORDEM ESTORNO')).id)).map((c) => c.id)
       expect(ids).toContain(reversed.id)
       expect(ids.indexOf(ordinary.id)).toBeLessThan(ids.indexOf(reversed.id))
+    })
+  })
+
+  describe('explainable candidate retrieval', () => {
+    async function fixture(memo = 'PIX MARIA JOSE SILVA') {
+      const isolated = await createFinancialAccount(CLINIC, USER, account('bank', 'Sugestões'))
+      const parsed = ofx({ id: 'SUGGEST', date: '20261102', amount: '250.00', memo })
+      await commitStatementImport(CLINIC, USER, { accountId: isolated.id, fileName: 'suggestions.ofx', parsed })
+      const { lines } = await listStatementLines(CLINIC, { accountId: isolated.id })
+      return { isolated, line: lines[0] }
+    }
+
+    it('ranks description matches beyond the former first 50 and measures midnight in BR', async () => {
+      const { isolated, line } = await fixture()
+      await db.insert(cashMovements).values(Array.from({ length: 65 }, () => ({ tenantId: CLINIC, accountId: isolated.id, type: 'inflow' as const, amount: '250.00', description: 'Pagamento Ana Costa', movementDate: parseBrDate('2026-11-02'), recordedBy: USER })))
+      // Older than the other 65 exact amounts in the former SQL ordering, but the same BR day.
+      const best = await movement('inflow', '250.00', '2026-11-02T03:00:00Z', { accountId: isolated.id, description: 'Pagamento María José Silva' })
+      const ranked = await findMatchCandidates(CLINIC, line.id)
+      expect(ranked).toHaveLength(50)
+      expect(ranked[0]).toMatchObject({ id: best.id, dayDistance: 0, confidence: 'high', suggested: true })
+      expect(ranked.filter((r) => r.suggested)).toHaveLength(1)
+      const nextDay = await movement('inflow', '250.00', '2026-11-03T02:59:59Z', { accountId: isolated.id, description: 'Pagamento María José Silva' })
+      expect((await findMatchCandidates(CLINIC, line.id)).find((c) => c.id === nextDay.id)).toMatchObject({ dayDistance: 0, suggested: false })
+      await movement('inflow', '250.00', '2026-11-03T03:00:00Z', { accountId: isolated.id, description: 'Pagamento María José Silva' })
+      expect((await findMatchCandidates(CLINIC, line.id)).every((c) => !c.suggested)).toBe(true)
+    })
+
+    it('suppresses preselection when retrieval is truncated and keeps manual search outside 45 days', async () => {
+      const { isolated, line } = await fixture()
+      await db.insert(cashMovements).values(Array.from({ length: 501 }, () => ({ tenantId: CLINIC, accountId: isolated.id, type: 'inflow' as const, amount: '250.00', description: 'Pagamento Maria Jose Silva', movementDate: parseBrDate('2026-11-02'), recordedBy: USER })))
+      expect((await findMatchCandidates(CLINIC, line.id)).every((c) => !c.suggested && c.confidence !== 'high' && c.reasons.some((r) => r.code === 'limited'))).toBe(true)
+      const old = await movement('inflow', '250.00', '2026-08-01T15:00:00Z', { accountId: isolated.id, description: 'Pagamento Nome Antigo' })
+      const searched = await findMatchCandidates(CLINIC, line.id, { search: 'Nome Antigo' })
+      expect(searched).toHaveLength(1)
+      expect(searched[0]).toMatchObject({ id: old.id, suggested: false })
+    })
+
+    it('isolates tenant, account and direction and never preselects partially used balances', async () => {
+      const { isolated, line } = await fixture()
+      const best = await movement('inflow', '250.00', '2026-11-02T15:00:00Z', { accountId: isolated.id, description: 'Pagamento Maria Jose Silva' })
+      await movement('outflow', '250.00', '2026-11-02T15:00:00Z', { accountId: isolated.id, description: 'Pagamento Maria Jose Silva' })
+      await movement('inflow', '250.00', '2026-11-02T15:00:00Z', { accountId: otherBank.id, tenantId: OTHER_CLINIC, description: 'Pagamento Maria Jose Silva' })
+      const ranked = await findMatchCandidates(CLINIC, line.id)
+      expect(ranked).toHaveLength(1)
+      expect(ranked[0]).toMatchObject({ id: best.id, suggested: true })
+      await expect(findMatchCandidates(OTHER_CLINIC, line.id)).rejects.toMatchObject({ code: 'STATEMENT_LINE_NOT_FOUND' })
+      await allocateStatementLine(CLINIC, USER, line.id, [{ movementId: best.id, amountCents: 10000 }])
+      expect((await findMatchCandidates(CLINIC, line.id))[0]).toMatchObject({ remainingCents: 15000, suggested: false, confidence: 'low' })
+      await allocateStatementLine(CLINIC, USER, line.id, [{ movementId: best.id, amountCents: 15000 }])
+      expect(await findMatchCandidateResult(CLINIC, line.id)).toEqual({ candidates: [], remainingCents: 0 })
     })
   })
 

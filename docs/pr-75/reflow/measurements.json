@@ -1,0 +1,68 @@
+[
+  {
+    "width": 320,
+    "scale": 100,
+    "documentWidth": 320,
+    "viewport": 320,
+    "headerRight": 304,
+    "rootWidth": 288,
+    "rootScroll": 288,
+    "right": 304,
+    "clipped": []
+  },
+  {
+    "width": 320,
+    "scale": 200,
+    "documentWidth": 320,
+    "viewport": 320,
+    "headerRight": 288,
+    "rootWidth": 256,
+    "rootScroll": 256,
+    "right": 288,
+    "clipped": []
+  },
+  {
+    "width": 375,
+    "scale": 100,
+    "documentWidth": 375,
+    "viewport": 375,
+    "headerRight": 359,
+    "rootWidth": 343,
+    "rootScroll": 343,
+    "right": 359,
+    "clipped": []
+  },
+  {
+    "width": 375,
+    "scale": 200,
+    "documentWidth": 375,
+    "viewport": 375,
+    "headerRight": 343,
+    "rootWidth": 311,
+    "rootScroll": 311,
+    "right": 343,
+    "clipped": []
+  },
+  {
+    "width": 1280,
+    "scale": 100,
+    "documentWidth": 1280,
+    "viewport": 1280,
+    "headerRight": 1256,
+    "rootWidth": 1032,
+    "rootScroll": 1032,
+    "right": 1256,
+    "clipped": []
+  },
+  {
+    "width": 1280,
+    "scale": 200,
+    "documentWidth": 1280,
+    "viewport": 1280,
+    "headerRight": 1232,
+    "rootWidth": 984,
+    "rootScroll": 984,
+    "right": 1232,
+    "clipped": []
+  }
+]

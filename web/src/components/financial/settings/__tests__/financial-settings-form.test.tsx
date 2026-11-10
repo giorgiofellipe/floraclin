@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
@@ -30,12 +30,8 @@ vi.mock('@/hooks/mutations/use-financial-settings-mutations', () => ({
   }),
 }))
 
-let FinancialSettingsForm: React.ComponentType
-
-beforeAll(async () => {
-  const mod = await import('../financial-settings-form')
-  FinancialSettingsForm = mod.FinancialSettingsForm
-})
+// Module loading belongs outside the timed lifecycle hooks.
+const { FinancialSettingsForm } = await import('../financial-settings-form')
 
 function createWrapper() {
   const queryClient = new QueryClient({

@@ -1,0 +1,62 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: Statement cells or buttons clip their content
++ actual - expected
+
++ [
++   {
++     scroll: 128,
++     text: '09/11/2026',
++     width: 87
++   },
++   {
++     scroll: 156,
++     text: '+R$ 250,00',
++     width: 87
++   },
++   {
++     scroll: 128,
++     text: '09/11/2026',
++     width: 87
++   },
++   {
++     scroll: 224,
++     text: '-R$ 1.234.567,89',
++     width: 87
++   },
++   {
++     scroll: 259,
++     text: 'ConciliarCriar despesaIgnorarÉ outro lançamento',
++     width: 190
++   },
++   {
++     scroll: 257,
++     text: 'É outro lançamento',
++     width: 257
++   }
++ ]
+- []
+
+    at file:///home/ag-71bfa2c1/rocky-71bfa2c1/repos/giorgiofellipe/floraclin/web/scripts/check-reconciliation-reflow.mjs:63:14 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: [
+    { text: '09/11/2026', width: 87, scroll: 128 },
+    { text: '+R$ 250,00', width: 87, scroll: 156 },
+    { text: '09/11/2026', width: 87, scroll: 128 },
+    { text: '-R$ 1.234.567,89', width: 87, scroll: 224 },
+    {
+      text: 'ConciliarCriar despesaIgnorarÉ outro lançamento',
+      width: 190,
+      scroll: 259
+    },
+    { text: 'É outro lançamento', width: 257, scroll: 257 }
+  ],
+  expected: [],
+  operator: 'deepStrictEqual',
+  diff: 'simple'
+}
+
+Node.js v24.22.1

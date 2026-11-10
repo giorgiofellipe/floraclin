@@ -4,8 +4,8 @@ import { chain, chainCapturing, isLock, routedTx, selectSql, tableOf, whereParam
 const dbMock = { transaction: vi.fn(), select: vi.fn() }
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
-vi.mock('@/db/queries/nfse', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('@/db/queries/nfse')>()),
+// Fiscal behavior is outside these batch-payment tests; keep its module isolated.
+vi.mock('@/db/queries/nfse', () => ({
   getNfseSettings: vi.fn().mockResolvedValue(null),
   listDocumentsForPaymentRecords: vi.fn().mockResolvedValue([]),
 }))
@@ -102,6 +102,9 @@ function queuePrepareRows() {
   )
 }
 
+// Finish module loading before tests start mutating transaction fixtures.
+const { bulkPayInstallments } = await import('../financial')
+
 describe('bulkPayInstallments', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -111,7 +114,6 @@ describe('bulkPayInstallments', () => {
   })
 
   it('a failed audit insert rejects the whole batch', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -140,7 +142,6 @@ describe('bulkPayInstallments', () => {
   })
 
   it('charges a single unpaid overdue installment its whole total due, fine and interest included', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -206,7 +207,6 @@ describe('bulkPayInstallments', () => {
   // A prior payment that covered exactly the fine and interest paid no
   // principal, so the row looks like it was never charged.
   it('does not charge the fine a second time after a prior payment covered it without touching principal', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -263,7 +263,6 @@ describe('bulkPayInstallments', () => {
   })
 
   it('refuses a batch dated before an existing payment and names the installment that blocked it', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     queuePrepareRows()
@@ -300,7 +299,6 @@ describe('bulkPayInstallments', () => {
   })
 
   it('locks the entries it writes in id order before the first write, whatever order the installments were listed in', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const tx = makeTx()
     dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
     const ENTRY_A = '00000000-0000-0000-0000-00000000e00a'
@@ -358,7 +356,6 @@ describe('bulkPayInstallments dating and audit', () => {
   // Not yet due, so no fine or interest: p1 left 650 to pay. The batch is
   // dated earlier on p1's own BR day, so it moves to p1's instant.
   it('pays at the latest payment\'s instant on its BR day and audits each installment with the amount and that date', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const { financialEntries, installments, paymentRecords, auditLogs } = await import('@/db/schema')
     const p1 = {
       id: 'p1',
@@ -426,7 +423,6 @@ describe('bulkPayInstallments by card', () => {
   // A card transaction belongs to one patient, so one swipe cannot settle
   // the debts of two.
   it('refuses a card payment across installments of different patients before writing anything', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const { installments } = await import('@/db/schema')
     const { tx, log } = routedTx((q) => {
       if (q.op !== 'select') return undefined
@@ -457,7 +453,6 @@ describe('bulkPayInstallments by card', () => {
   })
 
   it('three installments of one patient become one card payment for their sum and no cash inflow', async () => {
-    const { bulkPayInstallments } = await import('../financial')
     const { cashMovements, installments, paymentRecords, financialEntries } = await import('@/db/schema')
     const ids = ['i1', 'i2', 'i3']
     let recordSeq = 0

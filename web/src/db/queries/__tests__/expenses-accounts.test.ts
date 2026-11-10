@@ -36,9 +36,13 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+// Load modules before timed tests, after mock initialization, so a cold import
+// cannot outlive a test and consume the following test's mock responses.
+const { payExpenseInstallment, revertExpenseInstallmentPayment } = await import('../expenses')
+
 describe('expense payments and accounts', () => {
   it('pays an expense from the account picked, through the account resolution', async () => {
-    const { payExpenseInstallment } = await import('../expenses')
+
     const { tx, log } = expenseTx({
       id: INSTALLMENT_ID, expense_id: 'exp-1', amount: '120.00', status: 'pending', installment_number: 1, category_id: 'cat-1',
     })
@@ -51,7 +55,7 @@ describe('expense payments and accounts', () => {
   })
 
   it("puts the reversal inflow on the account the payment left from", async () => {
-    const { revertExpenseInstallmentPayment } = await import('../expenses')
+
     const { tx, log } = expenseTx({
       id: INSTALLMENT_ID, expense_id: 'exp-1', amount: '120.00', status: 'paid', installment_number: 1,
       paid_at: '2026-10-01T15:00:00Z', payment_method: 'cash', expense_status: 'paid', category_id: 'cat-1',

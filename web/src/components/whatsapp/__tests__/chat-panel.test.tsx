@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, fireEvent, act } from '@testing-library/react'
+import { render, screen, fireEvent, act, waitFor, cleanup } from '@testing-library/react'
 import { createRef, type ReactNode } from 'react'
 import { ChatPanel, MESSAGES_PAGE_SIZE, type ChatPanelHandle } from '../chat-panel'
 import type { Conversation } from '../conversation-list'
@@ -54,6 +54,7 @@ describe('ChatPanel', () => {
     Element.prototype.scrollIntoView = scrollIntoView
   })
   afterEach(() => {
+    cleanup()
     Element.prototype.scrollIntoView = originalScrollIntoView
     vi.unstubAllGlobals()
   })
@@ -97,13 +98,17 @@ describe('ChatPanel', () => {
       render(<ChatPanel ref={ref} conversation={CONVERSATION} />)
 
       await screen.findByText('mensagem m1')
-      expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'auto', block: 'end' })
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenLastCalledWith({ behavior: 'auto', block: 'end' })
+      })
       scrollIntoView.mockClear()
 
       act(() => ref.current!.addMessage(message('m2', '2026-10-18T12:01:00.000Z')))
 
       await screen.findByText('mensagem m2')
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' })
+      await waitFor(() => {
+        expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'end' })
+      })
     })
 
     it('keeps position when loading older messages', async () => {
