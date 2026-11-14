@@ -91,6 +91,8 @@ interface ServiceWizardProps {
    */
   deepLinkProcedureId?: string | null
   autoStartNext?: boolean
+  /** The appointment this atendimento serves; saved on a new procedure record. */
+  appointmentId?: string
   /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
   initialDiagramGroupId?: string | null
 }
@@ -126,6 +128,7 @@ export function ServiceWizard({
   deepLinkProcedureId,
   autoStartNext,
   initialDiagramGroupId,
+  appointmentId,
 }: ServiceWizardProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -935,6 +938,7 @@ export function ServiceWizard({
             >
               <ProcedureForm
                 patientId={patient.id}
+                appointmentId={appointmentId}
                 patientGender={patient.gender}
                 procedure={localProcedure ?? undefined}
                 diagrams={localDiagrams ?? undefined}

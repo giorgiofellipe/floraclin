@@ -71,6 +71,8 @@ const STATUS_LABELS: Record<string, string> = {
 
 interface ProcedureFormProps {
   patientId: string
+  /** Links a procedure that has no appointment yet to the visit it was started from. */
+  appointmentId?: string
   patientName?: string
   patientGender?: string | null
   procedure?: ProcedureWithDetails | null
@@ -196,6 +198,7 @@ function deriveInitialFinancialPlan(
 
 export function ProcedureForm({
   patientId,
+  appointmentId,
   patientName,
   patientGender,
   procedure,
@@ -633,6 +636,7 @@ export function ProcedureForm({
           financialPlan: values.financialPlan,
         }
         if (sourceGroupId) payload.diagramGroupId = sourceGroupId
+        if (appointmentId && !procedure?.appointmentId) payload.appointmentId = appointmentId
 
         console.log('[planning] sending save payload', {
           mode: isEdit && procedure?.id ? 'update' : 'create',
@@ -740,6 +744,7 @@ export function ProcedureForm({
       }
     },
     [
+      appointmentId,
       isReadOnly,
       isEdit,
       isPlanningMode,
@@ -747,6 +752,7 @@ export function ProcedureForm({
       evalTemplates,
       patientId,
       procedure?.id,
+      procedure?.appointmentId,
       form,
       createProcedureMutation,
       updateProcedureMutation,

@@ -23,11 +23,13 @@ function staleDays(row: OpenPlanejamento): number {
 }
 
 export function OpenPlanejamentosCard() {
-  const { data, isLoading } = useOpenPlanejamentos({ limit: 5 })
+  const { data, isLoading, isSuccess, isError } = useOpenPlanejamentos({ limit: 5 })
   const rows = data?.data ?? []
 
+  if (isSuccess && rows.length === 0) return null
+
   return (
-    <Card className="border-0 shadow-[0_1px_4px_rgba(0,0,0,0.06)] bg-white rounded-[3px]">
+    <Card className="border-0 rounded-lg bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -52,16 +54,8 @@ export function OpenPlanejamentosCard() {
               <Skeleton key={i} className="h-12 w-full" />
             ))}
           </div>
-        ) : rows.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center">
-            <div className="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-petal">
-              <ClipboardList className="h-6 w-6 text-sage" />
-            </div>
-            <p className="font-medium text-charcoal">Tudo em dia!</p>
-            <p className="mt-1 text-sm text-mid">
-              Nenhum planejamento aberto sem contato.
-            </p>
-          </div>
+        ) : isError ? (
+          <p className="py-6 text-center text-[13px] text-mid">Não foi possível carregar os planejamentos.</p>
         ) : (
           <ul className="space-y-2">
             {rows.map((row) => {

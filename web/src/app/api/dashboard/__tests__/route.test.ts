@@ -9,6 +9,7 @@ vi.mock('@/db/queries/dashboard', () => ({
   getQuickStats: vi.fn(),
   getUpcomingFollowUps: vi.fn(),
   getRecentActivity: vi.fn(),
+  getLatestPatientId: vi.fn(),
   MONTH_PARAM_RE: /^\d{4}-(0[1-9]|1[0-2])$/,
 }))
 
@@ -27,6 +28,7 @@ import {
   getQuickStats,
   getUpcomingFollowUps,
   getRecentActivity,
+  getLatestPatientId,
 } from '@/db/queries/dashboard'
 import { countPendingReschedule } from '@/db/queries/appointments'
 import { GET } from '../route'
@@ -54,6 +56,7 @@ beforeEach(() => {
   })
   vi.mocked(getUpcomingFollowUps).mockResolvedValue([])
   vi.mocked(getRecentActivity).mockResolvedValue([])
+  vi.mocked(getLatestPatientId).mockResolvedValue(null)
   vi.mocked(countPendingReschedule).mockResolvedValue(0)
   vi.mocked(getActivationState).mockResolvedValue(null)
 })

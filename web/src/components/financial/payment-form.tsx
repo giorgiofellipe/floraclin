@@ -39,9 +39,12 @@ interface PaymentFormProps {
   onClose: () => void
   onSuccess: () => void
   defaultPatient?: { id: string; fullName: string }
+  /** Links the charge to the appointment it bills, so the Painel stops offering "Cobrar" for it. */
+  appointmentId?: string
+  defaultDescription?: string
 }
 
-export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: PaymentFormProps) {
+export function PaymentForm({ open, onClose, onSuccess, defaultPatient, appointmentId, defaultDescription }: PaymentFormProps) {
   const [patientId, setPatientId] = useState(defaultPatient?.id ?? '')
   const [patientName, setPatientName] = useState(defaultPatient?.fullName ?? '')
   const [totalAmount, setTotalAmount] = useState('')
@@ -163,6 +166,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
             const dueDates = installmentPreview.map((inst) => inst.dueDate)
             const created = await createFinancialEntry.mutateAsync({
               patientId,
+              appointmentId,
               description: (formData.get('description') as string) || '',
               totalAmount: parsedAmount,
               installmentCount: parsedCount,
@@ -235,6 +239,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
             <Input
               id="description"
               name="description"
+              defaultValue={defaultDescription}
               placeholder="Ex: Aplicação de toxina botulínica"
               required
             />
