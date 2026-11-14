@@ -60,8 +60,9 @@ describe('CalendarView ?open=new deep link', () => {
     expect(dialog).toHaveTextContent('20/11/2026')
   })
 
-  it('titles the day in sentence case', () => {
-    // Regression: a CSS `capitalize` turned the title into "20 De Novembro De 2026".
+  it('titles the day in sentence case and shows only the viewed day once', () => {
+    // Regression: a CSS `capitalize` turned the title into "20 De Novembro De 2026", and the day grid
+    // repeated the date in its own header under the toolbar.
     render(
       <QueryClientProvider client={new QueryClient()}>
         <CalendarView
@@ -77,6 +78,7 @@ describe('CalendarView ?open=new deep link', () => {
     )
 
     expect(screen.getByTestId('calendar-title')).toHaveTextContent(/^Sexta-feira, 20 de novembro$/)
+    expect(screen.getAllByText(/20 de novembro/i)).toHaveLength(1)
     expect(screen.getByRole('button', { name: 'Mês' })).toBeInTheDocument()
   })
 })

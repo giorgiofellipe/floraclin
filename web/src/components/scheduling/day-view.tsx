@@ -2,7 +2,6 @@
 
 import * as React from 'react'
 import { format } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { AgendaDnd } from '@/components/scheduling/agenda-dnd'
 import { DAY_SLOT_HEIGHT } from '@/components/scheduling/grid'
 import {
@@ -30,6 +29,7 @@ interface DayViewProps {
   onBlockClick?: BlockClickHandler
 }
 
+// The toolbar title already names the day, so the grid has no header of its own.
 export function DayView({ date, appointments, calendarBlocks = [], workingHours, canDrag, onMove, onSlotClick, onAppointmentClick, onBlockClick }: DayViewProps) {
   const dateStr = format(date, 'yyyy-MM-dd')
   const dayAppointments = React.useMemo(() => appointments.filter((a) => a.date === dateStr), [appointments, dateStr])
@@ -37,11 +37,6 @@ export function DayView({ date, appointments, calendarBlocks = [], workingHours,
 
   return (
     <AgendaDnd geometry={geometry} onMove={onMove}>
-      <div className="border-b border-topbar-border bg-white px-4 py-3 text-center">
-        <h3 className="text-[14px] font-medium tracking-tight text-charcoal first-letter:uppercase">
-          {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
-        </h3>
-      </div>
       <div className="relative flex pt-2">
         <TimeLabels slotHeight={DAY_SLOT_HEIGHT} className="z-10" />
         <TimeGridColumn

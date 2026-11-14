@@ -152,8 +152,8 @@ export function TimeGridColumn({
         )
       })}
 
-      {layout.map(({ appointment, top, height, column, totalColumns }) => {
-        const width = 100 / totalColumns
+      {layout.map(({ appointment, top, height, column, span, totalColumns }) => {
+        const width = (100 * span) / totalColumns
         const left = (100 * column) / totalColumns
         return (
           <DraggableAppointment
