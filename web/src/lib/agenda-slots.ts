@@ -58,3 +58,46 @@ export function nextFreeSlot({
   }
   return null
 }
+
+export type DayAgendaRow =
+  | { kind: 'appointment'; at: number; appointment: AppointmentWithDetails }
+  | { kind: 'block'; at: number; block: CalendarBlockRow }
+  | { kind: 'gap'; at: number; gap: Interval }
+
+const ROW_ORDER: Record<DayAgendaRow['kind'], number> = { block: 0, appointment: 1, gap: 2 }
+
+/**
+ * One day's blocks and appointments plus the gaps `practitionerId` could still
+ * be booked into, in time order. Gaps shorter than a booking or already past
+ * are left out.
+ */
+export function dayAgendaRows({
+  date,
+  practitionerId,
+  appointments,
+  blocks,
+  workingHours,
+  now,
+}: {
+  date: string
+  practitionerId: string
+  appointments: AppointmentWithDetails[]
+  blocks: CalendarBlockRow[]
+  workingHours: WorkingHours | null | undefined
+  now: AgendaNow
+}): DayAgendaRow[] {
+  const rows: DayAgendaRow[] = [
+    ...blocks.filter((block) => block.date === date).map((block) => ({ kind: 'block' as const, at: blockInterval(block).start, block })),
+    ...appointments.map((appointment) => ({ kind: 'appointment' as const, at: timeToMinutes(appointment.startTime), appointment })),
+  ]
+  const opening = openingWindow(date, workingHours)
+  if (opening && date >= now.ymd) {
+    const from = date === now.ymd ? Math.max(opening.start, Math.ceil(now.minutes / BOOKING_MIN) * BOOKING_MIN) : opening.start
+    if (from < opening.end) {
+      for (const gap of freeGaps({ start: from, end: opening.end }, busyIntervals(date, practitionerId, appointments, blocks))) {
+        if (gap.end - gap.start >= BOOKING_MIN) rows.push({ kind: 'gap', at: gap.start, gap })
+      }
+    }
+  }
+  return rows.sort((a, b) => a.at - b.at || ROW_ORDER[a.kind] - ROW_ORDER[b.kind])
+}

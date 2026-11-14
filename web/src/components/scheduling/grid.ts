@@ -24,10 +24,16 @@ export interface LayoutSlot {
   top: number
   height: number
   column: number
+  /** How many columns the card spans: it widens over neighbour columns that are free at its time. */
+  span: number
   totalColumns: number
 }
 
-/** Overlapping appointments split the width into columns. */
+/**
+ * Overlapping appointments split the width into columns. A card then widens to
+ * the right across every column that has nothing at its time, so only cards
+ * that really overlap stay narrow.
+ */
 export function computeOverlapLayout(appointments: AppointmentWithDetails[], slotHeight: number): LayoutSlot[] {
   const sorted = [...appointments].sort((a, b) => {
     const diff = timeToMinutes(a.startTime) - timeToMinutes(b.startTime)
@@ -42,11 +48,18 @@ export function computeOverlapLayout(appointments: AppointmentWithDetails[], slo
   const flush = () => {
     const total = columnEnds.length
     for (const item of cluster) {
+      let span = 1
+      for (let col = item.column + 1; col < total; col++) {
+        const blocked = cluster.some((o) => o.column === col && o.start < item.end && o.end > item.start)
+        if (blocked) break
+        span++
+      }
       result.push({
         appointment: item.appt,
         top: minutesToTop(item.start, slotHeight),
         height: Math.max(((item.end - item.start) / GRID_SLOT_MIN) * slotHeight, slotHeight / 2),
         column: item.column,
+        span,
         totalColumns: total,
       })
     }

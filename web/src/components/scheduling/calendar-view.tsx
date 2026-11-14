@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { DayView } from '@/components/scheduling/day-view'
 import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
+import { DayAgendaList } from '@/components/scheduling/day-agenda-list'
 import { AppointmentForm, DEFAULT_START_TIME } from '@/components/scheduling/appointment-form'
 import { AppointmentActionsMenu } from '@/components/scheduling/appointment-actions-menu'
 import { AgendaEmptyState } from '@/components/scheduling/agenda-empty-state'
@@ -162,7 +163,7 @@ export function CalendarView({
   // would only fail with a 402. Opening an existing appointment stays allowed.
   const { readOnly, openPaywall } = useSubscriptionAccess()
   const deleteBlock = useDeleteCalendarBlock()
-  const { changeStatus } = useAppointmentStatusChange()
+  const { changeStatus, pendingIds } = useAppointmentStatusChange()
   const { move, isMoving } = useMoveAppointment()
   const { data: tenant } = useTenant()
   const isMobile = useIsMobile()
@@ -395,13 +396,14 @@ export function CalendarView({
     }
   }, [])
 
+  const showList = isMobile && view === 'day'
   const scrollRef = React.useRef<HTMLDivElement>(null)
   const scrolledFor = React.useRef<string | null>(null)
 
   React.useLayoutEffect(() => {
     const el = scrollRef.current
     const key = `${view}:${dateFrom}:${practitionerId}`
-    if (!el || isLoading || view === 'month' || scrolledFor.current === key) return
+    if (!el || isLoading || showList || view === 'month' || scrolledFor.current === key) return
     scrolledFor.current = key
     const now = new Date()
     const today = toLocalYmd(now)
@@ -411,7 +413,7 @@ export function CalendarView({
     const target = candidates.length > 0 ? Math.min(...candidates) - SCROLL_LEAD_MIN : timeToMinutes(DEFAULT_START_TIME)
     // A few pixels of the row above keep the hour label clear of the sticky day header.
     el.scrollTop = Math.max(0, minutesToTop(target, view === 'day' ? DAY_SLOT_HEIGHT : WEEK_SLOT_HEIGHT) - 12)
-  }, [view, dateFrom, dateTo, practitionerId, isLoading, appointments])
+  }, [view, dateFrom, dateTo, practitionerId, isLoading, showList, appointments])
 
   const emptyState =
     canBook && !isLoading && appointments.length === 0 ? (
@@ -516,7 +518,27 @@ export function CalendarView({
             </div>
           )}
 
-          {view === 'day' && (
+          {showList && (
+            <DayAgendaList
+              date={dateFrom}
+              practitionerId={bookingPractitionerId}
+              appointments={appointments}
+              blocks={calendarBlocks}
+              workingHours={workingHours}
+              role={role}
+              canBook={canBook}
+              pendingIds={pendingIds}
+              emptyState={emptyState && <div className="mb-3 flex justify-center">{emptyState}</div>}
+              onBook={(time, anchor) => openQuickBook(dateFrom, time, anchor)}
+              onOpen={handleAppointmentClick}
+              onBlockClick={handleBlockClick}
+              onConfirm={(a) => changeStatus(a, 'confirmed')}
+              onStart={handleStart}
+              onSwipe={navigate}
+            />
+          )}
+
+          {view === 'day' && !showList && (
             <DayView
               date={currentDate}
               appointments={appointments}
@@ -557,7 +579,7 @@ export function CalendarView({
         </div>
 
         {/* Centered over the grid; the grid stays tappable around the card. */}
-        {emptyState && (
+        {emptyState && !showList && (
           <div className="pointer-events-none absolute inset-0 z-40 flex items-center justify-center p-4">
             <div className="pointer-events-auto">{emptyState}</div>
           </div>
@@ -670,14 +692,16 @@ export function CalendarView({
         />
       )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1 max-md:pb-16">
-        {AGENDA_LEGEND_STATUSES.map((status) => (
-          <span key={status} className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-mid">
-            <StatusIcon status={status} className="size-3" />
-            {APPOINTMENT_STATUS_LABELS[status]}
-          </span>
-        ))}
-      </div>
+      {!showList && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 px-1 pb-1 max-md:pb-16">
+          {AGENDA_LEGEND_STATUSES.map((status) => (
+            <span key={status} className="flex items-center gap-1.5 whitespace-nowrap text-[11px] text-mid">
+              <StatusIcon status={status} className="size-3" />
+              {APPOINTMENT_STATUS_LABELS[status]}
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
