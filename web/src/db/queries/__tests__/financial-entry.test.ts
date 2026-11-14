@@ -466,10 +466,9 @@ describe('getRevenueOverview pending and overdue', () => {
 
     // What Postgres computed with CURRENT_DATE on a UTC host and no grace.
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 0, totalPending: 0, totalOverdue: 1500 }]))
-    dbMock.select.mockReturnValueOnce(chain([])) // monthly
     dbMock.select.mockReturnValueOnce(chain([])) // by procedure type
     dbMock.select.mockReturnValueOnce(chain([])) // by payment method
-    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 0, totalPendingExpenses: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 0 }]))
     dbMock.select.mockReturnValueOnce(
       chain([
         installmentRow({ id: 'i-today', dueDate: '2026-05-22' }),
@@ -500,10 +499,9 @@ describe('getRevenueOverview overdue amount', () => {
 
 
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 0 }]))
-    dbMock.select.mockReturnValueOnce(chain([])) // monthly
     dbMock.select.mockReturnValueOnce(chain([])) // by procedure type
     dbMock.select.mockReturnValueOnce(chain([])) // by payment method
-    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 0, totalPendingExpenses: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 0 }]))
     dbMock.select.mockReturnValueOnce(chain([installmentRow({ amountPaid: '100.00' })])) // pending installments
     dbMock.select.mockReturnValueOnce(
       chain([
@@ -532,10 +530,9 @@ describe('getRevenueOverview card fees', () => {
 
 
     dbMock.select.mockReturnValueOnce(chain([{ totalReceived: 3000 }]))
-    dbMock.select.mockReturnValueOnce(chain([])) // monthly
     dbMock.select.mockReturnValueOnce(chain([])) // by procedure type
     dbMock.select.mockReturnValueOnce(chain([])) // by payment method
-    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 500, totalPendingExpenses: 0 }]))
+    dbMock.select.mockReturnValueOnce(chain([{ totalExpenses: 500 }]))
     dbMock.select.mockReturnValueOnce(chain([])) // pending installments
     sumCardFeesForPeriodMock.mockResolvedValueOnce(269.7)
 

@@ -1,37 +1,24 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
-import { getRevenueOverview } from '@/db/queries/financial'
-import { revenueFilterSchema } from '@/validations/financial'
+import { getFinancialOverview } from '@/db/queries/financial'
+import { MONTH_PARAM_RE } from '@/db/queries/dashboard'
 import { handleApiError } from '@/lib/api-error'
+import { OVERVIEW_ROLES } from '@/lib/financial/account-roles'
+import { brToday } from '@/lib/dates'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Revenue overview: owner + financial only
-    if (!['owner', 'financial'].includes(ctx.role)) {
+    if (!OVERVIEW_ROLES.includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    const { searchParams } = new URL(request.url)
-    const filters = {
-      dateFrom: searchParams.get('dateFrom') ?? '',
-      dateTo: searchParams.get('dateTo') ?? '',
-      practitionerId: searchParams.get('practitionerId') ?? undefined,
+    const month = new URL(request.url).searchParams.get('month') ?? brToday().slice(0, 7)
+    if (!MONTH_PARAM_RE.test(month)) {
+      return NextResponse.json({ error: 'Mês inválido (esperado YYYY-MM)' }, { status: 400 })
     }
 
-    const parsed = revenueFilterSchema.safeParse(filters)
-    if (!parsed.success) {
-      return NextResponse.json({ error: 'Filtros inválidos' }, { status: 400 })
-    }
-
-    const overview = await getRevenueOverview(
-      ctx.tenantId,
-      parsed.data.dateFrom,
-      parsed.data.dateTo,
-      parsed.data.practitionerId
-    )
-
-    return NextResponse.json(overview)
+    return NextResponse.json(await getFinancialOverview(ctx.tenantId, month))
   } catch (error) {
     return handleApiError(error, request)
   }

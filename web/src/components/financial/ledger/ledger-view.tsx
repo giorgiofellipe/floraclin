@@ -52,14 +52,19 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/
 
 export function LedgerView() {
   const now = useMemo(() => new Date(), [])
-  // "Ver no extrato" on a charge opens here with its patient and start date.
+  // "Ver no extrato" on a charge opens here with its patient and start date;
+  // the Visão geral numbers open it on their month and direction.
   const searchParams = useSearchParams()
   const linkedDateFrom = searchParams.get('dateFrom') ?? ''
-  const [movementType, setMovementType] = useState('all')
+  const linkedDateTo = searchParams.get('dateTo') ?? ''
+  const linkedType = searchParams.get('type') ?? ''
+  const [movementType, setMovementType] = useState(
+    TYPE_OPTIONS.some((o) => o.value === linkedType) ? linkedType : 'all',
+  )
   const [dateFrom, setDateFrom] = useState(
     YMD.test(linkedDateFrom) ? linkedDateFrom : format(startOfMonth(now), 'yyyy-MM-dd'),
   )
-  const [dateTo, setDateTo] = useState(format(now, 'yyyy-MM-dd'))
+  const [dateTo, setDateTo] = useState(YMD.test(linkedDateTo) ? linkedDateTo : format(now, 'yyyy-MM-dd'))
   const [paymentMethod, setPaymentMethod] = useState('')
   const [patientId, setPatientId] = useState(searchParams.get('patientId') ?? '')
   const [categoryId, setCategoryId] = useState('')

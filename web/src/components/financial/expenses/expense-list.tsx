@@ -24,7 +24,8 @@ import {
   CalendarIcon,
   WalletIcon,
 } from 'lucide-react'
-import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { useSearchParams } from 'next/navigation'
 
 interface ExpenseEntry {
   id: string
@@ -67,6 +68,8 @@ const PAYMENT_METHOD_FILTER_ITEMS: Record<string, string> = {
 }
 
 export function ExpenseList() {
+  const searchParams = useSearchParams()
+  const { readOnly } = useSubscriptionAccess()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [categoryFilter, setCategoryFilter] = useState<string>('')
@@ -75,7 +78,8 @@ export function ExpenseList() {
   const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('')
   const [isOverdueFilter, setIsOverdueFilter] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [showForm, setShowForm] = useState(false)
+  // `?novo=1` comes from the Visão geral empty state.
+  const [showForm, setShowForm] = useState(searchParams.get('novo') === '1' && !readOnly)
   const [showFilters, setShowFilters] = useState(false)
 
   const filters = {

@@ -64,10 +64,11 @@ vi.mock('@/hooks/mutations/use-expense-mutations', () => ({
   useDeleteExpenseAttachment: vi.fn().mockReturnValue({ mutateAsync: vi.fn(), isPending: false }),
 }))
 
+let searchParams = new URLSearchParams()
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => searchParams,
 }))
 
 function createWrapper() {
@@ -84,6 +85,14 @@ function createWrapper() {
 describe('ExpenseList', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    searchParams = new URLSearchParams()
+  })
+
+  it('opens the new expense form when a link arrives with ?novo=1', () => {
+    searchParams = new URLSearchParams('tab=expenses&novo=1')
+    render(<ExpenseList />, { wrapper: createWrapper() })
+
+    expect(screen.getByRole('dialog', { name: 'Nova Despesa' })).toBeInTheDocument()
   })
 
   it('renders expense rows', () => {

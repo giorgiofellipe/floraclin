@@ -215,4 +215,13 @@ describe('LedgerView', () => {
 
     expect(useLedgerMock).toHaveBeenCalledWith(expect.objectContaining({ patientId: 'p1', dateFrom: '2026-10-31' }))
   })
+
+  it('opens on the month and direction a Visão geral number links with', () => {
+    searchParams = new URLSearchParams('tab=ledger&type=outflow&dateFrom=2026-10-01&dateTo=2026-10-31')
+    render(<LedgerView />)
+
+    expect(useLedgerMock).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'outflow', dateFrom: '2026-10-01', dateTo: '2026-10-31' }),
+    )
+  })
 })

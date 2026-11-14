@@ -51,8 +51,11 @@ test.describe('Financial > Navigation', () => {
 
     await expect(page.getByTestId('financial-tabs')).toBeVisible({ timeout: 15000 })
 
-    // Default tab is receivables (no ?tab= param)
+    // Default tab is Visão geral (no ?tab= param)
+    await expect(page.getByTestId('financial-tab-overview')).toHaveAttribute('aria-selected', 'true', { timeout: 10000 })
+
     // "Nova Cobranca" button is only on receivables tab
+    await page.getByTestId('financial-tab-receivables').click()
     await expect(page.getByTestId('financial-new-charge')).toBeVisible({ timeout: 10000 })
 
     // Switch to expenses

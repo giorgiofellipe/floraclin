@@ -13,7 +13,7 @@ import {
 import { useSearchParams, useRouter, usePathname } from 'next/navigation'
 import { useFinancialPatients } from '@/hooks/queries/use-financial'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
-import { canManageAccounts } from '@/lib/financial/account-roles'
+import { canManageAccounts, OVERVIEW_ROLES } from '@/lib/financial/account-roles'
 import { FinancialList } from '@/components/financial/financial-list'
 import { cn } from '@/lib/utils'
 import FinancialLoading from './loading'
@@ -52,18 +52,18 @@ const ReconciliationView = lazy(() =>
     default: m.ReconciliationView,
   }))
 )
-const RevenueChart = lazy(() =>
-  import('@/components/financial/revenue-chart').then((m) => ({ default: m.RevenueChart }))
+const FinancialOverview = lazy(() =>
+  import('@/components/financial/overview/financial-overview').then((m) => ({ default: m.FinancialOverview }))
 )
 
 const TABS = [
+  { value: 'overview', label: 'Visão geral', icon: BarChart3Icon },
   { value: 'receivables', label: 'A Receber', icon: ReceiptIcon },
   { value: 'expenses', label: 'Despesas', icon: ArrowDownCircleIcon },
   { value: 'ledger', label: 'Extrato', icon: BookOpenIcon },
   { value: 'card-repasses', label: 'Repasses', icon: CreditCardIcon },
   { value: 'reconciliation', label: 'Conciliação', icon: LandmarkIcon },
   { value: 'practitioner-pl', label: 'Por Profissional', icon: UsersIcon },
-  { value: 'overview', label: 'Visão Geral', icon: BarChart3Icon },
   { value: 'notas-fiscais', label: 'Notas fiscais', icon: ReceiptTextIcon },
 ] as const
 
@@ -76,6 +76,7 @@ const NFSE_ROLES = ['owner', 'receptionist', 'financial']
 function visibleTabs(role: string) {
   return TABS.filter((tab) => {
     if (tab.value === 'notas-fiscais') return NFSE_ROLES.includes(role)
+    if (tab.value === 'overview') return OVERVIEW_ROLES.includes(role)
     if (tab.value === 'reconciliation') return canManageAccounts(role)
     return true
   })
@@ -226,25 +227,17 @@ export function FinanceiroPageClient() {
   const { role } = useSubscriptionAccess()
   const tabs = visibleTabs(role)
 
+  // The first section a role can open is the landing one, at a bare /financeiro.
+  const defaultTab = tabs[0].value
   const tabParam = searchParams.get('tab')
-  const activeTab: TabValue = tabs.find((t) => t.value === tabParam)?.value ?? 'receivables'
+  const activeTab: TabValue = tabs.find((t) => t.value === tabParam)?.value ?? defaultTab
 
+  // Filters belong to the section they came with, so a switch starts clean.
   const handleTabChange = useCallback(
-    (tab: string) => {
-      const params = new URLSearchParams(searchParams.toString())
-      if (tab === 'receivables') {
-        params.delete('tab')
-      } else {
-        params.set('tab', tab)
-      }
-      // Clear tab-specific params when switching
-      params.delete('page')
-      params.delete('status')
-      params.delete('patientId')
-      const qs = params.toString()
-      router.replace(`${pathname}${qs ? `?${qs}` : ''}`, { scroll: false })
+    (tab: TabValue) => {
+      router.replace(tab === defaultTab ? pathname : `${pathname}?tab=${tab}`, { scroll: false })
     },
-    [searchParams, router, pathname]
+    [defaultTab, router, pathname]
   )
 
   if (isLoading) {
@@ -299,7 +292,7 @@ export function FinanceiroPageClient() {
 
         {activeTab === 'overview' && (
           <Suspense fallback={<TabFallback />}>
-            <RevenueChart />
+            <FinancialOverview />
           </Suspense>
         )}
       </div>

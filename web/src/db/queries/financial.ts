@@ -2042,24 +2042,18 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
   }
 }
 
-// ─── GET REVENUE OVERVIEW (enhanced with expenses) ──────────────────
+// ─── GET REVENUE OVERVIEW ───────────────────────────────────────────
 
-export async function getRevenueOverview(
-  tenantId: string,
-  dateFrom: string,
-  dateTo: string,
-  practitionerId?: string
-) {
+/**
+ * Cash basis for the period: payments received, expense installments paid
+ * and card fees. Pending and overdue stay scoped to charges created in the
+ * period, as the dashboard month card reads them.
+ */
+export async function getRevenueOverview(tenantId: string, dateFrom: string, dateTo: string) {
   // BR-local day boundaries so the filter covers the full calendar day even on UTC hosts.
   const rangeStart = startOfBrDay(dateFrom)
   const rangeEnd = endOfBrDay(dateTo)
 
-  // Base conditions for installments
-  const installmentConditions = [
-    eq(installments.tenantId, tenantId),
-  ]
-
-  // For filtering by practitioner, we need to join through financialEntries -> procedureRecords
   const entryConditions = [
     eq(financialEntries.tenantId, tenantId),
     isNull(financialEntries.deletedAt),
@@ -2087,29 +2081,17 @@ export async function getRevenueOverview(
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
     .where(and(...receivedConditions))
 
-  const monthExpr = sql`TO_CHAR(${paymentRecords.paidAt} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`
-  const monthlyQuery = db
+  const byProcedureTypeQuery = db
     .select({
-      month: sql<string>`${monthExpr}`,
+      procedureTypeName: sql<string>`COALESCE(${procedureTypes.name}, 'Sem procedimento')`,
       total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)`,
     })
     .from(paymentRecords)
     .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...receivedConditions))
-    .groupBy(monthExpr)
-    .orderBy(monthExpr)
-
-  // Revenue by procedure type
-  const byProcedureTypeQuery = db
-    .select({
-      procedureTypeName: sql<string>`COALESCE(${procedureTypes.name}, 'Outros')`,
-      total: sql<number>`COALESCE(SUM(${financialEntries.totalAmount}::numeric), 0)`,
-    })
-    .from(financialEntries)
     .leftJoin(procedureRecords, eq(procedureRecords.id, financialEntries.procedureRecordId))
     .leftJoin(procedureTypes, eq(procedureTypes.id, procedureRecords.procedureTypeId))
-    .where(and(...entryConditions))
+    .where(and(...receivedConditions))
     .groupBy(procedureTypes.name)
 
   const byPaymentMethodQuery = db
@@ -2123,43 +2105,23 @@ export async function getRevenueOverview(
     .where(and(...receivedConditions))
     .groupBy(paymentRecords.paymentMethod)
 
-  // Expense totals
   const expenseTotalsQuery = db
     .select({
-      totalExpenses: sql<number>`COALESCE(SUM(CASE WHEN ${expenseInstallments.status} = 'paid' THEN ${expenseInstallments.amount}::numeric ELSE 0 END), 0)`,
-      totalPendingExpenses: sql<number>`COALESCE(SUM(CASE WHEN ${expenseInstallments.status} = 'pending' THEN ${expenseInstallments.amount}::numeric ELSE 0 END), 0)`,
+      totalExpenses: sql<number>`COALESCE(SUM(${expenseInstallments.amount}::numeric), 0)`,
     })
     .from(expenseInstallments)
     .innerJoin(expenses, eq(expenses.id, expenseInstallments.expenseId))
-    .where(
-      and(
-        eq(expenses.tenantId, tenantId),
-        isNull(expenses.deletedAt),
-        gte(expenses.createdAt, rangeStart),
-        lte(expenses.createdAt, rangeEnd)
-      )
-    )
+    .where(and(...paidExpenseConditions(tenantId, rangeStart, rangeEnd)))
 
   // Overdue is the engine's call, net of each installment's grace and pauses.
   const pendingQuery = db
-    .select({
-      id: installments.id,
-      amount: installments.amount,
-      dueDate: installments.dueDate,
-      appliedFineType: installments.appliedFineType,
-      appliedFineValue: installments.appliedFineValue,
-      appliedInterestRate: installments.appliedInterestRate,
-      appliedGracePeriodDays: installments.appliedGracePeriodDays,
-      penaltyPauses: installments.penaltyPauses,
-      cancelledAt: installments.cancelledAt,
-    })
+    .select(pricedInstallmentColumns)
     .from(installments)
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...entryConditions, ...installmentConditions, eq(installments.status, 'pending')))
+    .where(and(...entryConditions, eq(installments.tenantId, tenantId), eq(installments.status, 'pending')))
 
   const [
     summaryResult,
-    monthlyResult,
     byProcedureTypeResult,
     byPaymentMethodResult,
     expenseTotalsResult,
@@ -2167,7 +2129,6 @@ export async function getRevenueOverview(
     totalCardFees,
   ] = await Promise.all([
     summaryQuery,
-    monthlyQuery,
     byProcedureTypeQuery,
     byPaymentMethodQuery,
     expenseTotalsQuery,
@@ -2207,15 +2168,160 @@ export async function getRevenueOverview(
       totalPending,
       totalOverdue,
       totalExpenses,
-      totalPendingExpenses: Number(expenseTotalsResult[0]?.totalPendingExpenses ?? 0),
       totalCardFees,
-      netProfit: totalReceived - totalExpenses - totalCardFees,
+      netProfit: round2(totalReceived - totalExpenses - totalCardFees),
     },
-    monthly: monthlyResult,
-    byProcedureType: byProcedureTypeResult,
-    byPaymentMethod: byPaymentMethodResult,
+    byProcedureType: byProcedureTypeResult.map((r) => ({ name: r.procedureTypeName, total: Number(r.total) })),
+    byPaymentMethod: byPaymentMethodResult.map((r) => ({ paymentMethod: r.paymentMethod, total: Number(r.total) })),
   }
 }
+
+const pricedInstallmentColumns = {
+  id: installments.id,
+  amount: installments.amount,
+  dueDate: installments.dueDate,
+  appliedFineType: installments.appliedFineType,
+  appliedFineValue: installments.appliedFineValue,
+  appliedInterestRate: installments.appliedInterestRate,
+  appliedGracePeriodDays: installments.appliedGracePeriodDays,
+  penaltyPauses: installments.penaltyPauses,
+  cancelledAt: installments.cancelledAt,
+}
+
+function paidExpenseConditions(tenantId: string, rangeStart: Date, rangeEnd: Date) {
+  return [
+    eq(expenses.tenantId, tenantId),
+    isNull(expenses.deletedAt),
+    eq(expenseInstallments.status, 'paid'),
+    gte(expenseInstallments.paidAt, rangeStart),
+    lte(expenseInstallments.paidAt, rangeEnd),
+  ]
+}
+
+const brMonthOf = (column: unknown) => sql<string>`TO_CHAR(${column} AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM')`
+
+/** Received and paid out per BR month, one row per month in the range, oldest first. */
+export async function getMonthlyCashFlow(tenantId: string, fromYmd: string, toYmd: string) {
+  const rangeStart = startOfBrDay(fromYmd)
+  const rangeEnd = endOfBrDay(toYmd)
+
+  const receivedMonth = brMonthOf(paymentRecords.paidAt)
+  const expenseMonth = brMonthOf(expenseInstallments.paidAt)
+  const [received, paidOut] = await Promise.all([
+    db
+      .select({ month: receivedMonth, total: sql<number>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)` })
+      .from(paymentRecords)
+      .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
+      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          eq(financialEntries.tenantId, tenantId),
+          isNull(financialEntries.deletedAt),
+          isNull(paymentRecords.reversedAt),
+          gte(paymentRecords.paidAt, rangeStart),
+          lte(paymentRecords.paidAt, rangeEnd),
+        ),
+      )
+      .groupBy(receivedMonth),
+    db
+      .select({ month: expenseMonth, total: sql<number>`COALESCE(SUM(${expenseInstallments.amount}::numeric), 0)` })
+      .from(expenseInstallments)
+      .innerJoin(expenses, eq(expenses.id, expenseInstallments.expenseId))
+      .where(and(...paidExpenseConditions(tenantId, rangeStart, rangeEnd)))
+      .groupBy(expenseMonth),
+  ])
+
+  const receivedBy = new Map(received.map((r) => [r.month, Number(r.total)]))
+  const paidOutBy = new Map(paidOut.map((r) => [r.month, Number(r.total)]))
+  const months: string[] = []
+  for (let m = fromYmd.slice(0, 7); m <= toYmd.slice(0, 7); m = shiftMonth(m, 1)) months.push(m)
+  return months.map((month) => ({
+    month,
+    received: receivedBy.get(month) ?? 0,
+    expenses: paidOutBy.get(month) ?? 0,
+  }))
+}
+
+function shiftMonth(month: string, delta: number): string {
+  const [year, m] = month.split('-').map(Number)
+  const index = year * 12 + (m - 1) + delta
+  return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`
+}
+
+/** Days ahead, today included, that "A receber em 7 dias" covers. */
+export const DUE_SOON_DAYS = 7
+
+/**
+ * Open receivables as of `now`, whatever month they were charged in: what is
+ * late (with fine and interest, and how many patients owe it) and what falls
+ * due in the next DUE_SOON_DAYS days.
+ */
+export async function getReceivablesOutlook(tenantId: string, now: Date) {
+  const lastSoonDay = shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS - 1)
+  const open = await db
+    .select({ ...pricedInstallmentColumns, patientId: financialEntries.patientId })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(financialEntries.tenantId, tenantId),
+        isNull(financialEntries.deletedAt),
+        eq(installments.status, 'pending'),
+        lte(installments.dueDate, lastSoonDay),
+      ),
+    )
+
+  const paymentsBy = await loadLivePaymentsByInstallment(db, open.map((i) => i.id))
+  const overduePatients = new Set<string>()
+  let overdueTotal = 0
+  let dueSoonTotal = 0
+  let dueSoonCount = 0
+  for (const inst of open) {
+    const base = toInstallmentBase(inst)
+    const owed = quoteInstallment(base, toPaymentInputs(paymentsBy.get(inst.id) ?? []), now).totalDue
+    if (isInstallmentOverdue(base, now)) {
+      overdueTotal = round2(overdueTotal + owed)
+      overduePatients.add(inst.patientId)
+    } else {
+      dueSoonTotal = round2(dueSoonTotal + owed)
+      dueSoonCount += 1
+    }
+  }
+
+  return {
+    overdue: { total: overdueTotal, patientCount: overduePatients.size },
+    dueSoon: { total: dueSoonTotal, count: dueSoonCount },
+  }
+}
+
+/** Months the Visão geral trend shows, the selected one last. */
+export const OVERVIEW_TREND_MONTHS = 6
+
+/** The Financeiro Visão geral for a BR month ('YYYY-MM'). */
+export async function getFinancialOverview(tenantId: string, month: string, now = new Date()) {
+  const monthStart = `${month}-01`
+  const monthEnd = shiftBrYmd(`${shiftMonth(month, 1)}-01`, -1)
+  const [overview, monthly, receivables] = await Promise.all([
+    getRevenueOverview(tenantId, monthStart, monthEnd),
+    getMonthlyCashFlow(tenantId, `${shiftMonth(month, 1 - OVERVIEW_TREND_MONTHS)}-01`, monthEnd),
+    getReceivablesOutlook(tenantId, now),
+  ])
+  const { totalReceived, totalExpenses, totalCardFees, netProfit } = overview.summary
+  return {
+    month,
+    monthStart,
+    monthEnd,
+    summary: { totalReceived, totalExpenses, totalCardFees, netProfit },
+    receivables,
+    monthly,
+    byProcedureType: overview.byProcedureType,
+    byPaymentMethod: overview.byPaymentMethod,
+  }
+}
+
+export type FinancialOverview = Awaited<ReturnType<typeof getFinancialOverview>>
 
 // ─── HELPERS ────────────────────────────────────────────────────────
 

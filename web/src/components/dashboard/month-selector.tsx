@@ -33,7 +33,7 @@ export function MonthSelector({ month, currentMonth, onChange }: MonthSelectorPr
       <Button
         variant="ghost"
         size="icon-sm"
-        className="rounded-full text-mid hover:bg-petal hover:text-forest transition-colors"
+        className="rounded-full text-mid hover:bg-petal hover:text-forest transition-colors max-md:size-11"
         onClick={() => navigate('prev')}
         aria-label="Mês anterior"
         data-testid="dashboard-month-prev"
@@ -46,7 +46,7 @@ export function MonthSelector({ month, currentMonth, onChange }: MonthSelectorPr
       <Button
         variant="ghost"
         size="icon-sm"
-        className="rounded-full text-mid hover:bg-petal hover:text-forest transition-colors"
+        className="rounded-full text-mid hover:bg-petal hover:text-forest transition-colors max-md:size-11"
         onClick={() => navigate('next')}
         disabled={isCurrentMonth}
         aria-label="Próximo mês"

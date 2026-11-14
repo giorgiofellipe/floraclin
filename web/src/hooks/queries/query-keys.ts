@@ -29,8 +29,7 @@ export const queryKeys = {
     all: ['financial'] as const,
     entries: (filters?: Record<string, unknown>) => ['financial', 'entries', filters] as const,
     detail: (id: string) => ['financial', 'detail', id] as const,
-    revenue: (dateFrom: string, dateTo: string, practitionerId?: string) =>
-      ['financial', 'revenue', dateFrom, dateTo, practitionerId] as const,
+    overview: (month: string) => ['financial', 'revenue', month] as const,
     patients: ['financial', 'patients'] as const,
     settings: ['financial', 'settings'] as const,
     categories: ['financial', 'categories'] as const,

@@ -49,12 +49,11 @@
  *
  * ─── Back-dating, the part that is easy to get wrong ───────────────────
  *
- * `getRevenueOverview` filters its SUMMARY on `financial_entries.created_at`
- * but groups its CHART on `installments.paid_at`. Both are back-dated here.
- * Getting only one right produces a screen that is half correct, which is
- * worse than one that is obviously broken. `expense_installments` carries no
- * `tenant_id` and the overview filters `expenses.created_at`, so the expense
- * parent is back-dated per month too, not just its installment.
+ * The Visão geral counts money by when it moved (`payment_records.paid_at`,
+ * `expense_installments.paid_at`), while pending/overdue and the A Receber and
+ * Despesas lists filter on `created_at`. Both are back-dated here. Getting
+ * only one right produces a screen that is half correct, which is worse than
+ * one that is obviously broken.
  *
  * `cash_movements` is an append-only ledger the app writes only when a
  * payment goes through `recordPayment` / `payExpenseInstallment` (see
@@ -707,7 +706,7 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
       installmentCount: entry.installments.length,
       status,
       createdBy: ctx.practitionerId,
-      // getRevenueOverview's SUMMARY filters on this column.
+      // Pending/overdue and the A Receber list filter on this column.
       createdAt: brInstant(entry.procedure.date, '12:00'),
       updatedAt: brInstant(entry.procedure.date, '12:00'),
     }
@@ -725,7 +724,6 @@ async function writeFinancials(tx: Tx, ctx: WriteContext, pastRecords: PastRecor
         // `date` column: a BR calendar day, stored as the YYYY-MM-DD string.
         dueDate: installment.dueDate,
         status: installment.status,
-        // getRevenueOverview's monthly CHART groups on this column, and
         // getQuickStats sums this month's paid installments by it.
         paidAt,
         paymentMethod: installment.paymentMethod ?? null,
@@ -772,9 +770,7 @@ async function writeExpenses(tx: Tx, ctx: WriteContext): Promise<PlannedExpenseI
       installmentCount: 1,
       status: 'paid',
       createdBy: ctx.practitionerId,
-      // expense_installments carries no tenant_id: getRevenueOverview joins
-      // through expenses and filters THIS column, so the parent is what has
-      // to be back-dated.
+      // The Despesas list filters on this column.
       createdAt: recordedAt,
       updatedAt: recordedAt,
     }

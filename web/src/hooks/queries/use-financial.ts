@@ -1,7 +1,8 @@
 'use client'
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { queryKeys } from './query-keys'
+import type { FinancialOverview } from '@/db/queries/financial'
 
 export function useFinancialEntries(filters?: {
   patientId?: string
@@ -31,26 +32,18 @@ export function useFinancialEntries(filters?: {
   })
 }
 
-export function useRevenueOverview(
-  dateFrom: string,
-  dateTo: string,
-  practitionerId?: string
-) {
+export function useFinancialOverview(month: string) {
   return useQuery({
-    queryKey: queryKeys.financial.revenue(dateFrom, dateTo, practitionerId),
+    queryKey: queryKeys.financial.overview(month),
     queryFn: async () => {
-      const params = new URLSearchParams()
-      params.set('dateFrom', dateFrom)
-      params.set('dateTo', dateTo)
-      if (practitionerId) params.set('practitionerId', practitionerId)
-      const res = await fetch(`/api/financial/overview?${params}`)
+      const res = await fetch(`/api/financial/overview?month=${month}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Erro ao carregar receita')
+        throw new Error(err.error || 'Erro ao carregar a visão geral')
       }
-      return res.json()
+      return res.json() as Promise<FinancialOverview>
     },
-    enabled: !!dateFrom && !!dateTo,
+    placeholderData: keepPreviousData,
   })
 }
 

@@ -7,6 +7,9 @@ import type { Role } from '@/types'
  */
 export const ACCOUNT_MANAGER_ROLES = ['owner', 'financial'] as const satisfies readonly Role[]
 
+/** Who sees the Financeiro Visão geral (clinic-wide profit). */
+export const OVERVIEW_ROLES: readonly string[] = ['owner', 'financial'] satisfies readonly Role[]
+
 export function canManageAccounts(role: string): boolean {
   return (ACCOUNT_MANAGER_ROLES as readonly string[]).includes(role)
 }

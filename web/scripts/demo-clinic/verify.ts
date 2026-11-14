@@ -58,7 +58,7 @@ import {
   whatsappQueuedMessages,
 } from '@/db/schema'
 import { getQuickStats } from '@/db/queries/dashboard'
-import { getRevenueOverview } from '@/db/queries/financial'
+import { getMonthlyCashFlow, getRevenueOverview } from '@/db/queries/financial'
 import { getLedgerSummary } from '@/db/queries/cash-movements'
 import { brToday } from '@/lib/dates'
 import {
@@ -259,24 +259,16 @@ export async function runTargetAssertions(): Promise<string[]> {
   expectAmount(failures, 'getLedgerSummary.netResult', ledger.netResult, TARGETS.netProfitThisMonth)
 
   const window = sixMonthRange(todayYmd)
-  const sixMonths = await getRevenueOverview(DEMO_TENANT_ID, window.from, window.to)
+  const sixMonths = await getMonthlyCashFlow(DEMO_TENANT_ID, window.from, window.to)
   const labels = sixMonthLabels(todayYmd)
 
-  if (sixMonths.monthly.length !== SIX_MONTH_RECEIVED.length) {
-    failures.push(
-      `getRevenueOverview.monthly: expected ${SIX_MONTH_RECEIVED.length} months, got ${sixMonths.monthly.length} (${sixMonths.monthly
-        .map((m) => m.month)
-        .join(', ')})`,
-    )
-  }
-
   labels.forEach((label, index) => {
-    const row = sixMonths.monthly.find((m) => m.month === label)
+    const row = sixMonths.find((m) => m.month === label)
     if (!row) {
-      failures.push(`getRevenueOverview.monthly: no row for ${label} (expected ${SIX_MONTH_RECEIVED[index]})`)
+      failures.push(`getMonthlyCashFlow: no row for ${label} (expected ${SIX_MONTH_RECEIVED[index]})`)
       return
     }
-    expectAmount(failures, `getRevenueOverview.monthly[${label}]`, row.total, SIX_MONTH_RECEIVED[index])
+    expectAmount(failures, `getMonthlyCashFlow[${label}].received`, row.received, SIX_MONTH_RECEIVED[index])
   })
 
   return failures
