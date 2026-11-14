@@ -25,7 +25,7 @@ import {
   WalletIcon,
 } from 'lucide-react'
 import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
-import { useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 
 interface ExpenseEntry {
   id: string
@@ -69,6 +69,8 @@ const PAYMENT_METHOD_FILTER_ITEMS: Record<string, string> = {
 
 export function ExpenseList() {
   const searchParams = useSearchParams()
+  const router = useRouter()
+  const pathname = usePathname()
   const { readOnly } = useSubscriptionAccess()
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('')
@@ -81,6 +83,16 @@ export function ExpenseList() {
   // `?novo=1` comes from the Visão geral empty state.
   const [showForm, setShowForm] = useState(searchParams.get('novo') === '1' && !readOnly)
   const [showFilters, setShowFilters] = useState(false)
+
+  // Drop `?novo=1` so a refresh or Back does not reopen the form.
+  const closeForm = () => {
+    setShowForm(false)
+    if (searchParams.get('novo') !== null) {
+      const params = new URLSearchParams(searchParams.toString())
+      params.delete('novo')
+      router.replace(`${pathname}?${params}`, { scroll: false })
+    }
+  }
 
   const filters = {
     status: statusFilter || undefined,
@@ -393,8 +405,8 @@ export function ExpenseList() {
       {showForm && (
         <ExpenseForm
           open={showForm}
-          onClose={() => setShowForm(false)}
-          onSuccess={() => setShowForm(false)}
+          onClose={closeForm}
+          onSuccess={closeForm}
         />
       )}
     </div>

@@ -1,10 +1,11 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useCardRepasses, type CardRepasseFilters } from '@/hooks/queries/use-card-repasses'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 import { cn, formatCurrency, formatDate } from '@/lib/utils'
-import { brToday, shiftBrYmd } from '@/lib/dates'
+import { brToday, isValidYmd, shiftBrYmd } from '@/lib/dates'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { DateRangePicker } from '@/components/ui/date-picker'
@@ -40,8 +41,12 @@ function lastDayOfMonth(ymd: string): string {
 
 export function CardRepassesView() {
   const today = useMemo(() => brToday(), [])
-  const [dateFrom, setDateFrom] = useState(`${today.slice(0, 7)}-01`)
-  const [dateTo, setDateTo] = useState(lastDayOfMonth(today))
+  // The Visão geral "Taxas de cartão" row opens here on its month.
+  const searchParams = useSearchParams()
+  const linkedFrom = searchParams.get('dateFrom') ?? ''
+  const linkedTo = searchParams.get('dateTo') ?? ''
+  const [dateFrom, setDateFrom] = useState(isValidYmd(linkedFrom) ? linkedFrom : `${today.slice(0, 7)}-01`)
+  const [dateTo, setDateTo] = useState(isValidYmd(linkedTo) ? linkedTo : lastDayOfMonth(today))
   const [terminalId, setTerminalId] = useState('')
   const [status, setStatus] = useState<RepasseStatus | ''>('')
   const [page, setPage] = useState(1)

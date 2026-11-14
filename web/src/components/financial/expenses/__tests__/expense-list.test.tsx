@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ExpenseList } from '../expense-list'
 
@@ -65,8 +65,9 @@ vi.mock('@/hooks/mutations/use-expense-mutations', () => ({
 }))
 
 let searchParams = new URLSearchParams()
+const replaceMock = vi.fn()
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), replace: replaceMock, refresh: vi.fn(), back: vi.fn() }),
   usePathname: () => '/',
   useSearchParams: () => searchParams,
 }))
@@ -88,11 +89,13 @@ describe('ExpenseList', () => {
     searchParams = new URLSearchParams()
   })
 
-  it('opens the new expense form when a link arrives with ?novo=1', () => {
+  it('opens the new expense form when a link arrives with ?novo=1, and drops the flag on close', () => {
     searchParams = new URLSearchParams('tab=expenses&novo=1')
     render(<ExpenseList />, { wrapper: createWrapper() })
 
     expect(screen.getByRole('dialog', { name: 'Nova Despesa' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Cancelar' }))
+    expect(replaceMock).toHaveBeenCalledWith('/?tab=expenses', { scroll: false })
   })
 
   it('renders expense rows', () => {

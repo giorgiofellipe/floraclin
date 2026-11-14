@@ -34,6 +34,11 @@ const repasses = {
 
 const useCardRepassesMock = vi.fn()
 
+let searchParams = new URLSearchParams()
+vi.mock('next/navigation', () => ({
+  useSearchParams: () => searchParams,
+}))
+
 vi.mock('@/hooks/queries/use-card-repasses', () => ({
   useCardRepasses: (filters: unknown) => useCardRepassesMock(filters),
   useAdjustCardRepasse: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -52,6 +57,14 @@ afterEach(() => {
 describe('CardRepassesView', () => {
   beforeEach(() => {
     useCardRepassesMock.mockReturnValue(loaded)
+    searchParams = new URLSearchParams()
+  })
+
+  it('opens on the month a Visão geral link carries', () => {
+    searchParams = new URLSearchParams('tab=card-repasses&dateFrom=2026-09-01&dateTo=2026-09-30')
+    render(<CardRepassesView />)
+
+    expect(useCardRepassesMock).toHaveBeenCalledWith(expect.objectContaining({ dateFrom: '2026-09-01', dateTo: '2026-09-30' }))
   })
 
   it('shows the pending net total and a status label per repasse', () => {

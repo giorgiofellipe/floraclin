@@ -2045,21 +2045,14 @@ export async function getFinancialEntry(tenantId: string, entryId: string) {
 // ─── GET REVENUE OVERVIEW ───────────────────────────────────────────
 
 /**
- * Cash basis for the period: payments received, expense installments paid
- * and card fees. Pending and overdue stay scoped to charges created in the
- * period, as the dashboard month card reads them.
+ * What moved in the period, by payment date: payments received, expense
+ * installments paid and card fees, with the received money split by
+ * procedure and by payment method.
  */
-export async function getRevenueOverview(tenantId: string, dateFrom: string, dateTo: string) {
+export async function getCashSummary(tenantId: string, dateFrom: string, dateTo: string) {
   // BR-local day boundaries so the filter covers the full calendar day even on UTC hosts.
   const rangeStart = startOfBrDay(dateFrom)
   const rangeEnd = endOfBrDay(dateTo)
-
-  const entryConditions = [
-    eq(financialEntries.tenantId, tenantId),
-    isNull(financialEntries.deletedAt),
-    gte(financialEntries.createdAt, rangeStart),
-    lte(financialEntries.createdAt, rangeEnd),
-  ]
 
   // Gross is cash received: live payment records paid inside the period,
   // whenever the charge itself was created.
@@ -2113,28 +2106,52 @@ export async function getRevenueOverview(tenantId: string, dateFrom: string, dat
     .innerJoin(expenses, eq(expenses.id, expenseInstallments.expenseId))
     .where(and(...paidExpenseConditions(tenantId, rangeStart, rangeEnd)))
 
+  const [summaryResult, byProcedureTypeResult, byPaymentMethodResult, expenseTotalsResult, totalCardFees] =
+    await Promise.all([
+      summaryQuery,
+      byProcedureTypeQuery,
+      byPaymentMethodQuery,
+      expenseTotalsQuery,
+      sumCardFeesForPeriod(tenantId, rangeStart, rangeEnd),
+    ])
+
+  const totalReceived = Number(summaryResult[0]?.totalReceived ?? 0)
+  const totalExpenses = Number(expenseTotalsResult[0]?.totalExpenses ?? 0)
+
+  return {
+    totalReceived,
+    totalExpenses,
+    totalCardFees,
+    netProfit: round2(totalReceived - totalExpenses - totalCardFees),
+    byProcedureType: byProcedureTypeResult.map((r) => ({ name: r.procedureTypeName, total: Number(r.total) })),
+    byPaymentMethod: byPaymentMethodResult.map((r) => ({ paymentMethod: r.paymentMethod, total: Number(r.total) })),
+  }
+}
+
+/**
+ * The cash summary for the period plus pending and overdue scoped to charges
+ * created in it, as the dashboard month card reads them.
+ */
+export async function getRevenueOverview(tenantId: string, dateFrom: string, dateTo: string) {
+  const cashQuery = getCashSummary(tenantId, dateFrom, dateTo)
+
   // Overdue is the engine's call, net of each installment's grace and pauses.
   const pendingQuery = db
     .select(pricedInstallmentColumns)
     .from(installments)
     .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
-    .where(and(...entryConditions, eq(installments.tenantId, tenantId), eq(installments.status, 'pending')))
+    .where(
+      and(
+        eq(financialEntries.tenantId, tenantId),
+        isNull(financialEntries.deletedAt),
+        gte(financialEntries.createdAt, startOfBrDay(dateFrom)),
+        lte(financialEntries.createdAt, endOfBrDay(dateTo)),
+        eq(installments.tenantId, tenantId),
+        eq(installments.status, 'pending'),
+      ),
+    )
 
-  const [
-    summaryResult,
-    byProcedureTypeResult,
-    byPaymentMethodResult,
-    expenseTotalsResult,
-    pendingInstallments,
-    totalCardFees,
-  ] = await Promise.all([
-    summaryQuery,
-    byProcedureTypeQuery,
-    byPaymentMethodQuery,
-    expenseTotalsQuery,
-    pendingQuery,
-    sumCardFeesForPeriod(tenantId, rangeStart, rangeEnd),
-  ])
+  const [cash, pendingInstallments] = await Promise.all([cashQuery, pendingQuery])
 
   const now = new Date()
   let totalPending = 0
@@ -2159,20 +2176,11 @@ export async function getRevenueOverview(tenantId: string, dateFrom: string, dat
     totalOverdue = round2(totalOverdue + quote.totalDue)
   }
 
-  const totalReceived = Number(summaryResult[0]?.totalReceived ?? 0)
-  const totalExpenses = Number(expenseTotalsResult[0]?.totalExpenses ?? 0)
-
+  const { byProcedureType, byPaymentMethod, ...totals } = cash
   return {
-    summary: {
-      totalReceived,
-      totalPending,
-      totalOverdue,
-      totalExpenses,
-      totalCardFees,
-      netProfit: round2(totalReceived - totalExpenses - totalCardFees),
-    },
-    byProcedureType: byProcedureTypeResult.map((r) => ({ name: r.procedureTypeName, total: Number(r.total) })),
-    byPaymentMethod: byPaymentMethodResult.map((r) => ({ paymentMethod: r.paymentMethod, total: Number(r.total) })),
+    summary: { ...totals, totalPending, totalOverdue },
+    byProcedureType,
+    byPaymentMethod,
   }
 }
 
@@ -2254,8 +2262,8 @@ export const DUE_SOON_DAYS = 7
 
 /**
  * Open receivables as of `now`, whatever month they were charged in: what is
- * late (with fine and interest, and how many patients owe it) and what falls
- * due in the next DUE_SOON_DAYS days.
+ * late (with fine and interest, and how many patients owe it), what is not
+ * late yet, and the part of that falling due in the next DUE_SOON_DAYS days.
  */
 export async function getReceivablesOutlook(tenantId: string, now: Date) {
   const lastSoonDay = shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS - 1)
@@ -2269,7 +2277,6 @@ export async function getReceivablesOutlook(tenantId: string, now: Date) {
         eq(financialEntries.tenantId, tenantId),
         isNull(financialEntries.deletedAt),
         eq(installments.status, 'pending'),
-        lte(installments.dueDate, lastSoonDay),
       ),
     )
 
@@ -2278,6 +2285,7 @@ export async function getReceivablesOutlook(tenantId: string, now: Date) {
   let overdueTotal = 0
   let dueSoonTotal = 0
   let dueSoonCount = 0
+  let openTotal = 0
   for (const inst of open) {
     const base = toInstallmentBase(inst)
     const owed = quoteInstallment(base, toPaymentInputs(paymentsBy.get(inst.id) ?? []), now).totalDue
@@ -2285,14 +2293,18 @@ export async function getReceivablesOutlook(tenantId: string, now: Date) {
       overdueTotal = round2(overdueTotal + owed)
       overduePatients.add(inst.patientId)
     } else {
-      dueSoonTotal = round2(dueSoonTotal + owed)
-      dueSoonCount += 1
+      openTotal = round2(openTotal + owed)
+      if (inst.dueDate <= lastSoonDay) {
+        dueSoonTotal = round2(dueSoonTotal + owed)
+        dueSoonCount += 1
+      }
     }
   }
 
   return {
     overdue: { total: overdueTotal, patientCount: overduePatients.size },
     dueSoon: { total: dueSoonTotal, count: dueSoonCount },
+    notYetDue: { total: openTotal },
   }
 }
 
@@ -2303,22 +2315,13 @@ export const OVERVIEW_TREND_MONTHS = 6
 export async function getFinancialOverview(tenantId: string, month: string, now = new Date()) {
   const monthStart = `${month}-01`
   const monthEnd = shiftBrYmd(`${shiftMonth(month, 1)}-01`, -1)
-  const [overview, monthly, receivables] = await Promise.all([
-    getRevenueOverview(tenantId, monthStart, monthEnd),
+  const [cash, monthly, receivables] = await Promise.all([
+    getCashSummary(tenantId, monthStart, monthEnd),
     getMonthlyCashFlow(tenantId, `${shiftMonth(month, 1 - OVERVIEW_TREND_MONTHS)}-01`, monthEnd),
     getReceivablesOutlook(tenantId, now),
   ])
-  const { totalReceived, totalExpenses, totalCardFees, netProfit } = overview.summary
-  return {
-    month,
-    monthStart,
-    monthEnd,
-    summary: { totalReceived, totalExpenses, totalCardFees, netProfit },
-    receivables,
-    monthly,
-    byProcedureType: overview.byProcedureType,
-    byPaymentMethod: overview.byPaymentMethod,
-  }
+  const { byProcedureType, byPaymentMethod, ...summary } = cash
+  return { month, monthStart, monthEnd, summary, receivables, monthly, byProcedureType, byPaymentMethod }
 }
 
 export type FinancialOverview = Awaited<ReturnType<typeof getFinancialOverview>>

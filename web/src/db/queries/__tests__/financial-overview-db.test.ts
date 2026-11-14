@@ -137,6 +137,7 @@ describeIntegration('Financeiro overview (integration, requires test DB)', () =>
     expect(overview.receivables).toEqual({
       overdue: { total: 150, patientCount: 2 },
       dueSoon: { total: 80, count: 1 },
+      notYetDue: { total: 150 },
     })
     expect(overview.byProcedureType).toEqual([{ name: 'Sem procedimento', total: 400 }])
     expect(overview.monthly).toEqual([

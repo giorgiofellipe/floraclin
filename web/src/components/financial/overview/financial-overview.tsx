@@ -25,10 +25,14 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 const OVERDUE_HREF = '/financeiro?tab=receivables&isOverdue=true'
 const PENDING_HREF = '/financeiro?tab=receivables&status=pending'
-const CARD_FEES_HREF = '/financeiro?tab=card-repasses'
+const CARD_METHODS = ['credit_card', 'debit_card']
 
 function ledgerHref(type: 'inflow' | 'outflow', dateFrom: string, dateTo: string) {
   return `/financeiro?${new URLSearchParams({ tab: 'ledger', type, dateFrom, dateTo })}`
+}
+
+function cardRepassesHref(dateFrom: string, dateTo: string) {
+  return `/financeiro?${new URLSearchParams({ tab: 'card-repasses', dateFrom, dateTo })}`
 }
 
 function monthName(month: string) {
@@ -59,6 +63,7 @@ function StatCard({
   title,
   value,
   caption,
+  detail,
   href,
   action,
   tone = 'default',
@@ -67,6 +72,7 @@ function StatCard({
   title: string
   value: number
   caption: string
+  detail?: string
   href: string
   action: string
   tone?: 'default' | 'alert'
@@ -86,6 +92,7 @@ function StatCard({
             {formatCurrency(value)}
           </p>
           <p className="mt-0.5 text-xs text-mid">{caption}</p>
+          {detail && <p className="mt-0.5 text-xs text-mid">{detail}</p>}
         </div>
         <Link
           href={href}
@@ -174,7 +181,7 @@ export function FinancialOverview() {
   const isEmpty =
     monthly.every((m) => m.received === 0 && m.expenses === 0) &&
     receivables.overdue.total === 0 &&
-    receivables.dueSoon.total === 0
+    receivables.notYetDue.total === 0
 
   if (isEmpty) {
     return (
@@ -186,6 +193,7 @@ export function FinancialOverview() {
   }
 
   const profitIsNegative = summary.netProfit < 0
+  const hasCardPayments = data.byPaymentMethod.some((p) => CARD_METHODS.includes(p.paymentMethod) && p.total > 0)
 
   return (
     <div
@@ -217,9 +225,17 @@ export function FinancialOverview() {
                 value={summary.totalExpenses}
                 sign="−"
               />
-              <BreakdownRow href={CARD_FEES_HREF} label="Taxas de cartão" value={summary.totalCardFees} sign="−" />
+              <BreakdownRow
+                href={cardRepassesHref(monthStart, monthEnd)}
+                label="Taxas de cartão"
+                value={summary.totalCardFees}
+                sign="−"
+              />
             </div>
-            <p className="mt-auto text-xs text-mid">O que entrou e saiu em {monthName(month)}, pela data do pagamento.</p>
+            <p className="mt-auto text-xs text-mid">
+              O que entrou e saiu em {monthName(month)}, pela data do pagamento.
+              {hasCardPayments && ' Pagamentos em cartão entram no extrato na data do repasse.'}
+            </p>
           </CardContent>
         </Card>
 
@@ -242,8 +258,9 @@ export function FinancialOverview() {
             title="A receber em 7 dias"
             value={receivables.dueSoon.total}
             caption={plural(receivables.dueSoon.count, 'parcela', 'parcelas')}
+            detail={`${formatCurrency(receivables.notYetDue.total)} em aberto no total`}
             href={PENDING_HREF}
-            action="Ver a receber"
+            action="Ver pendentes"
           />
         </div>
       </div>

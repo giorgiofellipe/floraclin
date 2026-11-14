@@ -17,7 +17,11 @@ function overview(overrides: Partial<Overview> = {}): Overview {
     monthStart: '2026-11-01',
     monthEnd: '2026-11-30',
     summary: { totalReceived: 36000, totalExpenses: 8400, totalCardFees: 0, netProfit: 27600 },
-    receivables: { overdue: { total: 1500, patientCount: 3 }, dueSoon: { total: 900, count: 2 } },
+    receivables: {
+      overdue: { total: 1500, patientCount: 3 },
+      dueSoon: { total: 900, count: 2 },
+      notYetDue: { total: 6000 },
+    },
     monthly: [{ month: '2026-11', received: 36000, expenses: 8400 }],
     byProcedureType: [],
     byPaymentMethod: [],
@@ -43,10 +47,11 @@ describe('FinancialOverview', () => {
     const link = (name: RegExp) => screen.getByRole('link', { name }).getAttribute('href')
     expect(link(/Recebido/)).toBe('/financeiro?tab=ledger&type=inflow&dateFrom=2026-11-01&dateTo=2026-11-30')
     expect(link(/Despesas pagas/)).toBe('/financeiro?tab=ledger&type=outflow&dateFrom=2026-11-01&dateTo=2026-11-30')
-    expect(link(/Taxas de cartão/)).toBe('/financeiro?tab=card-repasses')
+    expect(link(/Taxas de cartão/)).toBe('/financeiro?tab=card-repasses&dateFrom=2026-11-01&dateTo=2026-11-30')
     expect(link(/Ver vencidos/)).toBe('/financeiro?tab=receivables&isOverdue=true')
-    expect(link(/Ver a receber/)).toBe('/financeiro?tab=receivables&status=pending')
+    expect(link(/Ver pendentes/)).toBe('/financeiro?tab=receivables&status=pending')
     expect(screen.getByTestId('overview-overdue')).toHaveTextContent('3 pacientes em atraso hoje')
+    expect(screen.getByTestId('overview-due-soon')).toHaveTextContent(`${brl(6000).replace(/\u00a0/g, ' ')} em aberto no total`)
   })
 
   it('starts on the current month and loads the one picked', () => {
@@ -63,7 +68,8 @@ describe('FinancialOverview', () => {
     useFinancialOverviewMock.mockReturnValue({ data: overview({ byProcedureType }), isPending: false, isError: false })
     render(<FinancialOverview />)
 
-    const rows = within(screen.getByText('Recebido por procedimento').closest('[data-slot=card]') as HTMLElement)
+    const card = screen.getByText('Recebido por procedimento').closest('[data-slot=card]') as HTMLElement
+    const rows = within(card)
       .getAllByRole('listitem')
       .map((li) => li.textContent)
     expect(rows).toEqual([
@@ -74,13 +80,19 @@ describe('FinancialOverview', () => {
       `P4${brl(30)}11%`,
       `Outros${brl(30)}11%`,
     ])
+
+    // Every procedure stays reachable behind Outros.
+    fireEvent.click(within(card).getByRole('button', { name: 'Mostrar todos (7)' }))
+    expect(within(card).getAllByRole('listitem').map((li) => li.firstElementChild?.firstElementChild?.textContent)).toEqual([
+      'P1', 'P3', 'P5', 'P6', 'P4', 'P2', 'P0',
+    ])
   })
 
   it('shows one next step instead of empty numbers to a clinic with nothing recorded', () => {
     useFinancialOverviewMock.mockReturnValue({
       data: overview({
         summary: { totalReceived: 0, totalExpenses: 0, totalCardFees: 0, netProfit: 0 },
-        receivables: { overdue: { total: 0, patientCount: 0 }, dueSoon: { total: 0, count: 0 } },
+        receivables: { overdue: { total: 0, patientCount: 0 }, dueSoon: { total: 0, count: 0 }, notYetDue: { total: 0 } },
         monthly: [{ month: '2026-11', received: 0, expenses: 0 }],
       }),
       isPending: false,
