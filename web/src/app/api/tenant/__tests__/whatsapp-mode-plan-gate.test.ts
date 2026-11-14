@@ -110,6 +110,23 @@ describe('whatsapp_mode is gated on the plan, not on the UI', () => {
     expect(updateTenantMock).not.toHaveBeenCalled()
   })
 
+  it('saves a roles-only change for an own-number clinic whose plan lost the feature, writing nothing else', async () => {
+    checkPlanFeatureMock.mockResolvedValue(false)
+
+    const res = await PUT(
+      new Request('http://localhost/api/tenant', {
+        method: 'PUT',
+        body: JSON.stringify({
+          _action: 'whatsapp_settings',
+          settings: { whatsapp_allowed_roles: ['owner', 'financial'] },
+        }),
+      }),
+    )
+
+    expect(res.status).toBe(200)
+    expect(updateTenantSettingsMock).toHaveBeenCalledWith('tenant-1', { whatsapp_allowed_roles: ['owner', 'financial'] })
+  })
+
   it('checks the feature for the caller tenant', async () => {
     checkPlanFeatureMock.mockResolvedValue(true)
 

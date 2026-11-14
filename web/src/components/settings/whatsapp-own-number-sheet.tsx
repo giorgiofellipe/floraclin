@@ -72,7 +72,19 @@ function CopyField({ id, label, value, helper }: { id: string; label: string; va
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(value)
+      if (navigator.clipboard) {
+        await navigator.clipboard.writeText(value)
+      } else {
+        // Non-secure contexts (plain http on a LAN IP) have no Clipboard API.
+        const textarea = document.createElement('textarea')
+        textarea.value = value
+        textarea.style.position = 'fixed'
+        textarea.style.opacity = '0'
+        document.body.appendChild(textarea)
+        textarea.select()
+        document.execCommand('copy')
+        document.body.removeChild(textarea)
+      }
       setCopied(true)
       setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS)
       toast.success('Copiado para a área de transferência')
@@ -157,6 +169,24 @@ export function WhatsAppOwnNumberSheet({
           <p className="text-xs text-mid">Passo {step + 1} de {STEPS.length}</p>
           <SheetTitle>Conectar número próprio</SheetTitle>
           <SheetDescription>{STEPS[step]}</SheetDescription>
+          <nav aria-label="Passos" className="mt-2 flex gap-1.5">
+            {STEPS.map((label, index) => (
+              <button
+                key={label}
+                type="button"
+                aria-label={`Passo ${index + 1}: ${label}`}
+                aria-current={index === step ? 'step' : undefined}
+                onClick={() => setStep(index)}
+                className="group flex min-h-11 flex-1 items-center sm:min-h-6"
+              >
+                <span
+                  className={`h-1 w-full rounded-full transition-colors ${
+                    index <= step ? 'bg-forest' : 'bg-topbar-border group-hover:bg-sage/40'
+                  }`}
+                />
+              </button>
+            ))}
+          </nav>
         </SheetHeader>
 
         <div className="flex-1 overflow-y-auto p-4 text-sm text-mid space-y-4">

@@ -18,11 +18,11 @@ export const sendMediaSchema = z.object({
 
 export const whatsappSettingsSchema = z.object({
   whatsapp_mode: z.enum(['floraclin', 'own']).optional(),
-  whatsapp_enabled: z.boolean(),
+  whatsapp_enabled: z.boolean().optional(),
   whatsapp_phone_number_id: z.string().optional().or(z.literal('')).or(z.null()),
   whatsapp_business_account_id: z.string().optional().or(z.literal('')).or(z.null()),
   whatsapp_access_token: z.string().optional().or(z.literal('')),
-  whatsapp_allowed_roles: z.array(z.enum(['owner', 'practitioner', 'receptionist', 'financial'])),
+  whatsapp_allowed_roles: z.array(z.enum(['owner', 'practitioner', 'receptionist', 'financial'])).optional(),
 })
 
 export const conversationFilterSchema = z.object({

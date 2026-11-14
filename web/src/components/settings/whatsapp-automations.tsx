@@ -196,6 +196,13 @@ export function WhatsAppAutomations({ mode, sendsPaused = false }: WhatsAppAutom
   // Last state the server confirmed, read at rollback time rather than from a render closure.
   const savedRef = useRef<LocalState>({})
   const [pendingChecks, setPendingChecks] = useState(0)
+  const [now, setNow] = useState(() => new Date())
+
+  // Keeps "Próximo envio" from saying "hoje" after today's run time has passed.
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000)
+    return () => clearInterval(timer)
+  }, [])
 
   // On the shared FloraClin number the clinic has no templates of its own:
   // sends resolve the platform-managed ones, so the panel reads those too.
@@ -424,7 +431,7 @@ export function WhatsAppAutomations({ mode, sendsPaused = false }: WhatsAppAutom
               {state.enabled && canSend && !sendsPaused && isScheduled(trigger.key) && (
                 <p className="pl-7 flex items-center gap-1.5 text-xs text-forest">
                   <CalendarClock className="size-3.5" />
-                  Próximo envio: {nextAutomationRun(trigger.key)}
+                  Próximo envio: {nextAutomationRun(trigger.key, now)}
                 </p>
               )}
 

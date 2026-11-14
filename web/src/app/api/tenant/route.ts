@@ -98,20 +98,19 @@ export async function PUT(request: Request) {
         }
       }
 
-      const settingsUpdate: Record<string, unknown> = {
-        whatsapp_mode: parsed.data.whatsapp_mode ?? 'floraclin',
-        whatsapp_enabled: parsed.data.whatsapp_enabled,
-        whatsapp_phone_number_id: parsed.data.whatsapp_phone_number_id ?? null,
-        whatsapp_business_account_id: parsed.data.whatsapp_business_account_id ?? null,
-        whatsapp_allowed_roles: parsed.data.whatsapp_allowed_roles,
-      }
-      if (parsed.data.whatsapp_access_token) {
-        settingsUpdate.whatsapp_access_token = parsed.data.whatsapp_access_token
-      }
+      // Only the keys sent are written, so a role change cannot overwrite a
+      // connection saved from another tab (updateTenantSettings merges keys).
+      const settingsUpdate = Object.fromEntries(
+        Object.entries(parsed.data).filter(([key, value]) => value !== undefined && (key !== 'whatsapp_access_token' || value)),
+      )
 
-      const current = await getTenant(ctx.tenantId)
-      const claimError = await ownNumberClaimError(ctx.tenantId, settingsUpdate, current?.settings as Settings)
-      if (claimError) return claimError
+      const touchesConnection = ['whatsapp_mode', 'whatsapp_phone_number_id', 'whatsapp_access_token'].some((key) => key in settingsUpdate)
+      if (touchesConnection) {
+        const current = await getTenant(ctx.tenantId)
+        const currentSettings = current?.settings as Settings
+        const claimError = await ownNumberClaimError(ctx.tenantId, { ...currentSettings, ...settingsUpdate }, currentSettings)
+        if (claimError) return claimError
+      }
 
       const tenant = await updateTenantSettings(ctx.tenantId, settingsUpdate)
       if (!tenant) {

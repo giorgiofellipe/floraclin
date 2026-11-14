@@ -73,7 +73,6 @@ describe('WhatsAppSettingsForm', () => {
       whatsapp_enabled: true,
       whatsapp_phone_number_id: '123456789012345',
       whatsapp_business_account_id: '987654321098765',
-      whatsapp_allowed_roles: ['owner', 'receptionist'],
       whatsapp_access_token: 'EAAG-token',
     })
     expect(await screen.findByText('Conectado ao número de ID 123456789012345.')).toBeInTheDocument()
@@ -102,7 +101,7 @@ describe('WhatsAppSettingsForm', () => {
     expect(tenantPuts(fetchMock)[0]).not.toHaveProperty('whatsapp_access_token')
   })
 
-  it('saves a role change on its own, keeping the other WhatsApp settings', async () => {
+  it('saves a role change by sending only the roles', async () => {
     const user = userEvent.setup()
     const fetchMock = stubFetch()
     renderForm({ whatsapp_allowed_roles: ['owner'] })
@@ -111,10 +110,21 @@ describe('WhatsAppSettingsForm', () => {
     await user.click(screen.getByRole('checkbox', { name: /Financeiro/ }))
 
     await waitFor(() => expect(tenantPuts(fetchMock)).toHaveLength(1))
-    expect(tenantPuts(fetchMock)[0]).toMatchObject({
-      whatsapp_mode: 'floraclin',
-      whatsapp_allowed_roles: ['owner', 'financial'],
-    })
-    expect(tenantPuts(fetchMock)[0]).not.toHaveProperty('whatsapp_access_token')
+    // Only the roles: resending mode or credentials could overwrite a connection saved from another tab.
+    expect(tenantPuts(fetchMock)[0]).toEqual({ whatsapp_allowed_roles: ['owner', 'financial'] })
+  })
+
+  it('asks before moving sends off the own number, and only then saves the mode alone', async () => {
+    const user = userEvent.setup()
+    const fetchMock = stubFetch()
+    renderForm({ whatsapp_mode: 'own', whatsapp_phone_number_id: '111', whatsapp_allowed_roles: ['owner'] })
+
+    await user.click(screen.getByRole('button', { name: 'Avançado' }))
+    await user.click(await screen.findByRole('button', { name: 'Voltar para o número do FloraClin' }))
+    expect(tenantPuts(fetchMock)).toHaveLength(0)
+
+    await user.click(screen.getByRole('button', { name: 'Usar o número do FloraClin' }))
+
+    await waitFor(() => expect(tenantPuts(fetchMock)).toEqual([{ whatsapp_mode: 'floraclin' }]))
   })
 })

@@ -22,8 +22,9 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'WhatsApp not enabled' }, { status: 400 })
     }
 
+    // The owner configures WhatsApp, so the settings screen must read templates even when the owner left their own role out.
     const allowedRoles = (settings?.whatsapp_allowed_roles as string[]) ?? ['owner']
-    if (!allowedRoles.includes(ctx.role)) {
+    if (ctx.role !== 'owner' && !allowedRoles.includes(ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

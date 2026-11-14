@@ -10,6 +10,14 @@ import {
   AccordionTrigger,
   AccordionContent,
 } from '@/components/ui/accordion'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useUpdateTenant } from '@/hooks/mutations/use-tenant-mutations'
 import { toast } from 'sonner'
 import { Loader2Icon, LockIcon, MessageSquareIcon, SmartphoneIcon } from 'lucide-react'
@@ -81,6 +89,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
   // Remounts the sheet on each open so it starts at step 1 with the saved values.
   const [sheetKey, setSheetKey] = useState(0)
   const [templatesVersion, setTemplatesVersion] = useState(0)
+  const [confirmFloraClinOpen, setConfirmFloraClinOpen] = useState(false)
   const [billingUsage, setBillingUsage] = useState<BillingUsage | null>(null)
   const [billingLoading, setBillingLoading] = useState(true)
 
@@ -111,20 +120,15 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
     fetchBilling()
   }, [])
 
-  async function persist(next: SavedSettings, accessToken: string, successMessage: string): Promise<boolean> {
+  /** Sends only the keys that changed; the route merges them into the saved settings. */
+  async function persist(
+    patch: Partial<SavedSettings>,
+    payload: Record<string, unknown>,
+    successMessage: string,
+  ): Promise<boolean> {
     try {
-      await updateTenant.mutateAsync({
-        _action: 'whatsapp_settings',
-        settings: {
-          whatsapp_mode: next.mode,
-          whatsapp_enabled: true,
-          whatsapp_phone_number_id: next.phoneNumberId || null,
-          whatsapp_business_account_id: next.businessAccountId || null,
-          whatsapp_allowed_roles: next.allowedRoles,
-          ...(accessToken ? { whatsapp_access_token: accessToken } : {}),
-        },
-      })
-      setSaved(next)
+      await updateTenant.mutateAsync({ _action: 'whatsapp_settings', settings: payload })
+      setSaved((prev) => ({ ...prev, ...patch }))
       toast.success(successMessage)
       return true
     } catch (err) {
@@ -137,15 +141,27 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
     const allowedRoles = checked
       ? [...saved.allowedRoles, role]
       : saved.allowedRoles.filter((r) => r !== role)
-    persist({ ...saved, allowedRoles }, '', 'Perfis com acesso atualizados')
+    persist({ allowedRoles }, { whatsapp_allowed_roles: allowedRoles }, 'Perfis com acesso atualizados')
   }
 
   function connectOwnNumber(credentials: OwnNumberCredentials) {
     return persist(
-      { ...saved, mode: 'own', phoneNumberId: credentials.phoneNumberId, businessAccountId: credentials.businessAccountId },
-      credentials.accessToken,
+      { mode: 'own', phoneNumberId: credentials.phoneNumberId, businessAccountId: credentials.businessAccountId },
+      {
+        whatsapp_mode: 'own',
+        whatsapp_enabled: true,
+        whatsapp_phone_number_id: credentials.phoneNumberId,
+        whatsapp_business_account_id: credentials.businessAccountId,
+        ...(credentials.accessToken ? { whatsapp_access_token: credentials.accessToken } : {}),
+      },
       'Número próprio conectado',
     )
+  }
+
+  async function switchToFloraClin() {
+    if (await persist({ mode: 'floraclin' }, { whatsapp_mode: 'floraclin' }, 'Envio pelo número do FloraClin ativado')) {
+      setConfirmFloraClinOpen(false)
+    }
   }
 
   function openSheet() {
@@ -179,21 +195,21 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                     : 'Conexão incompleta. Termine a configuração para enviar mensagens.'}
                 </p>
               </div>
-              {ownNumberLocked ? (
-                <OwnNumberLockedLink />
-              ) : (
-                <Button type="button" variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={openSheet}>
-                  {saved.phoneNumberId ? 'Editar conexão' : 'Concluir conexão'}
-                </Button>
-              )}
-              <a
-                href={SUPPORT_HREF}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="basis-full inline-flex min-h-11 items-center gap-1 pl-7 text-xs font-medium text-sage hover:text-forest underline underline-offset-2 sm:min-h-0"
-              >
-                Pedir ajuda ao suporte
-              </a>
+              <Button type="button" variant="outline" size="sm" className="min-h-11 sm:min-h-0" onClick={openSheet}>
+                {saved.phoneNumberId ? 'Editar conexão' : 'Concluir conexão'}
+              </Button>
+              <div className="basis-full flex flex-wrap items-center gap-x-4 pl-7">
+                {ownNumberLocked && <OwnNumberLockedLink />}
+                <a
+                  href={SUPPORT_HREF}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex min-h-11 items-center gap-1 text-xs font-medium text-sage hover:text-forest underline underline-offset-2 sm:min-h-0"
+                >
+                  <MessageSquareIcon className="size-3" />
+                  Pedir ajuda ao suporte
+                </a>
+              </div>
             </>
           )}
         </div>
@@ -292,10 +308,8 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
                     type="button"
                     variant="outline"
                     className="min-h-11 sm:min-h-0"
-                    disabled={updateTenant.isPending}
-                    onClick={() => persist({ ...saved, mode: 'floraclin' }, '', 'Envio pelo número do FloraClin ativado')}
+                    onClick={() => setConfirmFloraClinOpen(true)}
                   >
-                    {updateTenant.isPending && <Loader2Icon className="size-4 animate-spin" />}
                     Voltar para o número do FloraClin
                   </Button>
                 </>
@@ -304,6 +318,31 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
           </AccordionContent>
         </AccordionItem>
       </Accordion>
+
+      <Dialog open={confirmFloraClinOpen} onOpenChange={setConfirmFloraClinOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Voltar para o número do FloraClin?</DialogTitle>
+            <DialogDescription>
+              As mensagens passam a sair pelo número compartilhado do FloraClin e usam os créditos do plano. Os dados do número próprio ficam salvos para você reconectar depois.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" className="min-h-11 sm:min-h-0" onClick={() => setConfirmFloraClinOpen(false)}>
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              className="min-h-11 sm:min-h-0 bg-forest text-cream hover:bg-sage"
+              disabled={updateTenant.isPending}
+              onClick={switchToFloraClin}
+            >
+              {updateTenant.isPending && <Loader2Icon className="size-4 animate-spin" />}
+              Usar o número do FloraClin
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <WhatsAppOwnNumberSheet
         key={sheetKey}
