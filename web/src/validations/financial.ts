@@ -116,6 +116,11 @@ export const bulkPaySchema = z.object({
     message: 'Método de pagamento inválido',
   }),
   paidAt: paidAtField,
+  // Per installment, the total the dialog showed. Each one is checked behind
+  // the lock like expectedTotalDue on a single payment.
+  expectedTotals: z
+    .record(z.string().uuid(), z.number().min(0).refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'))
+    .optional(),
   card: cardPaymentField,
   accountId: accountIdField,
 }).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })

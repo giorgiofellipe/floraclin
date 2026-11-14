@@ -1068,6 +1068,7 @@ export async function bulkPayInstallments(
     installmentIds: string[]
     paymentMethod: string
     paidAt?: string
+    expectedTotals?: Record<string, number>
     card?: RecordPaymentInput['card']
     accountId?: string
   }
@@ -1170,6 +1171,13 @@ export async function bulkPayInstallments(
 
       const base = toInstallmentBase(row)
       const totalDue = quoteInstallment(base, livePayments.inputs, paidAt).totalDue
+      const expected = data.expectedTotals?.[installmentId]
+      if (expected !== undefined && toCents(totalDue) !== toCents(expected)) {
+        throw new BusinessError(
+          'QUOTE_CHANGED',
+          'O total pendente mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
+        )
+      }
       if (totalDue <= 0) continue
 
       const { allocation: applied, replay } = priceNewPayment({
@@ -1881,11 +1889,12 @@ export async function listFinancialEntries(
 
   const total = totalResult[0]?.count ?? 0
   const limit = filters.limit ?? 20
-  const open = await priceOpenInstallmentsByEntry(tenantId, entries.map((e) => e.id), now)
+  const { byEntry: open, dueByInstallment } = await priceOpenInstallmentsByEntry(tenantId, entries.map((e) => e.id), now)
 
   return {
     data: entries.map((entry) => ({
       ...entry,
+      nextAmountDue: entry.nextInstallmentId ? (dueByInstallment.get(entry.nextInstallmentId) ?? null) : null,
       isOverdue: open.get(entry.id)?.isOverdue ?? false,
       totalFineAmount: open.get(entry.id)?.fine ?? 0,
       totalInterestAmount: open.get(entry.id)?.interest ?? 0,
@@ -2000,7 +2009,8 @@ export async function getReceivablesTotals(tenantId: string, now: Date = new Dat
 /** Fine and interest due at `now` on each entry's open installments, and whether any is late. */
 async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[], now: Date) {
   const byEntry = new Map<string, { fine: number; interest: number; isOverdue: boolean }>()
-  if (entryIds.length === 0) return byEntry
+  const dueByInstallment = new Map<string, number>()
+  if (entryIds.length === 0) return { byEntry, dueByInstallment }
 
   const openInstallments = await db
     .select({
@@ -2024,7 +2034,7 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
         notInArray(installments.status, ['paid', 'cancelled'])
       )
     )
-  if (openInstallments.length === 0) return byEntry
+  if (openInstallments.length === 0) return { byEntry, dueByInstallment }
 
   const paymentsByInstallment = await loadLivePaymentsByInstallment(
     db,
@@ -2038,6 +2048,7 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
       toPaymentInputs(paymentsByInstallment.get(inst.id) ?? []),
       now,
     )
+    dueByInstallment.set(inst.id, quote.totalDue)
     const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, isOverdue: false }
     byEntry.set(inst.financialEntryId, {
       fine: round2(sums.fine + quote.fineAmount),
@@ -2046,7 +2057,7 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
         sums.isOverdue || (inst.status === 'pending' && isInstallmentOverdue(base, now)),
     })
   }
-  return byEntry
+  return { byEntry, dueByInstallment }
 }
 
 // ─── GET FINANCIAL ENTRY (enhanced) ─────────────────────────────────

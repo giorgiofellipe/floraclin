@@ -25,10 +25,11 @@ const pending: ChargeRowMenuEntry = {
 async function openMenu(entry: ChargeRowMenuEntry) {
   const onDialog = vi.fn()
   const onRenegotiate = vi.fn()
-  render(<ChargeRowMenu entry={entry} onDialog={onDialog} onRenegotiate={onRenegotiate} />)
+  const onPayAll = vi.fn()
+  render(<ChargeRowMenu entry={entry} onDialog={onDialog} onRenegotiate={onRenegotiate} onPayAll={onPayAll} />)
   await userEvent.click(screen.getByRole('button', { name: 'Mais ações' }))
   await screen.findAllByRole('menuitem')
-  return { onDialog, onRenegotiate }
+  return { onDialog, onRenegotiate, onPayAll }
 }
 
 const offered = () => screen.getAllByRole('menuitem').map((item) => item.textContent)
@@ -51,16 +52,24 @@ describe('ChargeRowMenu', () => {
     expect(onRenegotiate).toHaveBeenCalled()
   })
 
-  it('gives a receptionist only the Extrato, since renegotiate and cancel answer 403 for that role', async () => {
-    access.role = 'receptionist'
-    await openMenu(pending)
+  it('keeps settling every open installment at once on a charge with several left', async () => {
+    const { onPayAll } = await openMenu({ ...pending, pendingInstallmentIds: ['i1', 'i2'] })
 
-    expect(offered()).toEqual(['Ver no extrato'])
+    expect(offered()).toEqual(['Receber todas as parcelas (2)', 'Renegociar', 'Cancelar', 'Ver no extrato'])
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Receber todas as parcelas (2)' }))
+    expect(onPayAll).toHaveBeenCalled()
+  })
+
+  it('gives a receptionist pay-all and the Extrato only, since renegotiate and cancel answer 403 for that role', async () => {
+    access.role = 'receptionist'
+    await openMenu({ ...pending, pendingInstallmentIds: ['i1', 'i2'] })
+
+    expect(offered()).toEqual(['Receber todas as parcelas (2)', 'Ver no extrato'])
   })
 
   it('has no menu for a practitioner, who can open neither the actions nor the Extrato', () => {
     access.role = 'practitioner'
-    render(<ChargeRowMenu entry={pending} onDialog={vi.fn()} onRenegotiate={vi.fn()} />)
+    render(<ChargeRowMenu entry={pending} onDialog={vi.fn()} onRenegotiate={vi.fn()} onPayAll={vi.fn()} />)
 
     expect(screen.queryByRole('button', { name: 'Mais ações' })).not.toBeInTheDocument()
   })

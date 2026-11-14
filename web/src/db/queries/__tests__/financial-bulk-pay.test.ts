@@ -204,6 +204,29 @@ describe('bulkPayInstallments', () => {
     })
   })
 
+  it('refuses to pay an installment whose total moved away from the one the dialog showed', async () => {
+    const tx = makeTx()
+    dbMock.transaction.mockImplementationOnce(async (cb: (tx: unknown) => unknown) => cb(tx))
+    queuePrepareRows()
+
+    tx.select.mockReturnValueOnce(chain([{ id: INSTALLMENT_ID, financialEntryId: ENTRY_ID }])) // installment lock
+    tx.select.mockReturnValueOnce(chain([ENTRY])) // entry lock
+    tx.select.mockReturnValueOnce(chain([typedInstallmentRow()])) // row
+    tx.select.mockReturnValueOnce(chain([])) // existingPayments, no priors
+
+    // 790.75 is due on Sep 2 (see the test above); the dialog had shown the
+    // day before's 790.50.
+    await expect(
+      bulkPayInstallments(TENANT, USER_ID, {
+        installmentIds: [INSTALLMENT_ID],
+        paymentMethod: 'pix',
+        paidAt: '2026-09-03T00:00:00.000Z',
+        expectedTotals: { [INSTALLMENT_ID]: 790.5 },
+      }),
+    ).rejects.toMatchObject({ code: 'QUOTE_CHANGED' })
+    expect(tx.insert).not.toHaveBeenCalled()
+  })
+
   // A prior payment that covered exactly the fine and interest paid no
   // principal, so the row looks like it was never charged.
   it('does not charge the fine a second time after a prior payment covered it without touching principal', async () => {

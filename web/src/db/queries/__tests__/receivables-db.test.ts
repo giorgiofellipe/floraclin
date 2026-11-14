@@ -85,7 +85,8 @@ describeIntegration('Recebíveis list and totals (integration, requires test DB)
     expect(rows.map((r) => r.description)).toEqual(['overdue', 'soon', 'partial', 'later'])
     const partial = rows.find((r) => r.id === ids.partial)!
     expect(partial).toMatchObject({ nextInstallmentNumber: 2, nextDueDate: day(5) })
-    expect(rows[0]).toMatchObject({ nextDueDate: day(-10), isOverdue: true })
+    expect(rows[0]).toMatchObject({ nextDueDate: day(-10), isOverdue: true, nextAmountDue: 102 })
+    expect(partial.nextAmountDue).toBe(200)
   })
 
   it('filters the week ahead without the overdue ones, and the month by payments received in it', async () => {

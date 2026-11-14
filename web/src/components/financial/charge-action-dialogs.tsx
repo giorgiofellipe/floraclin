@@ -146,6 +146,9 @@ export function ChargeActionDialogs({
         installmentIds,
         paymentMethod,
         paidAt: paidAtIso,
+        expectedTotals: quoting && quotesReady
+          ? Object.fromEntries(installmentIds.map((id) => [id, quotes[id] as number]))
+          : undefined,
         card: toCardPayload(paymentMethod, card),
         accountId: cardMethod ? undefined : accountId,
       })
@@ -156,6 +159,9 @@ export function ChargeActionDialogs({
     } catch (err) {
       if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
         queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
+      }
+      if (err instanceof ApiError && err.code === 'QUOTE_CHANGED') {
+        queryClient.invalidateQueries({ queryKey: ['financial', 'installmentQuote'] })
       }
       toast.error(err instanceof Error ? err.message : 'Erro ao processar')
     }

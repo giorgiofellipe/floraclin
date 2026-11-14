@@ -11,8 +11,9 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { toBrYmd } from '@/lib/dates'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
-import { CHARGE_MANAGER_ROLES, hasRole, LEDGER_VIEWER_ROLES } from '@/lib/financial/charge-roles'
+import { CHARGE_MANAGER_ROLES, CHARGE_PAYER_ROLES, hasRole, LEDGER_VIEWER_ROLES } from '@/lib/financial/charge-roles'
 import {
+  BanknoteIcon,
   BookOpenIcon,
   MoreHorizontalIcon,
   RefreshCwIcon,
@@ -26,7 +27,10 @@ export interface ChargeRowMenuEntry {
   patientId: string
   status: string
   createdAt: Date | string
+  pendingInstallmentIds?: string[]
 }
+
+const OPEN_STATUSES = ['pending', 'partial', 'overdue']
 
 /** Why Renegociar is off for this charge, or null when it applies (same rule as the bulk bar). */
 export function renegotiateBlockedReason(status: string): string | null {
@@ -48,8 +52,9 @@ export function ledgerHrefFor(entry: Pick<ChargeRowMenuEntry, 'patientId' | 'cre
 }
 
 /**
- * The "⋯" on a charge row: renegotiate, cancel or reactivate this one charge,
- * plus a jump to its payments in the Extrato. Receber is the row's own
+ * The "⋯" on a charge row: settle every open installment at once,
+ * renegotiate, cancel or reactivate this one charge, plus a jump to its
+ * payments in the Extrato. Receber (the next installment) is the row's own
  * button. Off items say why in the menu itself, so the reason is readable on
  * touch too.
  */
@@ -57,18 +62,22 @@ export function ChargeRowMenu({
   entry,
   onDialog,
   onRenegotiate,
+  onPayAll,
 }: {
   entry: ChargeRowMenuEntry
   onDialog: (dialog: ChargeDialog) => void
   onRenegotiate: () => void
+  onPayAll: () => void
 }) {
   const { role } = useSubscriptionAccess()
   const canManage = hasRole(CHARGE_MANAGER_ROLES, role)
   const canSeeLedger = hasRole(LEDGER_VIEWER_ROLES, role)
+  const pendingCount = entry.pendingInstallmentIds?.length ?? 0
+  const canPayAll = hasRole(CHARGE_PAYER_ROLES, role) && OPEN_STATUSES.includes(entry.status) && pendingCount > 1
   const renegotiateReason = renegotiateBlockedReason(entry.status)
   const isCancelled = entry.status === 'cancelled'
 
-  if (!canManage && !canSeeLedger) return null
+  if (!canManage && !canSeeLedger && !canPayAll) return null
 
   return (
     <DropdownMenu>
@@ -85,6 +94,12 @@ export function ChargeRowMenu({
         }
       />
       <DropdownMenuContent align="end" className="w-60">
+        {canPayAll && (
+          <DropdownMenuItem className="min-h-11" onClick={onPayAll}>
+            <BanknoteIcon />
+            Receber todas as parcelas ({pendingCount})
+          </DropdownMenuItem>
+        )}
         {canManage && (
           <>
             <DropdownMenuItem className="min-h-11 flex-wrap" disabled={renegotiateReason !== null} onClick={onRenegotiate}>

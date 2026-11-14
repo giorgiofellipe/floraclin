@@ -56,6 +56,7 @@ function entry(id: string, overrides: Record<string, unknown> = {}) {
     nextInstallmentNumber: 1,
     nextDueDate: shiftBrYmd(brToday(), 10),
     lastPaidAt: null,
+    nextAmountDue: 400,
     ...overrides,
   }
 }
@@ -112,8 +113,13 @@ describe('FinancialList (Recebíveis inbox)', () => {
   })
 
   it('receives the next installment from the row, titled with amount and patient, dated today, in the planned method', async () => {
-    serve([entry('a', { installmentCount: 3, nextInstallmentNumber: 2, nextInstallmentId: 'a-inst-2' })])
+    serve([entry('a', { totalAmount: '1200.00', installmentCount: 3, nextInstallmentNumber: 2, nextInstallmentId: 'a-inst-2', nextAmountDue: 412.5 })])
     renderList()
+
+    // The row shows what Receber takes now, not the whole charge.
+    const row = await screen.findByTestId('financial-entry-a')
+    expect(within(row).getAllByText('R$ 412,50').length).toBeGreaterThan(0)
+    expect(within(row).getByText('de R$ 1.200,00')).toBeInTheDocument()
 
     await userEvent.click(await screen.findByTestId('financial-entry-receive'))
 
@@ -124,7 +130,12 @@ describe('FinancialList (Recebíveis inbox)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }))
     await waitFor(() =>
       expect(mockBulkPay).toHaveBeenCalledWith(
-        expect.objectContaining({ installmentIds: ['a-inst-2'], paymentMethod: 'cash', paidAt: undefined }),
+        expect.objectContaining({
+          installmentIds: ['a-inst-2'],
+          paymentMethod: 'cash',
+          paidAt: undefined,
+          expectedTotals: { 'a-inst-2': 412.5 },
+        }),
       ),
     )
   })

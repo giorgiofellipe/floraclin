@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { cn, formatCurrency } from '@/lib/utils'
+import { cn, formatCurrency, formatDate } from '@/lib/utils'
 import { brToday } from '@/lib/dates'
 import { PAYMENT_METHOD_ITEMS } from '@/lib/financial/constants'
 import { CHARGE_PAYER_ROLES, hasRole } from '@/lib/financial/charge-roles'
@@ -75,6 +75,7 @@ interface FinancialEntry {
   nextInstallmentNumber: number | null
   nextDueDate: string | null
   lastPaidAt: string | null
+  nextAmountDue: number | null
 }
 
 const OPEN_STATUSES = ['pending', 'partial', 'overdue']
@@ -105,6 +106,7 @@ const VIEW_TABS = [
 
 const STATUS_FILTER_ITEMS: Record<string, string> = {
   open: 'A receber',
+  pending: 'Pendentes',
   paid: 'Recebidas',
   cancelled: 'Canceladas',
   renegotiated: 'Renegociadas',
@@ -167,7 +169,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   // Set when Renegociar comes from one row's menu instead of the selection.
   const [renegRowEntry, setRenegRowEntry] = useState<FinancialEntry | null>(null)
   // The entry outlives its dialog so the closing animation keeps its title.
-  const [rowAction, setRowAction] = useState<{ dialog: ChargeDialog | null; entry: FinancialEntry } | null>(null)
+  const [rowAction, setRowAction] = useState<{ dialog: ChargeDialog | null; entry: FinancialEntry; payAll?: boolean } | null>(null)
   const [showFilters, setShowFilters] = useState(false)
 
   const updateParams = useCallback(
@@ -348,15 +350,18 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   )
 
   const rowEntry = rowAction?.entry
+  const rowInstallmentIds = rowAction?.payAll
+    ? (rowEntry?.pendingInstallmentIds ?? [])
+    : rowEntry?.nextInstallmentId ? [rowEntry.nextInstallmentId] : []
+  const rowDetail = (entry: FinancialEntry) => {
+    if (rowAction?.payAll) return `${rowInstallmentIds.length} parcelas · ${entry.description}`
+    if (entry.installmentCount > 1 && entry.nextInstallmentNumber) {
+      return `Parcela ${entry.nextInstallmentNumber} de ${entry.installmentCount} · ${entry.description}`
+    }
+    return entry.description
+  }
   const rowPayee = rowEntry
-    ? {
-        patientName: rowEntry.patientName,
-        paymentMethod: rowEntry.paymentMethod,
-        detail:
-          rowEntry.installmentCount > 1 && rowEntry.nextInstallmentNumber
-            ? `Parcela ${rowEntry.nextInstallmentNumber} de ${rowEntry.installmentCount} · ${rowEntry.description}`
-            : rowEntry.description,
-      }
+    ? { patientName: rowEntry.patientName, paymentMethod: rowEntry.paymentMethod, detail: rowDetail(rowEntry) }
     : undefined
 
   const newChargeButton = (className?: string) => (
@@ -592,6 +597,9 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
               const renegLinks = entry.renegotiationLinks ?? []
               const isFromRenegotiation = renegLinks.some((l) => l.newEntryId === entry.id)
               const line = dueLine(entry, todayYmd)
+              const totalAmount = Number(entry.totalAmount ?? 0)
+              // An open row shows what Receber would take now: the next installment with its fine and interest.
+              const amountShown = OPEN_STATUSES.includes(entry.status) && entry.nextAmountDue !== null ? entry.nextAmountDue : totalAmount
               const receivable = canReceive && OPEN_STATUSES.includes(entry.status) && entry.nextInstallmentId !== null
               const toggleExpanded = () => setExpandedId(isExpanded ? null : entry.id)
 
@@ -634,11 +642,12 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                           <span className="truncate text-sm font-medium text-charcoal">{entry.patientName}</span>
                           {/* Phones keep the amount on the name's line so the due line gets the full width */}
                           <span className={cn('shrink-0 text-sm font-semibold tabular-nums sm:hidden', entry.isOverdue ? 'text-red-700' : 'text-charcoal')}>
-                            {formatCurrency(Number(entry.totalAmount ?? 0))}
+                            {formatCurrency(amountShown)}
                           </span>
                         </span>
                         <span className="flex items-center gap-2">
                           <span className="truncate text-xs text-mid">{entry.description}</span>
+                          <span className="hidden shrink-0 text-xs text-mid sm:inline">· criada {formatDate(entry.createdAt)}</span>
                           {isFromRenegotiation && (
                             <span className="shrink-0 text-[10px] font-medium text-blue-600">Renegociação</span>
                           )}
@@ -682,7 +691,10 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                           entry.isOverdue ? 'text-red-700' : 'text-charcoal',
                         )}
                       >
-                        {formatCurrency(Number(entry.totalAmount ?? 0))}
+                        <span className="block">{formatCurrency(amountShown)}</span>
+                        {amountShown !== totalAmount && (
+                          <span className="block text-[10px] font-normal text-mid">de {formatCurrency(totalAmount)}</span>
+                        )}
                       </span>
                     </button>
 
@@ -706,6 +718,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                         setRenegRowEntry(entry)
                         setRenegDialogOpen(true)
                       }}
+                      onPayAll={guard(() => setRowAction({ dialog: 'pay', entry, payAll: true }))}
                     />
                   </div>
 
@@ -767,7 +780,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
       <ChargeActionDialogs
         dialog={rowAction?.dialog ?? null}
         onDialogChange={(dialog) => setRowAction((prev) => (prev ? { ...prev, dialog } : null))}
-        installmentIds={rowEntry?.nextInstallmentId ? [rowEntry.nextInstallmentId] : []}
+        installmentIds={rowInstallmentIds}
         entryIds={rowEntry ? [rowEntry.id] : []}
         payee={rowPayee}
         onSuccess={fetchEntries}

@@ -132,6 +132,7 @@ export function useBulkPay() {
       installmentIds: string[]
       paymentMethod: string
       paidAt?: string
+      expectedTotals?: Record<string, number>
       card?: CardPaymentPayload
       accountId?: string
     }) => mutateJson('/api/financial/bulk/pay', 'POST', data) as Promise<{ nfse?: NfseIntake }>,
