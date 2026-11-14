@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { WhatsAppAutomations } from '../whatsapp-automations'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { WhatsAppAutomations as Automations } from '../whatsapp-automations'
+
+function WhatsAppAutomations(props: React.ComponentProps<typeof Automations>) {
+  return (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <Automations {...props} />
+    </QueryClientProvider>
+  )
+}
 
 vi.mock('sonner', () => ({
   toast: { success: vi.fn(), error: vi.fn() },
@@ -105,7 +114,7 @@ describe('WhatsAppAutomations in FloraClin mode', () => {
     expect(screen.queryByRole('button', { name: /criar template padrão/i })).not.toBeInTheDocument()
   })
 
-  it('never sends a system template id when saving — the PATCH validates ids against the tenant', async () => {
+  it('never sends a system template id when saving: the PATCH validates ids against the tenant', async () => {
     const fetchMock = mockFetch({
       '/api/whatsapp/automations': { data: [AUTOMATION] },
       '/api/whatsapp/templates/system': { data: [SYSTEM_TEMPLATE] },
@@ -117,10 +126,7 @@ describe('WhatsAppAutomations in FloraClin mode', () => {
 
     render(<WhatsAppAutomations mode="floraclin" />)
 
-    // First trigger in the panel is appointment_confirmation.
-    const [toggle] = await screen.findAllByRole('switch')
-    await userEvent.click(toggle)
-    await userEvent.click(screen.getByRole('button', { name: /salvar automações/i }))
+    await userEvent.click(await screen.findByRole('switch', { name: 'Confirmação de consulta' }))
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
@@ -147,10 +153,7 @@ describe('WhatsAppAutomations in own-number mode', () => {
 
     render(<WhatsAppAutomations mode="own" />)
 
-    // First trigger in the panel is appointment_confirmation.
-    const [toggle] = await screen.findAllByRole('switch')
-    await userEvent.click(toggle)
-    await userEvent.click(screen.getByRole('button', { name: /salvar automações/i }))
+    await userEvent.click(await screen.findByRole('switch', { name: 'Confirmação de consulta' }))
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
@@ -225,5 +228,83 @@ describe('WhatsAppAutomations pending-template polling', () => {
       await vi.advanceTimersByTimeAsync(60_000)
     })
     expect(templateCalls(fetchMock)).toBe(2)
+  })
+})
+
+describe('WhatsAppAutomations autosave and guidance', () => {
+  it('reverts the switch and says so when the save fails, instead of showing an automation that is off as on', async () => {
+    const { toast } = await import('sonner')
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'PATCH') return { ok: false, json: async () => ({ error: 'Sem permissão' }) } as Response
+      if (url === '/api/whatsapp/automations') return { ok: true, json: async () => ({ data: [] }) } as Response
+      return { ok: true, json: async () => ({ data: [SYSTEM_TEMPLATE] }) } as Response
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<WhatsAppAutomations mode="floraclin" />)
+
+    const toggle = await screen.findByRole('switch', { name: 'Confirmação de consulta' })
+    await userEvent.click(toggle)
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Sem permissão')))
+    expect(toggle).not.toBeChecked()
+  })
+
+  it('shows guidance instead of an empty section when the own number is not connected', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url === '/api/whatsapp/automations'
+        ? ({ ok: false, status: 400, json: async () => ({ error: 'WhatsApp not enabled' }) } as Response)
+        : ({ ok: true, json: async () => ({ data: [] }) } as Response),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<WhatsAppAutomations mode="own" />)
+
+    expect(await screen.findByText(/Conecte o número próprio para ativar/)).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+
+  it('asks for the standard templates when own mode has none', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      '/api/whatsapp/automations': { data: [{ ...AUTOMATION, enabled: false }] },
+      '/api/whatsapp/templates': { data: [] },
+      '/api/procedure-types': [],
+    }))
+
+    render(<WhatsAppAutomations mode="own" />)
+
+    expect(await screen.findByText(/Crie os templates padrão/)).toBeInTheDocument()
+    expect(screen.queryByRole('switch')).not.toBeInTheDocument()
+  })
+
+  it('keeps the switches when own mode has no templates but an automation is still on, so it can be turned off', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      '/api/whatsapp/automations': { data: [AUTOMATION] },
+      '/api/whatsapp/templates': { data: [] },
+      '/api/procedure-types': [],
+    }))
+
+    render(<WhatsAppAutomations mode="own" />)
+
+    expect(await screen.findByText(/Crie os templates padrão/)).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Confirmação de consulta' })).toBeChecked()
+  })
+
+  it('shows the next send of an enabled daily automation and warns when no procedure has care text', async () => {
+    vi.stubGlobal('fetch', mockFetch({
+      '/api/whatsapp/automations': {
+        data: [AUTOMATION, { ...AUTOMATION, id: 'auto-2', trigger: 'post_procedure_care' }],
+      },
+      '/api/whatsapp/templates/system': {
+        data: [SYSTEM_TEMPLATE, { ...SYSTEM_TEMPLATE, id: 'sys-2', purposeKey: 'post_procedure_care' }],
+      },
+      '/api/procedure-types': [{ preProcedureInstructions: null, postProcedureCare: '  ' }],
+    }))
+
+    render(<WhatsAppAutomations mode="floraclin" />)
+
+    expect(await screen.findByText(/Próximo envio: (hoje|amanhã) às 6h30/)).toBeInTheDocument()
+    expect(await screen.findByText(/Nenhum procedimento tem cuidados pós-procedimento cadastrados/)).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Cadastrar em Procedimentos' })).toHaveAttribute('href', '/configuracoes?tab=procedimentos')
   })
 })

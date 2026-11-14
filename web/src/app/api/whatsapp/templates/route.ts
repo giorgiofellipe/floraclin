@@ -29,8 +29,9 @@ async function checkWhatsAppAccess(requireOwner: boolean) {
       throw new ForbiddenError()
     }
   } else {
+    // The owner configures WhatsApp, so the settings screen must read templates even when the owner left their own role out.
     const allowedRoles = (settings?.whatsapp_allowed_roles as string[]) ?? ['owner']
-    if (!allowedRoles.includes(ctx.role)) {
+    if (ctx.role !== 'owner' && !allowedRoles.includes(ctx.role)) {
       throw new ForbiddenError()
     }
   }

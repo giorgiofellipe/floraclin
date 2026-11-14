@@ -1,7 +1,8 @@
 import { db } from '@/db/client'
 import { provisionDefaultAccounts } from '@/db/queries/financial-accounts'
+import { provisionDefaultAutomations } from '@/db/queries/whatsapp'
 import { PLACEHOLDER_NAME_SETTING, PLACEHOLDER_SLUG_SETTING } from '@/lib/clinic-placeholder'
-import { tenants, users, tenantUsers, patients, financialEntries, plans, whatsappAutomations } from '@/db/schema'
+import { tenants, users, tenantUsers, patients, financialEntries, plans } from '@/db/schema'
 import { eq, and, ne, ilike, or, sql, desc, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
 import { mergeSettings } from '@/db/queries/tenants'
@@ -175,6 +176,7 @@ export async function createTenantWithOwner(data: {
       })
       .returning()
     await provisionDefaultAccounts(tx, t.id)
+    await provisionDefaultAutomations(tx, t.id)
 
     // 4. Insert tenant_users (owner)
     await tx.insert(tenantUsers).values({
@@ -419,12 +421,7 @@ export async function insertSelfSignupTenantBase(
 
   await provisionDefaultAccounts(tx, row.id)
 
-  await tx.insert(whatsappAutomations).values({
-    tenantId: row.id,
-    trigger: 'appointment_confirmation',
-    enabled: true,
-    firstEnabledAt: new Date(),
-  })
+  await provisionDefaultAutomations(tx, row.id)
 
   return {
     id: row.id,

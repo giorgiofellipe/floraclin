@@ -90,10 +90,10 @@ describe('whatsappSettingsSchema', () => {
     expect(result.success).toBe(true)
   })
 
-  it('fails when whatsapp_enabled is missing', () => {
-    const { whatsapp_enabled, ...rest } = validSettings
-    const result = whatsappSettingsSchema.safeParse(rest)
-    expect(result.success).toBe(false)
+  it('accepts a roles-only update, so a role change does not resend the connection', () => {
+    const result = whatsappSettingsSchema.safeParse({ whatsapp_allowed_roles: ['owner'] })
+    expect(result.success).toBe(true)
+    if (result.success) expect(result.data).toEqual({ whatsapp_allowed_roles: ['owner'] })
   })
 
   it('allows empty whatsapp_phone_number_id for partial saves', () => {

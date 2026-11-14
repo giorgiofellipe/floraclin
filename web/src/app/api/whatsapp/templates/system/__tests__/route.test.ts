@@ -76,6 +76,18 @@ describe('GET /api/whatsapp/templates/system', () => {
     expect(listSystemTemplates).not.toHaveBeenCalled()
   })
 
+  it('lets the owner read the templates for the settings screen even when the owner role is not allowed on WhatsApp', async () => {
+    vi.mocked(getTenant).mockResolvedValue({
+      id: 'tenant-1',
+      name: 'Dra. Micaela Floriani',
+      settings: { whatsapp_mode: 'floraclin', whatsapp_allowed_roles: ['receptionist'] },
+    } as never)
+
+    const res = await GET(makeRequest())
+
+    expect(res.status).toBe(200)
+  })
+
   it('refuses an own-number clinic that has not enabled WhatsApp', async () => {
     vi.mocked(getTenant).mockResolvedValue({
       id: 'tenant-1',

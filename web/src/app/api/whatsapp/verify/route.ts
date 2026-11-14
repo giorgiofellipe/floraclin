@@ -22,7 +22,7 @@ export async function POST(request: Request) {
 
     if (!phoneNumberId || !accessToken) {
       return NextResponse.json(
-        { error: 'Phone Number ID e Access Token são obrigatórios' },
+        { error: 'ID do número de telefone e token de acesso são obrigatórios' },
         { status: 400 },
       )
     }

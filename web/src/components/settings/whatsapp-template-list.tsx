@@ -356,8 +356,8 @@ export function WhatsAppTemplateList({ onProvision, configured = false }: WhatsA
           </p>
           {templates.length === 0 && (
             <p className="mt-1 text-xs text-mid">
-              Clique em &quot;Novo Template&quot; para criar ou
-              &quot;Provisionar&quot; para gerar templates padrão.
+              Clique em &quot;Criar templates padrão&quot; para gerar os templates das
+              mensagens automáticas, ou em &quot;Novo Template&quot; para criar um do zero.
             </p>
           )}
         </div>
