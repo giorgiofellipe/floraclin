@@ -4,6 +4,10 @@ vi.mock('@/lib/write-access', () => ({
   requireWrite: vi.fn(),
 }))
 
+vi.mock('@/lib/auth', () => ({
+  getAuthContext: vi.fn(),
+}))
+
 vi.mock('@/lib/audit', () => ({
   createAuditLog: vi.fn(),
 }))
@@ -30,7 +34,8 @@ vi.mock('@/db/queries/appointments', () => ({
 import { requireWrite } from '@/lib/write-access'
 import { getAppointmentById, updateAppointment, checkTimeConflict } from '@/db/queries/appointments'
 import { sendRescheduleNotification } from '@/lib/whatsapp-reschedule'
-import { PUT } from '../route'
+import { getAuthContext } from '@/lib/auth'
+import { GET, PUT } from '../route'
 
 const APPOINTMENT_ID = '11111111-1111-4111-8111-111111111111'
 const PRACTITIONER_ID = '22222222-2222-4222-8222-222222222222'
@@ -144,5 +149,45 @@ describe('PUT /api/appointments/[id]', () => {
 
     expect(res.status).toBe(200)
     expect(sendRescheduleNotification).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/appointments/[id]', () => {
+  function get(id: string) {
+    return GET(new Request(`http://localhost/api/appointments/${id}`), { params: Promise.resolve({ id }) })
+  }
+
+  beforeEach(() => {
+    vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 'tenant-1', userId: 'user-1', role: 'practitioner' } as never)
+  })
+
+  // The atendimento prefills from this; the booking contact and notes must not ride along.
+  it("returns only what the atendimento needs, looked up in the caller's clinic", async () => {
+    vi.mocked(getAppointmentById).mockResolvedValue({
+      ...current,
+      patientId: 'pat-1',
+      procedureTypeId: 'type-1',
+      bookingPhone: '11999990000',
+      notes: 'privado',
+    } as never)
+
+    const res = await get(APPOINTMENT_ID)
+
+    expect(getAppointmentById).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID)
+    expect(await res.json()).toEqual({
+      id: APPOINTMENT_ID,
+      patientId: 'pat-1',
+      procedureTypeId: 'type-1',
+      status: 'scheduled',
+      date: '2026-10-12',
+    })
+  })
+
+  // A malformed id reached Postgres as a uuid cast and came back as a 500.
+  it('answers 404 for a malformed id without querying', async () => {
+    const res = await get('not-a-uuid')
+
+    expect(res.status).toBe(404)
+    expect(getAppointmentById).not.toHaveBeenCalled()
   })
 })

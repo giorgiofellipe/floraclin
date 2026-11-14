@@ -3,7 +3,7 @@
 export interface StepResult {
   success: boolean
   procedureId?: string
-  /** Server-assigned status after save — lets the wizard advance correctly for draft vs planned. */
+  /** Server-assigned status after save; lets the wizard advance correctly for draft vs planned. */
   procedureStatus?: 'draft' | 'planned' | 'approved' | 'in_progress' | 'completed' | 'cancelled'
   error?: string
   errorType?: 'validation' | 'precondition' | 'server'
@@ -26,16 +26,9 @@ export interface WizardOverrides {
   onUserEdit?: () => void
   /** Called after a non-triggerSave save (e.g., anamnesis auto-save) so the wizard can refresh its stepTimestamps. */
   onAutoSaved?: (timestamp: Date) => void
-  /** 'final' runs strict validation (e.g., step 3 → step 4). Default 'draft'. */
+  /** 'final' runs strict validation (planning before approval). Default 'draft'. */
   validationMode?: 'draft' | 'final'
-  /**
-   * 'commit' = run the step's terminal mutation (e.g., execute → status transition).
-   * 'partial' = save current scalar/array field state without any status change.
-   * Only step 5 consumes this today (Salvar e sair routes through the regular
-   * update endpoint instead of /execute). Default 'commit'.
-   */
-  saveMode?: 'commit' | 'partial'
-  /** Step 4: reports the "card payment done now" choice so the wizard can send it with finalize. */
+  /** Approval: reports the "card payment done now" choice so the wizard can send it with finalize. */
   onCardPaymentChange?: (value: CardPaymentChoice) => void
 }
 

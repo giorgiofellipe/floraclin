@@ -60,6 +60,8 @@ export interface ExistingEvaluationResponse {
   templateSnapshot: FormSection[]
 }
 
+const TEMPLATES_LOADING_MESSAGE = 'Aguarde o carregamento das fichas de avaliação.'
+
 const STATUS_LABELS: Record<string, string> = {
   planned: 'Planejado',
   approved: 'Aprovado',
@@ -555,11 +557,11 @@ export function ProcedureForm({
             console.log('[planning] aborting — evaluation templates still loading')
             form.setError('root.serverError' as never, {
               type: 'manual',
-              message: 'Aguarde o carregamento dos templates de avaliação',
+              message: TEMPLATES_LOADING_MESSAGE,
             })
             wizardOverrides?.onSaveComplete?.({
               success: false,
-              error: 'Templates loading',
+              error: TEMPLATES_LOADING_MESSAGE,
               errorType: 'precondition',
             })
             return

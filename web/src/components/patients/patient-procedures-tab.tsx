@@ -467,7 +467,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                     <Button
                       size="sm"
                       className="h-7 rounded-[3px] border-0 bg-forest/10 text-[11px] uppercase tracking-wider text-forest shadow-none hover:bg-forest/20"
-                      onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
+                      onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=2`)}
                     >
                       <Pencil className="mr-1 size-3" />
                       Continuar
@@ -478,7 +478,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       <Button
                         size="sm"
                         className="h-7 rounded-[3px] border-0 bg-sage/10 text-[11px] uppercase tracking-wider text-sage shadow-none hover:bg-sage/20"
-                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=4`)}
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
                       >
                         <CheckCircle2 className="mr-1 size-3" />
                         Aprovar
@@ -487,7 +487,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                         size="sm"
                         variant="ghost"
                         className="h-7 rounded-[3px] text-[11px] uppercase tracking-wider text-mid hover:bg-cream/40 hover:text-charcoal"
-                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=3`)}
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=2`)}
                       >
                         <Pencil className="mr-1 size-3" />
                         Editar
@@ -509,7 +509,7 @@ export function PatientProceduresTab({ patientId }: PatientProceduresTabProps) {
                       <Button
                         size="sm"
                         className="h-7 rounded-[3px] border-0 bg-forest/10 text-[11px] uppercase tracking-wider text-forest shadow-none hover:bg-forest/20"
-                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=5`)}
+                        onClick={() => router.push(`/pacientes/${patientId}/atendimento?step=4`)}
                       >
                         <Play className="mr-1 size-3" />
                         Registrar execução

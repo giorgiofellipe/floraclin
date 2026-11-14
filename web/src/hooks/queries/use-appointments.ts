@@ -48,6 +48,31 @@ export function usePractitioners({ enabled = true }: { enabled?: boolean } = {})
   })
 }
 
+export interface AppointmentDetail {
+  id: string
+  patientId: string | null
+  procedureTypeId: string | null
+  status: string
+  /** BR calendar day, `YYYY-MM-DD`. */
+  date: string
+}
+
+export function useAppointment(id: string) {
+  return useQuery({
+    queryKey: queryKeys.appointments.detail(id),
+    enabled: !!id,
+    retry: false,
+    queryFn: async (): Promise<AppointmentDetail> => {
+      const res = await fetch(`/api/appointments/${id}`)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao carregar agendamento')
+      }
+      return res.json()
+    },
+  })
+}
+
 export function useAppointmentProcedureTypes() {
   return useQuery({
     queryKey: queryKeys.appointments.procedureTypes,

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server'
+import { z } from 'zod'
+import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
@@ -14,6 +16,26 @@ import { handleApiError } from '@/lib/api-error'
 import { toHhMm } from '@/lib/time-options'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 import { sendRescheduleNotification } from '@/lib/whatsapp-reschedule'
+
+const UUID = z.string().uuid()
+
+export async function GET(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await getAuthContext()
+    const { id } = await params
+    const appointment = UUID.safeParse(id).success ? await getAppointmentById(ctx.tenantId, id) : null
+    if (!appointment) {
+      return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
+    }
+    const { patientId, procedureTypeId, status, date } = appointment
+    return NextResponse.json({ id, patientId, procedureTypeId, status, date })
+  } catch (error) {
+    return handleApiError(error, request)
+  }
+}
 
 export async function PUT(
   request: Request,

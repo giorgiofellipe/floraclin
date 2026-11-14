@@ -18,6 +18,8 @@ interface SendAnamnesisDialogProps {
   patientName: string
   patientPhone?: string
   whatsappApiEnabled?: boolean
+  label?: string
+  className?: string
 }
 
 export function SendAnamnesisDialog({
@@ -25,6 +27,8 @@ export function SendAnamnesisDialog({
   patientName,
   patientPhone,
   whatsappApiEnabled = false,
+  label = 'Enviar Anamnese',
+  className,
 }: SendAnamnesisDialogProps) {
   const [loading, setLoading] = useState(false)
   const [url, setUrl] = useState<string | null>(null)
@@ -92,7 +96,7 @@ export function SendAnamnesisDialog({
       <Button
         variant="outline"
         size="sm"
-        className="border-sage/20 text-sage hover:bg-sage/5 gap-2"
+        className={cn('border-sage/20 text-sage hover:bg-sage/5 gap-2', className)}
         onClick={handleGenerate}
         disabled={loading}
       >
@@ -101,7 +105,7 @@ export function SendAnamnesisDialog({
         ) : (
           <SendIcon className="h-3.5 w-3.5" />
         )}
-        {loading ? 'Gerando link...' : 'Enviar Anamnese'}
+        {loading ? 'Gerando link...' : label}
       </Button>
     )
   }

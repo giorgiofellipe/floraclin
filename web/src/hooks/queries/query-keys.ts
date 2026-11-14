@@ -14,6 +14,7 @@ export const queryKeys = {
     list: (practitionerId: string | undefined, dateFrom: string, dateTo: string) =>
       ['appointments', 'list', practitionerId, dateFrom, dateTo] as const,
     practitioners: ['appointments', 'practitioners'] as const,
+    detail: (id: string) => ['appointments', 'detail', id] as const,
     procedureTypes: ['appointments', 'procedureTypes'] as const,
     byPatient: (patientId: string) => ['appointments', 'patient', patientId] as const,
   },
