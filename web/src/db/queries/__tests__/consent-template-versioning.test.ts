@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chain, routedTx, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import { chain, routedTx, tableOf, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import { auditLogs } from '@/db/schema'
 
 const { dbMock } = vi.hoisted(() => ({ dbMock: { transaction: vi.fn(), select: vi.fn() } }))
 vi.mock('@/db/client', () => ({ db: dbMock }))
 
-import { createConsentTemplate, updateConsentTemplate } from '@/db/queries/consent'
+import { createConsentTemplate, seedDefaultConsentTemplates, updateConsentTemplate } from '@/db/queries/consent'
 
 const TENANT = 'tenant-1'
 const GENERAL = { type: 'general' as const, title: 'Consentimento Geral', content: 'Texto padrão' }
@@ -86,5 +87,65 @@ describe('updateConsentTemplate', () => {
     expect(template).toMatchObject({ type: 'general', title: 'Antigo', version: 4, isActive: true })
     expect(queriesBeforeLock).toBe(0)
     expectScopedToTenantAndType()
+  })
+})
+
+describe('seedDefaultConsentTemplates', () => {
+  let activeTemplate: { id: string } | null
+  // Queries issued before each advisory lock, in order.
+  let locks: number[]
+
+  beforeEach(() => {
+    activeTemplate = null
+    locks = []
+    const routed = routedTx((q) => {
+      if (q.op === 'select') {
+        return q.fields && 'id' in (q.fields as object) ? (activeTemplate ? [activeTemplate] : []) : [{ version: null }]
+      }
+      if (q.op === 'insert') return [{ id: 'new-id', ...(q.capture.value as object) }]
+      return []
+    })
+    log = routed.log
+    const tx = {
+      ...routed.tx,
+      execute: vi.fn(async () => {
+        locks.push(log.length)
+        return []
+      }),
+    }
+    dbMock.transaction.mockImplementation(async (cb: (t: typeof tx) => unknown) => cb(tx))
+  })
+
+  it('creates v1 of every standard type on a tenant with no active template', async () => {
+    const created = await seedDefaultConsentTemplates(TENANT)
+
+    expect(created.map((t) => t.type)).toEqual([
+      'general', 'botox', 'filler', 'biostimulator', 'limpeza_pele',
+      'enzima', 'skinbooster', 'microagulhamento', 'service_contract',
+    ])
+    expect(created.every((t) => t.version === 1)).toBe(true)
+    expect(whereParams(log[0].capture)).toEqual([TENANT, true])
+  })
+
+  // A failed audit insert must roll the seed back; written after the commit, a retry
+  // would find the templates and never audit them.
+  it('writes one audit row per template inside the seed transaction', async () => {
+    await seedDefaultConsentTemplates(TENANT, 'user-1')
+
+    const audits = log.filter((q) => q.op === 'insert' && tableOf(q) === auditLogs)
+    expect(audits).toHaveLength(9)
+    expect(audits[0].capture.value).toMatchObject({ tenantId: TENANT, userId: 'user-1', entityType: 'consent_template' })
+  })
+
+  // "Usar modelos padrão" double click, or an onboarding retry: a second run must not
+  // stack v2 copies on top of the clinic's templates.
+  it('creates nothing when the tenant already has an active template', async () => {
+    activeTemplate = { id: 't-1' }
+
+    const created = await seedDefaultConsentTemplates(TENANT)
+
+    expect(created).toEqual([])
+    expect(locks).toEqual([0])
+    expect(log.map((q) => q.op)).toEqual(['select'])
   })
 })

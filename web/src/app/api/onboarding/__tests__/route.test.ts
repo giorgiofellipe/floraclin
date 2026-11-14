@@ -37,8 +37,7 @@ vi.mock('@/db/queries/booking-slugs', () => ({ isBookingSlugFree: vi.fn(async ()
 vi.mock('@/lib/lifecycle-sender', () => ({ scheduleLifecycleWelcome: vi.fn() }))
 vi.mock('@/db/queries/products', () => ({ listProducts: vi.fn(async () => []), createProduct: vi.fn() }))
 vi.mock('@/db/queries/consent', () => ({
-  createConsentTemplate: vi.fn(),
-  listConsentTemplates: vi.fn(async () => ({ general: [{ id: 'c' }] })),
+  seedDefaultConsentTemplates: vi.fn(),
 }))
 vi.mock('@/db/queries/clinical-documents', () => ({
   listClinicalDocumentTemplates: vi.fn(async () => [{ id: 'd' }]),
@@ -58,7 +57,7 @@ import { findAvailableSlug } from '@/db/queries/admin-tenants'
 import { isBookingSlugFree } from '@/db/queries/booking-slugs'
 import { db } from '@/db/client'
 import { createProduct } from '@/db/queries/products'
-import { createConsentTemplate, listConsentTemplates } from '@/db/queries/consent'
+import { seedDefaultConsentTemplates } from '@/db/queries/consent'
 import { createClinicalDocumentTemplate, listClinicalDocumentTemplates } from '@/db/queries/clinical-documents'
 import { createTemplate } from '@/db/queries/evaluation-templates'
 import { trackServerEvent } from '@/lib/analytics/server'
@@ -83,7 +82,6 @@ beforeEach(() => {
   updateSet.mockImplementation(() => ({ where: updateWhere }))
   vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
   vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
-  vi.mocked(listConsentTemplates).mockResolvedValue({ general: [{ id: 'c' }] } as never)
   vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([{ id: 'd' }] as never)
   ownerLookup.mockResolvedValue([{ fullName: 'Ana Souza', email: 'ana@b.com' }])
 })
@@ -92,7 +90,7 @@ function expectNothingWrittenAfterTheClinicSave() {
   expect(createProcedureType).not.toHaveBeenCalled()
   expect(createTemplate).not.toHaveBeenCalled()
   expect(createProduct).not.toHaveBeenCalled()
-  expect(createConsentTemplate).not.toHaveBeenCalled()
+  expect(seedDefaultConsentTemplates).not.toHaveBeenCalled()
   expect(createClinicalDocumentTemplate).not.toHaveBeenCalled()
   expect(updateSet).not.toHaveBeenCalled()
   expect(scheduleLifecycleWelcome).not.toHaveBeenCalled()
@@ -143,7 +141,6 @@ describe('POST /api/onboarding', () => {
 
     // Nothing seeded yet, so any step that got this far would write.
     beforeEach(() => {
-      vi.mocked(listConsentTemplates).mockResolvedValue({} as never)
       vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([])
     })
 
@@ -226,6 +223,7 @@ describe('POST /api/onboarding', () => {
         clinic_slug_placeholder: false,
       })
       expect(updateTenantSettings).not.toHaveBeenCalled()
+      expect(seedDefaultConsentTemplates).toHaveBeenCalledWith('tenant-1')
       // The lifecycle notice was first shown on the wizard's phone field.
       expect(updateSet).toHaveBeenCalledWith({ lifecycleNoticeAt: expect.anything() })
       const stampCall = updateSet.mock.calls.findIndex(([values]) => 'lifecycleNoticeAt' in values)
@@ -454,7 +452,6 @@ describe('POST /api/onboarding', () => {
       vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {}, createdAt: fourMinutesAgo() } as never)
       vi.mocked(saveOnboardingClinic).mockResolvedValue(true)
       vi.mocked(markOnboardingCompleted).mockResolvedValue(true)
-      vi.mocked(listConsentTemplates).mockResolvedValue({ general: [{ id: 'c' }] } as never)
       vi.mocked(listClinicalDocumentTemplates).mockResolvedValue([{ id: 'd' }] as never)
       ownerLookup.mockResolvedValue([{ fullName: 'Ana Souza', email: 'ana@b.com' }])
       await post({ clinic, ...defaults, method: 'defaults' })

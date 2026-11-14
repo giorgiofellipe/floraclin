@@ -1,13 +1,16 @@
 import { describe, it, expect, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import { ConsentTemplateList } from '../consent-template-list'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ refresh: vi.fn() }) }))
 vi.mock('@tanstack/react-query', () => ({ useQueryClient: () => ({ invalidateQueries: vi.fn() }) }))
+const restoreDefaults = vi.hoisted(() => vi.fn())
 vi.mock('@/hooks/mutations/use-consent-mutations', () => ({
   useCreateConsentTemplate: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUpdateConsentTemplate: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useRestoreDefaultConsentTemplates: () => ({ mutateAsync: restoreDefaults, isPending: false }),
 }))
+vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 // Native <select> stand-in so the test can switch the consent type
 vi.mock('@/components/ui/select', () => ({
   Select: ({
@@ -47,7 +50,7 @@ describe('ConsentTemplateList "Novo"', () => {
   // Regression FLORACLIN-1H: "Novo" defaults to the already-seeded "general" type and
   // presented the save as a brand-new term ("Criar termo") instead of a new version.
   it('tells the owner that saving an existing type creates the next version', () => {
-    render(<ConsentTemplateList templates={[GENERAL_V1]} />)
+    render(<ConsentTemplateList templates={[GENERAL_V1]} procedureTypes={[]} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Novo/ }))
 
@@ -56,7 +59,7 @@ describe('ConsentTemplateList "Novo"', () => {
   })
 
   it('offers to create the term when the tenant has no active template of the default type', () => {
-    render(<ConsentTemplateList templates={[{ ...GENERAL_V1, id: 't-2', type: 'botox' }]} />)
+    render(<ConsentTemplateList templates={[{ ...GENERAL_V1, id: 't-2', type: 'botox' }]} procedureTypes={[]} />)
 
     fireEvent.click(screen.getByRole('button', { name: /Novo/ }))
 
@@ -70,7 +73,7 @@ describe('ConsentTemplateList "Novo" prefill', () => {
   const clinicBotox = { ...GENERAL_V1, id: 't-3', type: 'botox', title: 'Botox da Clínica', content: 'Texto botox da clínica', version: 2 }
 
   function openNovo(templates: Array<typeof GENERAL_V1>) {
-    render(<ConsentTemplateList templates={templates} />)
+    render(<ConsentTemplateList templates={templates} procedureTypes={[]} />)
     fireEvent.click(screen.getByRole('button', { name: /Novo/ }))
   }
 
@@ -103,5 +106,44 @@ describe('ConsentTemplateList "Novo" prefill', () => {
     screen.getByRole('button', { name: 'Salvar nova versão (v3)' })
     expect(screen.getByLabelText(/Título/)).toHaveProperty('value', 'Termo Geral da Clínica')
     expect(screen.getByLabelText(/Conteúdo/)).toHaveProperty('value', 'Minha edição')
+  })
+})
+
+describe('ConsentTemplateList procedure coverage', () => {
+  const procedureTypes = [
+    { name: 'Botox full face', category: 'botox', isActive: true },
+    { name: 'Botox antigo', category: 'botox', isActive: false },
+    { name: 'Skinbooster', category: 'skinbooster', isActive: true },
+  ]
+
+  it('names the active procedures each template covers', () => {
+    render(
+      <ConsentTemplateList
+        procedureTypes={procedureTypes}
+        templates={[
+          { ...GENERAL_V1, id: 'b', type: 'botox', title: 'Termo Botox' },
+          { ...GENERAL_V1, id: 's', type: 'skinbooster', title: 'Termo Skinbooster' },
+          { ...GENERAL_V1, title: 'Termo Geral' },
+        ]}
+      />
+    )
+
+    const desktop = within(screen.getAllByRole('table')[0])
+    const coverageOf = (title: string) => desktop.getByText(title).closest('tr')!.cells[2].textContent
+
+    expect(coverageOf('Termo Botox')).toBe('Botox full face')
+    expect(coverageOf('Termo Skinbooster')).toBe('Não exigido automaticamente')
+    expect(coverageOf('Termo Geral')).toBe('Todos os procedimentos')
+  })
+})
+
+describe('ConsentTemplateList empty state', () => {
+  it('wires the empty state button to the restore mutation', () => {
+    restoreDefaults.mockResolvedValue({ data: { created: 9 } })
+    render(<ConsentTemplateList templates={[]} procedureTypes={[]} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Usar modelos padrão (9)' }))
+
+    expect(restoreDefaults).toHaveBeenCalledTimes(1)
   })
 })

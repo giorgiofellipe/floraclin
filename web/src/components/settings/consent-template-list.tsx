@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Table,
@@ -22,8 +22,11 @@ import { formatDateTime } from '@/lib/utils'
 import { ConsentTemplateForm } from '@/components/consent/consent-template-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '@/hooks/queries/query-keys'
+import { useRestoreDefaultConsentTemplates } from '@/hooks/mutations/use-consent-mutations'
 import { PlusIcon, PencilIcon } from 'lucide-react'
 import { CONSENT_TYPE_LABELS } from '@/lib/constants'
+import { consentCoverage, type ConsentCoverage, type CoverageProcedureType } from '@/lib/consent-requirements'
+import { consentTypes, DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
 
 interface ConsentTemplate {
   id: string
@@ -38,12 +41,55 @@ interface ConsentTemplate {
 
 interface ConsentTemplateListProps {
   templates: ConsentTemplate[]
-  embedded?: boolean
+  procedureTypes: CoverageProcedureType[]
 }
 
-export function ConsentTemplateList({ templates, embedded = false }: ConsentTemplateListProps) {
+const DEFAULT_TEMPLATE_COUNT = Object.keys(DEFAULT_CONSENT_TEMPLATES).length
+
+function typeOrder(type: string) {
+  const index = (consentTypes as readonly string[]).indexOf(type)
+  return index === -1 ? consentTypes.length : index
+}
+
+function coverageLabel(coverage: ConsentCoverage) {
+  switch (coverage.kind) {
+    case 'all':
+      return 'Todos os procedimentos'
+    case 'approval':
+      return 'Todo plano aprovado'
+    case 'manual':
+      return 'Não exigido automaticamente'
+    case 'procedures':
+      return coverage.names.length > 0
+        ? coverage.names.join(', ')
+        : 'Nenhum procedimento desta categoria'
+  }
+}
+
+function CategoryChip({ type }: { type: string }) {
+  return (
+    <span className="inline-flex items-center rounded-full bg-petal px-2.5 py-0.5 text-xs font-medium text-sage">
+      {CONSENT_TYPE_LABELS[type] || type}
+    </span>
+  )
+}
+
+function StatusChip({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        active ? 'bg-confirmed-bg text-sage' : 'bg-content-bg text-mid'
+      }`}
+    >
+      {active ? 'Ativo' : 'Inativo'}
+    </span>
+  )
+}
+
+export function ConsentTemplateList({ templates, procedureTypes }: ConsentTemplateListProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
+  const restoreDefaults = useRestoreDefaultConsentTemplates()
   const [createOpen, setCreateOpen] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<ConsentTemplate | null>(null)
 
@@ -54,99 +100,137 @@ export function ConsentTemplateList({ templates, embedded = false }: ConsentTemp
     router.refresh()
   }
 
-  const grouped = templates.reduce<Record<string, ConsentTemplate[]>>((acc, template) => {
-    if (!acc[template.type]) {
-      acc[template.type] = []
+  async function handleRestoreDefaults() {
+    try {
+      const { data } = await restoreDefaults.mutateAsync()
+      toast.success(data.created > 0 ? `${data.created} modelos de termo criados` : 'Os modelos padrão já existem')
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar os modelos padrão')
     }
-    acc[template.type].push(template)
-    return acc
-  }, {})
+  }
+
+  const rows = [...templates]
+    .sort((a, b) => typeOrder(a.type) - typeOrder(b.type))
+    .map((template) => ({
+      template,
+      coverage: coverageLabel(consentCoverage(template.type, procedureTypes)),
+    }))
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4">
         <div>
-          <h3 className="text-sm font-medium text-[#2A2A2A]">
+          <h3 className="text-sm font-medium text-charcoal">
             {templates.length} {templates.length === 1 ? 'modelo' : 'modelos'} de termo
           </h3>
           <p className="mt-1 text-xs text-mid">
             Modelos de termos de consentimento para assinatura pelos pacientes.
           </p>
         </div>
-        {!embedded && (
-          <Button
-            className="bg-forest text-cream hover:bg-sage transition-colors"
-            onClick={() => setCreateOpen(true)}
-          >
-            <PlusIcon className="mr-1.5 size-4" />
-            Novo
-          </Button>
-        )}
+        <Button
+          variant={templates.length === 0 ? 'outline' : 'default'}
+          className="h-11 shrink-0 sm:h-8"
+          onClick={() => setCreateOpen(true)}
+        >
+          <PlusIcon className="mr-1.5 size-4" />
+          Novo termo
+        </Button>
       </div>
 
       {templates.length === 0 ? (
-        <div className="rounded-[3px] border border-dashed border-[#E8ECEF] p-8 text-center">
-          <p className="text-sm text-mid">
-            Nenhum modelo de termo cadastrado.
+        <div className="rounded-[3px] border border-dashed border-topbar-border px-6 py-8 text-center">
+          <p className="text-sm text-charcoal">Nenhum modelo de termo cadastrado.</p>
+          <p className="mx-auto mt-1 max-w-md text-xs text-mid">
+            Comece com os modelos padrão (consentimento geral, toxina, preenchedor, contrato de serviço e outros) e edite depois, ou clique em &quot;Novo termo&quot;.
           </p>
-          <p className="mt-1 text-xs text-mid">
-            Clique em &quot;Novo Termo&quot; para criar o primeiro modelo.
-          </p>
+          <Button
+            className="mt-4 h-11 sm:h-8"
+            onClick={handleRestoreDefaults}
+            disabled={restoreDefaults.isPending}
+          >
+            {restoreDefaults.isPending
+              ? 'Criando modelos...'
+              : `Usar modelos padrão (${DEFAULT_TEMPLATE_COUNT})`}
+          </Button>
         </div>
       ) : (
-        Object.entries(grouped).map(([type, typeTemplates]) => (
-          <div key={type} className="space-y-2">
-            <h4 className="text-[10px] font-medium uppercase tracking-[0.15em] text-mid">
-              {CONSENT_TYPE_LABELS[type] || type}
-            </h4>
-            <Table className="table-fixed">
+        <>
+          <div className="hidden sm:block">
+            <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-auto">Título</TableHead>
-                  <TableHead className="w-24">Versão</TableHead>
-                  <TableHead className="w-24">Status</TableHead>
-                  {!embedded && <TableHead className="w-40">Atualizado em</TableHead>}
-                  {!embedded && <TableHead className="w-20 text-right">Ações</TableHead>}
+                  <TableHead>Título</TableHead>
+                  <TableHead>Categoria</TableHead>
+                  <TableHead>Cobertura</TableHead>
+                  <TableHead>Versão</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Atualizado em</TableHead>
+                  <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {typeTemplates.map((template) => (
+                {rows.map(({ template, coverage }) => (
                   <TableRow key={template.id}>
-                    <TableCell className="font-medium truncate">{template.title}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline">v{template.version}</Badge>
+                    <TableCell className="max-w-72 whitespace-normal break-words font-medium">
+                      {template.title}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                        template.isActive
-                          ? 'bg-[#F0F7F1] text-sage'
-                          : 'bg-[#F4F6F8] text-mid'
-                      }`}>
-                        {template.isActive ? 'Ativo' : 'Inativo'}
-                      </span>
+                      <CategoryChip type={template.type} />
                     </TableCell>
-                    {!embedded && (
-                      <TableCell className="text-mid text-sm">
-                        {formatDateTime(template.updatedAt)}
-                      </TableCell>
-                    )}
-                    {!embedded && (
-                      <TableCell className="text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon-sm"
-                          onClick={() => setEditingTemplate(template)}
-                        >
-                          <PencilIcon className="size-4" />
-                        </Button>
-                      </TableCell>
-                    )}
+                    <TableCell className="max-w-64 whitespace-normal break-words text-sm text-mid">
+                      {coverage}
+                    </TableCell>
+                    <TableCell className="text-sm tabular-nums">v{template.version}</TableCell>
+                    <TableCell>
+                      <StatusChip active={template.isActive} />
+                    </TableCell>
+                    <TableCell className="text-sm text-mid tabular-nums">
+                      {formatDateTime(template.updatedAt)}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Editar ${template.title}`}
+                        onClick={() => setEditingTemplate(template)}
+                      >
+                        <PencilIcon className="size-4" />
+                      </Button>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </div>
-        ))
+
+          <ul className="divide-y divide-topbar-border rounded-[3px] border border-topbar-border sm:hidden">
+            {rows.map(({ template, coverage }) => (
+              <li key={template.id} className="flex items-start gap-2 py-3 pl-4 pr-1">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <p className="break-words text-sm font-medium text-charcoal">{template.title}</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CategoryChip type={template.type} />
+                    <span className="text-xs text-mid tabular-nums">v{template.version}</span>
+                    <StatusChip active={template.isActive} />
+                  </div>
+                  <p className="break-words text-xs text-mid">{coverage}</p>
+                  <p className="text-xs text-mid tabular-nums">
+                    Atualizado em {formatDateTime(template.updatedAt)}
+                  </p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="size-11 shrink-0"
+                  aria-label={`Editar ${template.title}`}
+                  onClick={() => setEditingTemplate(template)}
+                >
+                  <PencilIcon className="size-4" />
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {/* Create dialog */}

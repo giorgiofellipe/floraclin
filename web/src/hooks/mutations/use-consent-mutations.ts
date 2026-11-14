@@ -39,6 +39,18 @@ export function useUpdateConsentTemplate() {
   })
 }
 
+export function useRestoreDefaultConsentTemplates() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (): Promise<{ data: { created: number } }> =>
+      mutateJson('/api/consent/templates/defaults', 'POST'),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.consent.templates })
+      queryClient.invalidateQueries({ queryKey: queryKeys.settings.consentTemplates })
+    },
+  })
+}
+
 export function useAcceptConsent() {
   const queryClient = useQueryClient()
   return useMutation({

@@ -3,7 +3,8 @@ import { consentTemplates, consentAcceptances, patients, procedureRecords, proce
 import { pendingConsentTypes } from '@/lib/consent-requirements'
 import { eq, and, desc, max, sql, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
-import type { ConsentTemplateInput, ConsentAcceptanceInput } from '@/validations/consent'
+import { createAuditLog } from '@/lib/audit'
+import { DEFAULT_CONSENT_TEMPLATES, type ConsentTemplateInput, type ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
 import { sha256, buildEvidencePackage, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
 import { getSignatureBlock } from '@/lib/professional'
@@ -68,15 +69,20 @@ export async function getConsentTemplateById(tenantId: string, templateId: strin
   return template ?? null
 }
 
+// One lock per tenant for every template write: concurrent saves can't both pick the
+// same version (idx_consent_template_version), and a save can't slip past the seed's
+// empty check and then be replaced by a default.
+async function lockTenantConsentTemplates(tx: typeof db, tenantId: string) {
+  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${tenantId}), hashtext('consent_templates'))`)
+}
+
 // Inserts the next version of a tenant's consent type and deactivates the current one.
-// Serialized per (tenant, type) so concurrent saves can't both pick the same version
-// and hit idx_consent_template_version.
 async function insertNextConsentVersion(
   tx: typeof db,
   tenantId: string,
   data: { type: string; title: string; content: string }
 ) {
-  await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${tenantId}), hashtext(${data.type}))`)
+  await lockTenantConsentTemplates(tx, tenantId)
 
   const sameType = and(
     eq(consentTemplates.tenantId, tenantId),
@@ -116,6 +122,38 @@ export async function createConsentTemplate(tenantId: string, data: ConsentTempl
       content: data.content,
     })
   )
+}
+
+// Seeds the standard templates only while the tenant has no active template, so a
+// repeat call (onboarding retry, double click) creates nothing.
+export async function seedDefaultConsentTemplates(tenantId: string, auditUserId?: string) {
+  return withTransaction(async (tx) => {
+    await lockTenantConsentTemplates(tx, tenantId)
+
+    const [existing] = await tx
+      .select({ id: consentTemplates.id })
+      .from(consentTemplates)
+      .where(and(eq(consentTemplates.tenantId, tenantId), eq(consentTemplates.isActive, true)))
+      .limit(1)
+    if (existing) return []
+
+    const created = []
+    for (const [type, template] of Object.entries(DEFAULT_CONSENT_TEMPLATES)) {
+      const row = await insertNextConsentVersion(tx, tenantId, { type, ...template })
+      if (auditUserId) {
+        await createAuditLog({
+          tenantId,
+          userId: auditUserId,
+          action: 'create',
+          entityType: 'consent_template',
+          entityId: row.id,
+          changes: { template: { old: null, new: { type: row.type, title: row.title } } },
+        }, tx)
+      }
+      created.push(row)
+    }
+    return created
+  })
 }
 
 export async function updateConsentTemplate(
