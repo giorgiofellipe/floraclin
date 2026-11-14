@@ -33,9 +33,11 @@ export function UpcomingBirthdaysCard() {
   const visible = todayItems.slice(0, MAX_VISIBLE_ROWS)
   const hiddenCount = Math.max(0, todayItems.length - MAX_VISIBLE_ROWS)
 
+  if (todayQuery.isSuccess && weekQuery.isSuccess && weekItems.length === 0) return null
+
   return (
     <div
-      className="bg-white shadow-[0_1px_4px_rgba(0,0,0,0.06)] rounded-[3px] p-5"
+      className="rounded-lg bg-white p-5 shadow-[0_1px_4px_rgba(0,0,0,0.06)]"
       data-testid="dashboard-birthdays"
     >
       {/* Header */}

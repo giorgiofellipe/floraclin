@@ -3,7 +3,7 @@
 import { MailIcon } from 'lucide-react'
 import { useConfirmationResend } from '@/hooks/use-confirmation-resend'
 
-function resendLabel(cooldown: number, isPending: boolean): string {
+export function resendLabel(cooldown: number, isPending: boolean): string {
   if (cooldown > 0) return `Reenviar link (${cooldown}s)`
   if (isPending) return 'Enviando...'
   return 'Reenviar link'

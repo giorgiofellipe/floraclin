@@ -29,6 +29,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const deepLinkAction = searchParams.get('action')
   const autoStartNext = deepLinkAction === 'executeNext'
   const diagramGroupId = searchParams.get('diagram')
+  // Opened from an appointment (Painel): the procedure records which appointment it belongs to.
+  const appointmentId = searchParams.get('appointment') ?? undefined
   const hasDeepLink = !!deepLinkProcedureId && autoStartNext
 
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
@@ -48,9 +50,12 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   // procedures tab.
   // Deep link wins over the latest-non-executed query so the wizard mounts
   // with the deep-linked record as its primary procedure context.
+  // A draft that already belongs to another appointment is not this visit's.
+  const resumedForOtherVisit =
+    !!appointmentId && !!resumedProcedure?.appointmentId && resumedProcedure.appointmentId !== appointmentId
   const procedure = hasDeepLink
     ? (deepLinkRecord ?? null)
-    : forceNew
+    : forceNew || resumedForOtherVisit
       ? null
       : resumedProcedure
 
@@ -148,6 +153,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
       autoStartNext={hasDeepLink ? autoStartNext : false}
       initialDiagramGroupId={diagramGroupId}
+      appointmentId={appointmentId}
     />
   )
 }

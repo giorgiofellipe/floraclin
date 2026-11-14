@@ -2,7 +2,7 @@ import { redirect } from 'next/navigation'
 import { Sidebar } from '@/components/layout/sidebar'
 import { Header } from '@/components/layout/header'
 import { CookiePreferencesLink } from '@/components/marketing/cookie-consent-banner'
-import { SubscriptionBanner } from '@/components/layout/subscription-banner'
+import { AccountBanners } from '@/components/layout/account-banners'
 import { InstallBanner } from '@/components/layout/install-banner'
 import { PlatformFooter } from '@/components/layout/platform-chrome'
 import Link from 'next/link'
@@ -21,7 +21,6 @@ import { TrialEndingModal } from '@/components/layout/trial-ending-modal'
 import { SubscriptionAccessProvider, type PaywallPlan } from '@/components/layout/subscription-access'
 import { ExpiredPaywall } from '@/components/layout/expired-paywall'
 import { AnalyticsProvider } from '@/components/analytics/analytics-provider'
-import { EmailConfirmationBanner } from '@/components/layout/email-confirmation-banner'
 import { NfsePromptProvider } from '@/components/nfse/nfse-prompt-provider'
 
 export default async function PlatformLayout({ children }: { children: React.ReactNode }) {
@@ -148,12 +147,12 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           impersonatingTenantName={impersonatingTenantName}
           whatsappEnabled={isWhatsAppEnabled(settings)}
         />
-        <SubscriptionBanner
+        <AccountBanners
           subscriptionStatus={displayStatus}
           currentPeriodEnd={subscription?.currentPeriodEnd?.toISOString() ?? null}
           subscriptionSource={subscription?.source}
+          unconfirmedEmail={auth.emailVerified === false ? auth.email : null}
         />
-        {auth.emailVerified === false && <EmailConfirmationBanner email={auth.email} />}
         <InstallBanner />
         <main className="flex-1 p-4 md:p-6">{children}</main>
         <PlatformFooter>

@@ -46,6 +46,24 @@ describe('TrialChecklistCard', () => {
     )
   })
 
+  it('marks only the first open step as the next one', () => {
+    render(<TrialChecklistCard activation={activationWith({ onboardingDone: true, hasPatient: true })} />)
+
+    const next = screen.getByRole('link', { name: 'Agendar o primeiro atendimento' })
+    expect(next).toHaveAttribute('aria-current', 'step')
+    expect(screen.getByRole('link', { name: /Registrar o primeiro procedimento/ })).not.toHaveAttribute('aria-current')
+  })
+
+  // Regression: this step linked to the patient list, two taps away from the atendimento.
+  it.each([
+    ['p-9', '/pacientes/p-9/atendimento?new=1'],
+    [null, '/pacientes?novo=1'],
+  ])('sends the procedure step to the newest patient\'s atendimento (latest patient %s)', (latestPatientId, href) => {
+    render(<TrialChecklistCard activation={activationWith({ onboardingDone: true })} latestPatientId={latestPatientId} />)
+
+    expect(screen.getByRole('link', { name: /Registrar o primeiro procedimento/ })).toHaveAttribute('href', href)
+  })
+
   it.each([
     ['import help is not offered', {}],
     ['import help was already requested', { canRequestImport: true, importHelpRequested: true }],

@@ -40,49 +40,38 @@ describe('ProcedureForm — characterization (planning mode)', () => {
     installFetchMock()
   })
 
-  it('fires useCreateProcedure with planning-mode payload when triggerSave increments', async () => {
-    const onSaveComplete = vi.fn()
-
+  async function savePlanning(extra: { appointmentId?: string } = {}): Promise<Record<string, unknown>> {
     const baseOverrides = {
       hideSaveButton: true,
       hideNavigation: true,
       hideTitle: true,
       hideProcedureTypes: true,
-      onSaveComplete,
+      onSaveComplete: vi.fn(),
     }
-
-    // Use a single QueryClient across both renders so the component doesn't unmount on rerender
+    // One QueryClient across both renders so the component doesn't unmount on rerender.
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
-
-    const { rerender } = render(
+    const form = (triggerSave: number) => (
       <QueryClientProvider client={qc}>
         <ProcedureForm
           patientId="patient-123"
           patientGender="female"
           initialTypeIds={['550e8400-e29b-41d4-a716-446655440000']}
           mode="create"
-          wizardOverrides={{ ...baseOverrides, triggerSave: 0 }}
+          wizardOverrides={{ ...baseOverrides, triggerSave }}
+          {...extra}
         />
-      </QueryClientProvider>,
+      </QueryClientProvider>
     )
-
-    // Flip triggerSave to fire the save path — same QueryClient instance so the tree survives
-    rerender(
-      <QueryClientProvider client={qc}>
-        <ProcedureForm
-          patientId="patient-123"
-          patientGender="female"
-          initialTypeIds={['550e8400-e29b-41d4-a716-446655440000']}
-          mode="create"
-          wizardOverrides={{ ...baseOverrides, triggerSave: 1 }}
-        />
-      </QueryClientProvider>,
-    )
-
+    const { rerender } = render(form(0))
+    // Flipping triggerSave fires the save path.
+    rerender(form(1))
     await vi.waitFor(() => expect(mockCreate).toHaveBeenCalled(), { timeout: 3000 })
-
     const firstCall = mockCreate.mock.calls[0] as unknown as [Record<string, unknown>] | undefined
-    const payload = firstCall?.[0] ?? ({} as Record<string, unknown>)
+    return firstCall?.[0] ?? {}
+  }
+
+  it('fires useCreateProcedure with planning-mode payload when triggerSave increments', async () => {
+    const payload = await savePlanning()
     expect(payload).toMatchObject({
       patientId: 'patient-123',
       procedureTypeId: '550e8400-e29b-41d4-a716-446655440000',
@@ -95,5 +84,12 @@ describe('ProcedureForm — characterization (planning mode)', () => {
     expect(payload).not.toHaveProperty('notes')
     expect(payload).not.toHaveProperty('followUpDate')
     expect(payload).not.toHaveProperty('nextSessionObjectives')
+    expect(payload).not.toHaveProperty('appointmentId')
+  })
+
+  // The Painel counts a charge made in the atendimento only through this link.
+  it('links the new procedure to the appointment the atendimento was opened from', async () => {
+    const payload = await savePlanning({ appointmentId: 'appt-1' })
+    expect(payload).toMatchObject({ appointmentId: 'appt-1' })
   })
 })

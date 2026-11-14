@@ -8,22 +8,20 @@ import { UserPlus, CalendarPlus, X } from 'lucide-react'
 import { useDashboard } from '@/hooks/queries/use-dashboard'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { brToday } from '@/lib/dates'
-import { QuickStats } from '@/components/dashboard/quick-stats'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
-import { FinancialSummary } from '@/components/dashboard/financial-summary'
+import { MoneyStrip } from '@/components/dashboard/money-strip'
 import { RecentActivity } from '@/components/dashboard/recent-activity'
 import { UpcomingBirthdaysCard } from '@/components/dashboard/upcoming-birthdays-card'
 import { OpenPlanejamentosCard } from '@/components/dashboard/open-planejamentos-card'
 import { TrialChecklistCard } from '@/components/dashboard/trial-checklist-card'
 import { IMPORT_HELP_REQUESTED_SETTING } from '@/lib/import-help'
 import { PendingRescheduleCard } from '@/components/dashboard/pending-reschedule-card'
-import { MonthSelector } from '@/components/dashboard/month-selector'
 import DashboardLoading from './loading'
 import { ReadOnlyGuard } from '@/components/layout/subscription-access'
 import { useHoldInstallBanner } from '@/components/layout/platform-chrome'
 
-// While the first-patient hint is up, "Novo Paciente" takes the primary style
-// and "Novo Agendamento" the outline one, so the eye goes where the hint says.
+// While the first-patient hint is up, "Novo paciente" takes the primary style
+// and "Novo agendamento" the outline one, so the eye goes where the hint says.
 // Both carry a 1px border so the buttons keep the same height when they swap.
 const PRIMARY_ACTION = 'border border-transparent bg-forest text-cream hover:bg-sage'
 const OUTLINE_ACTION = 'border border-sage/30 text-charcoal hover:bg-confirmed-bg'
@@ -36,7 +34,7 @@ function getGreeting(): string {
 }
 
 interface DashboardPageClientProps {
-  /** Just finished onboarding: point at "Novo Paciente" until the owner acts on it. */
+  /** Just finished onboarding: point at "Novo paciente" until the owner acts on it. */
   highlightFirstPatient?: boolean
   canRequestImport?: boolean
 }
@@ -67,13 +65,10 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
 
   const greeting = getGreeting()
   const todayCount = data.todayAppointments.length
-  const overdueCount: number = 0
-
-  const subtitleParts: string[] = []
-  subtitleParts.push(`${todayCount} atendimento${todayCount !== 1 ? 's' : ''} hoje`)
-  if (overdueCount > 0) {
-    subtitleParts.push(`${overdueCount} pagamento${overdueCount !== 1 ? 's' : ''} pendente${overdueCount !== 1 ? 's' : ''}`)
-  }
+  const bookingUrl =
+    tenant?.slug && settings?.online_booking_enabled === true && typeof window !== 'undefined'
+      ? `${window.location.origin}/c/${tenant.slug}`
+      : null
 
   return (
     <div className="space-y-6">
@@ -81,31 +76,32 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1
-            className="text-[24px] font-medium text-[#2A2A2A]"
+            className="text-[24px] font-semibold text-charcoal"
             data-testid="dashboard-greeting"
           >
             {greeting}
           </h1>
-          <p className="mt-1 text-[13px] text-[#7A7A7A]">
-            {subtitleParts.join(' \u00b7 ')}
-          </p>
+          {todayCount > 0 && (
+            <p className="mt-1 text-[13px] text-mid">
+              {todayCount} agendamento{todayCount !== 1 ? 's' : ''} hoje
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <MonthSelector
-            month={selectedMonth}
-            currentMonth={currentMonth}
-            onChange={setSelectedMonth}
-          />
-          {overdueCount > 0 && (
-            <div className="inline-flex items-center gap-1.5 rounded-full border border-[#F5D5C4] bg-[#FFF4EF] px-3 py-1">
-              <span className="h-2 w-2 rounded-full bg-[#D4845A]" />
-              <span className="text-[12px] text-[#D4845A]">
-                {overdueCount} pagamento{overdueCount !== 1 ? 's' : ''} vencido{overdueCount !== 1 ? 's' : ''}
-              </span>
-            </div>
-          )}
           <div className="flex w-full gap-3 sm:w-auto">
-            <ReadOnlyGuard label="Novo Paciente" className="flex-1 sm:flex-none">
+            <ReadOnlyGuard label="Novo agendamento" className="flex-1 sm:flex-none">
+              <Link
+                href={NEW_APPOINTMENT_PATH}
+                data-testid="dashboard-new-appointment"
+                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
+                  firstPatientHighlight ? OUTLINE_ACTION : PRIMARY_ACTION
+                }`}
+              >
+                <CalendarPlus className="mr-1.5 h-4 w-4" />
+                Novo agendamento
+              </Link>
+            </ReadOnlyGuard>
+            <ReadOnlyGuard label="Novo paciente" className="flex-1 sm:flex-none">
               <Link
                 href={NEW_PATIENT_PATH}
                 onClick={() => setFirstPatientHighlight(false)}
@@ -119,19 +115,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
                 }`}
               >
                 <UserPlus className="mr-1.5 h-4 w-4" />
-                Novo Paciente
-              </Link>
-            </ReadOnlyGuard>
-            <ReadOnlyGuard label="Novo Agendamento" className="flex-1 sm:flex-none">
-              <Link
-                href={NEW_APPOINTMENT_PATH}
-                data-testid="dashboard-new-appointment"
-                className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
-                  firstPatientHighlight ? OUTLINE_ACTION : PRIMARY_ACTION
-                }`}
-              >
-                <CalendarPlus className="mr-1.5 h-4 w-4" />
-                Novo Agendamento
+                Novo paciente
               </Link>
             </ReadOnlyGuard>
           </div>
@@ -146,7 +130,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
         >
           <p id="first-patient-hint" className="text-sm text-charcoal">
             <strong className="font-medium">Sua clínica está pronta.</strong> Comece cadastrando seu primeiro paciente
-            em <span className="font-medium">Novo Paciente</span>.
+            em <span className="font-medium">Novo paciente</span>.
           </p>
           <button
             type="button"
@@ -162,33 +146,36 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
 
       <TrialChecklistCard
         activation={data.activation}
+        latestPatientId={data.latestPatientId ?? null}
         canRequestImport={canRequestImport}
         importHelpRequested={!!settings?.[IMPORT_HELP_REQUESTED_SETTING]}
       />
 
-      {/* Pending Reschedule Alert */}
       <PendingRescheduleCard count={data.pendingRescheduleCount ?? 0} />
 
-      {/* KPI Cards */}
-      <QuickStats stats={data.quickStats} showRevenue={true} todayCount={todayCount} />
-
-      {/* Agenda + Financeiro */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <TodayAppointments appointments={data.todayAppointments} />
-        <FinancialSummary
-          stats={data.quickStats}
-          month={selectedMonth}
-          monthlyGoal={(settings?.monthly_revenue_goal as number) || 0}
-        />
+      <div className="flex flex-col items-start gap-6 lg:flex-row">
+        <div className="w-full min-w-0 flex-1">
+          <TodayAppointments
+            appointments={data.todayAppointments}
+            firstAppointment={data.activation?.hasAppointment === false}
+            bookingUrl={bookingUrl}
+            monthAtendimentos={data.quickStats.revenueThisMonth === null ? data.quickStats.proceduresThisMonth : null}
+          />
+        </div>
+        {/* Every card in this column hides itself when it has nothing to show; then "Hoje" takes the full width. */}
+        <div className="w-full space-y-6 empty:hidden lg:w-[360px] lg:shrink-0">
+          <MoneyStrip
+            stats={data.quickStats}
+            month={selectedMonth}
+            currentMonth={currentMonth}
+            onMonthChange={setSelectedMonth}
+            monthlyGoal={(settings?.monthly_revenue_goal as number) || 0}
+          />
+          <UpcomingBirthdaysCard />
+          <OpenPlanejamentosCard />
+        </div>
       </div>
 
-      {/* Aniversariantes + Planejamentos Abertos */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <UpcomingBirthdaysCard />
-        <OpenPlanejamentosCard />
-      </div>
-
-      {/* Recent Activity */}
       <RecentActivity activity={data.recentActivity} />
     </div>
   )

@@ -14,7 +14,15 @@ interface SubscriptionBannerProps {
   subscriptionSource?: string | null
 }
 
-const SUBSCRIBE_HREF = '/configuracoes?tab=assinatura'
+export const SUBSCRIBE_HREF = '/configuracoes?tab=assinatura'
+
+/** Whole BR calendar days left in a trial, so "termina hoje" means today's date in São Paulo, whatever the hour. */
+export function trialDaysLeft(currentPeriodEnd: string | null): number {
+  return currentPeriodEnd ? Math.max(0, brCalendarDaysBetween(new Date(), new Date(currentPeriodEnd))) : 0
+}
+
+/** Above this many days the trial notice is calm: one dismissible line instead of a call to subscribe. */
+export const TRIAL_URGENT_DAYS = 3
 
 function SubscribeButton({ tone }: { tone: 'red' | 'amber' }) {
   const color =
@@ -42,11 +50,7 @@ export function SubscriptionBanner({
   }
 
   if (subscriptionStatus === 'trialing') {
-    // BR calendar days, so "termina hoje" means the trial ends on today's
-    // date in São Paulo, whatever the hour.
-    const daysLeft = currentPeriodEnd
-      ? Math.max(0, brCalendarDaysBetween(new Date(), new Date(currentPeriodEnd)))
-      : 0
+    const daysLeft = trialDaysLeft(currentPeriodEnd)
 
     if (daysLeft === 0) {
       return (
@@ -65,7 +69,7 @@ export function SubscriptionBanner({
       )
     }
 
-    if (daysLeft <= 3) {
+    if (daysLeft <= TRIAL_URGENT_DAYS) {
       return (
         <div
           role="status"

@@ -5,6 +5,7 @@ import {
   getQuickStats,
   getUpcomingFollowUps,
   getRecentActivity,
+  getLatestPatientId,
   MONTH_PARAM_RE,
 } from '@/db/queries/dashboard'
 import { countPendingReschedule } from '@/db/queries/appointments'
@@ -51,10 +52,15 @@ export async function GET(request: Request) {
           totalCardFees: ctx.role === 'practitioner' ? null : 0,
         })),
         getUpcomingFollowUps(ctx.tenantId, practitionerId).catch(() => []),
-        getRecentActivity(ctx.tenantId, 10).catch(() => []),
+        // More than the 10 shown: the feed drops events it cannot describe.
+        getRecentActivity(ctx.tenantId, 30).catch(() => []),
         countPendingReschedule(ctx.tenantId, practitionerId).catch(() => 0),
         getActivationState(ctx.tenantId).catch(() => null),
       ])
+
+    // Only the trial checklist uses it.
+    const latestPatientId =
+      activation?.subscriptionStatus === 'trialing' ? await getLatestPatientId(ctx.tenantId).catch(() => null) : null
 
     return NextResponse.json({
       todayAppointments,
@@ -63,6 +69,7 @@ export async function GET(request: Request) {
       recentActivity,
       pendingRescheduleCount,
       activation,
+      latestPatientId,
     })
   } catch (error) {
     return handleApiError(error, request)

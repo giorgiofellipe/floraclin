@@ -36,15 +36,13 @@ vi.mock('@/components/layout/subscription-access', () => ({
   ReadOnlyGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
 }))
 const { Nothing } = vi.hoisted(() => ({ Nothing: () => null }))
-vi.mock('@/components/dashboard/quick-stats', () => ({ QuickStats: Nothing }))
 vi.mock('@/components/dashboard/today-appointments', () => ({ TodayAppointments: Nothing }))
-vi.mock('@/components/dashboard/financial-summary', () => ({ FinancialSummary: Nothing }))
+vi.mock('@/components/dashboard/money-strip', () => ({ MoneyStrip: Nothing }))
 vi.mock('@/components/dashboard/recent-activity', () => ({ RecentActivity: Nothing }))
 vi.mock('@/components/dashboard/upcoming-birthdays-card', () => ({ UpcomingBirthdaysCard: Nothing }))
 vi.mock('@/components/dashboard/open-planejamentos-card', () => ({ OpenPlanejamentosCard: Nothing }))
 vi.mock('@/components/dashboard/trial-checklist-card', () => ({ TrialChecklistCard: Nothing }))
 vi.mock('@/components/dashboard/pending-reschedule-card', () => ({ PendingRescheduleCard: Nothing }))
-vi.mock('@/components/dashboard/month-selector', () => ({ MonthSelector: Nothing }))
 
 import { DashboardPageClient } from '../dashboard-page-client'
 import { InstallBanner } from '@/components/layout/install-banner'

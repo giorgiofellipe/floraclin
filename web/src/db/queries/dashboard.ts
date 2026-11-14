@@ -76,6 +76,8 @@ export interface TodayAppointment {
   startTime: string
   endTime: string
   status: string
+  /** A live charge points at this appointment, directly or through its procedure record. */
+  hasCharge: boolean
 }
 
 export interface QuickStats {
@@ -140,6 +142,21 @@ export async function getTodayAppointments(
       startTime: appointments.startTime,
       endTime: appointments.endTime,
       status: appointments.status,
+      hasCharge: sql<boolean>`EXISTS (
+        SELECT 1 FROM ${financialEntries}
+        WHERE ${financialEntries.tenantId} = ${appointments.tenantId}
+          AND ${financialEntries.deletedAt} IS NULL
+          AND ${financialEntries.status} <> 'cancelled'
+          AND (
+            ${financialEntries.appointmentId} = ${appointments.id}
+            OR ${financialEntries.procedureRecordId} IN (
+              SELECT ${procedureRecords.id} FROM ${procedureRecords}
+              WHERE ${procedureRecords.tenantId} = ${appointments.tenantId}
+                AND ${procedureRecords.appointmentId} = ${appointments.id}
+                AND ${procedureRecords.deletedAt} IS NULL
+            )
+          )
+      )`,
     })
     .from(appointments)
     .leftJoin(patients, eq(appointments.patientId, patients.id))
@@ -151,6 +168,17 @@ export async function getTodayAppointments(
     .orderBy(appointments.startTime)
 
   return result
+}
+
+/** The patient a first atendimento most likely belongs to: the newest one. */
+export async function getLatestPatientId(tenantId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ id: patients.id })
+    .from(patients)
+    .where(and(eq(patients.tenantId, tenantId), isNull(patients.deletedAt)))
+    .orderBy(desc(patients.createdAt))
+    .limit(1)
+  return row?.id ?? null
 }
 
 export async function getQuickStats(
