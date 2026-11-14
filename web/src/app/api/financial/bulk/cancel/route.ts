@@ -4,10 +4,11 @@ import { bulkCancelEntries } from '@/db/queries/financial'
 import { bulkCancelSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
+import { CHARGE_MANAGER_ROLES } from '@/lib/financial/charge-roles'
 
 export async function POST(request: Request) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'financial')
+    const { ctx, blocked } = await requireWrite(...CHARGE_MANAGER_ROLES)
     if (blocked) return blocked
 
     const body = await request.json()

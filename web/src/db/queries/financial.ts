@@ -31,6 +31,7 @@ import {
 } from '@/lib/financial/penalties'
 import { BusinessError } from '@/lib/errors'
 import { PATIENT_FINANCIAL_ENTRIES_LIMIT, summarizePatientEntries } from '@/lib/financial/patient-summary'
+import { DUE_SOON_DAYS } from '@/lib/financial/receivables'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus, NfseIntake } from '@/types'
 import { verifyTenantOwnership } from './helpers'
@@ -1719,7 +1720,9 @@ export async function listFinancialEntries(
     conditions.push(eq(financialEntries.patientId, filters.patientId))
   }
 
-  if (filters.status) {
+  if (filters.status === 'open') {
+    conditions.push(inArray(financialEntries.status, [...OPEN_CHARGE_STATUSES]))
+  } else if (filters.status) {
     conditions.push(eq(financialEntries.status, filters.status))
   }
 
@@ -1755,6 +1758,24 @@ export async function listFinancialEntries(
     conditions.push(overdueEntryIds.length > 0 ? inArray(financialEntries.id, overdueEntryIds) : sql`false`)
   }
 
+  if (filters.dueSoon) {
+    const { dueSoon } = await loadUpcomingInstallments(tenantId, now)
+    const dueSoonEntryIds = [...new Set(dueSoon.map((i) => i.financialEntryId))]
+    conditions.push(dueSoonEntryIds.length > 0 ? inArray(financialEntries.id, dueSoonEntryIds) : sql`false`)
+  }
+
+  if (filters.receivedThisMonth) {
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM floraclin.payment_records pr
+        JOIN floraclin.installments i ON i.id = pr.installment_id
+        WHERE i.financial_entry_id = ${financialEntries.id}
+        AND pr.reversed_at IS NULL
+        AND pr.paid_at >= ${startOfBrMonth(now).toISOString()}::timestamptz
+      )`
+    )
+  }
+
   if (filters.isPartial) {
     // Has at least one paid installment but entry is not fully paid
     conditions.push(
@@ -1766,6 +1787,26 @@ export async function listFinancialEntries(
       )`
     )
   }
+
+  const nextPending = (column: 'id' | 'installment_number' | 'due_date') => sql`(
+    SELECT ${sql.raw(`i.${column}`)} FROM floraclin.installments i
+    WHERE i.financial_entry_id = ${financialEntries.id}
+    AND i.status = 'pending'
+    ORDER BY i.due_date, i.installment_number
+    LIMIT 1
+  )`
+  const lastPaidAt = sql<string | null>`(
+    SELECT MAX(pr.paid_at) FROM floraclin.payment_records pr
+    JOIN floraclin.installments i ON i.id = pr.installment_id
+    WHERE i.financial_entry_id = ${financialEntries.id}
+    AND pr.reversed_at IS NULL
+  )`
+  const orderBy =
+    filters.status === 'open'
+      ? [sql`${nextPending('due_date')} ASC NULLS LAST`, desc(financialEntries.createdAt), financialEntries.id]
+      : filters.status === 'paid'
+        ? [sql`${lastPaidAt} DESC NULLS LAST`, desc(financialEntries.createdAt), financialEntries.id]
+        : [desc(financialEntries.createdAt), financialEntries.id]
 
   const [totalResult, entries] = await Promise.all([
     db
@@ -1781,8 +1822,13 @@ export async function listFinancialEntries(
         totalAmount: financialEntries.totalAmount,
         installmentCount: financialEntries.installmentCount,
         status: financialEntries.status,
+        paymentMethod: financialEntries.paymentMethod,
         notes: financialEntries.notes,
         renegotiatedAt: financialEntries.renegotiatedAt,
+        nextInstallmentId: sql<string | null>`${nextPending('id')}`,
+        nextInstallmentNumber: sql<number | null>`${nextPending('installment_number')}`,
+        nextDueDate: sql<string | null>`${nextPending('due_date')}::text`,
+        lastPaidAt,
         createdAt: financialEntries.createdAt,
         paidInstallments: sql<number>`(
           SELECT COUNT(*)::int FROM floraclin.installments i
@@ -1828,7 +1874,7 @@ export async function listFinancialEntries(
       .from(financialEntries)
       .innerJoin(patients, eq(patients.id, financialEntries.patientId))
       .where(and(...conditions))
-      .orderBy(desc(financialEntries.createdAt))
+      .orderBy(...orderBy)
       .limit(filters.limit ?? 20)
       .offset(offset),
   ])
@@ -1868,6 +1914,87 @@ export async function loadOverdueInstallments(tenantId: string, now: Date) {
       )
     )
   return rows.filter((row) => isInstallmentOverdue(toInstallmentBase(row), now))
+}
+
+const OPEN_CHARGE_STATUSES = ['pending', 'partial', 'overdue'] as const
+
+function startOfBrMonth(now: Date): Date {
+  return startOfBrDay(`${toBrYmd(now).slice(0, 8)}01`)
+}
+
+/**
+ * Pending installments of live open charges due within DUE_SOON_DAYS, split
+ * into the ones the engine calls overdue at `now` and the rest. An
+ * installment past its due date but inside its grace is due soon, not overdue.
+ */
+async function loadUpcomingInstallments(tenantId: string, now: Date) {
+  const rows = await db
+    .select({
+      id: installments.id,
+      financialEntryId: installments.financialEntryId,
+      amount: installments.amount,
+      dueDate: installments.dueDate,
+      appliedFineType: installments.appliedFineType,
+      appliedFineValue: installments.appliedFineValue,
+      appliedInterestRate: installments.appliedInterestRate,
+      appliedGracePeriodDays: installments.appliedGracePeriodDays,
+      penaltyPauses: installments.penaltyPauses,
+      cancelledAt: installments.cancelledAt,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(financialEntries.tenantId, tenantId),
+        isNull(financialEntries.deletedAt),
+        inArray(financialEntries.status, [...OPEN_CHARGE_STATUSES]),
+        eq(installments.status, 'pending'),
+        lte(installments.dueDate, shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS)),
+      )
+    )
+  const overdue: typeof rows = []
+  const dueSoon: typeof rows = []
+  for (const row of rows) {
+    if (isInstallmentOverdue(toInstallmentBase(row), now)) overdue.push(row)
+    else dueSoon.push(row)
+  }
+  return { overdue, dueSoon }
+}
+
+/** The Recebíveis totals: owed today on overdue charges, due in the next week, and cash received this BR month. */
+export async function getReceivablesTotals(tenantId: string, now: Date = new Date()) {
+  const [{ overdue, dueSoon }, [received]] = await Promise.all([
+    loadUpcomingInstallments(tenantId, now),
+    db
+      .select({ total: sql<string>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)` })
+      .from(paymentRecords)
+      .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
+      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          eq(financialEntries.tenantId, tenantId),
+          isNull(financialEntries.deletedAt),
+          isNull(paymentRecords.reversedAt),
+          gte(paymentRecords.paidAt, startOfBrMonth(now)),
+        )
+      ),
+  ])
+
+  const payments = await loadLivePaymentsByInstallment(db, [...overdue, ...dueSoon].map((i) => i.id))
+  const totalDue = (rows: typeof overdue) =>
+    rows.reduce(
+      (sum, row) =>
+        round2(sum + quoteInstallment(toInstallmentBase(row), toPaymentInputs(payments.get(row.id) ?? []), now).totalDue),
+      0,
+    )
+
+  return {
+    overdue: totalDue(overdue),
+    dueSoon: totalDue(dueSoon),
+    receivedThisMonth: Number(received?.total ?? 0),
+  }
 }
 
 /** Fine and interest due at `now` on each entry's open installments, and whether any is late. */

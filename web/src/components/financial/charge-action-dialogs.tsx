@@ -25,10 +25,26 @@ import { CardPaymentFields, toCardPayload, type CardPaymentValue } from './card-
 import { AccountSelect } from './account-select'
 import { isCardMethod } from '@/lib/financial/card-repasses'
 import { useNfsePrompt } from '@/components/nfse/nfse-prompt-provider'
+import { formatCurrency } from '@/lib/utils'
 import type { PaymentMethod } from '@/types'
 
-/** The charge actions that open a dialog, shared by the bulk bar and the row menu. */
+/** The charge actions that open a dialog, shared by the bulk bar and the row. */
 export type ChargeDialog = 'pay' | 'cancel' | 'uncancel'
+
+/** Who pays and how they planned to, when one charge is being received. */
+export interface ChargePayee {
+  patientName: string
+  paymentMethod?: string | null
+  detail?: string
+}
+
+function plannedMethod(method: string | null | undefined): PaymentMethod {
+  return method && Object.hasOwn(PAYMENT_METHOD_ITEMS, method) ? (method as PaymentMethod) : 'pix'
+}
+
+function plural(count: number, one: string, many: string) {
+  return `${count} ${count === 1 ? one : many}`
+}
 
 function QuoteProbe({
   id,
@@ -49,24 +65,26 @@ function QuoteProbe({
 
 /**
  * Pay, cancel and reactivate dialogs for one or many charges: the bulk bar
- * passes the selection, the row menu a single charge. The server keeps each
- * action's rules and roles either way.
+ * passes the selection, a row its own charge with a payee. The server keeps
+ * each action's rules and roles either way.
  */
 export function ChargeActionDialogs({
   dialog,
   onDialogChange,
   installmentIds,
   entryIds,
+  payee,
   onSuccess,
 }: {
   dialog: ChargeDialog | null
   onDialogChange: (dialog: ChargeDialog | null) => void
   installmentIds: string[]
   entryIds: string[]
+  payee?: ChargePayee
   onSuccess?: () => void
 }) {
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix')
-  const [paidAt, setPaidAt] = useState('')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(() => plannedMethod(payee?.paymentMethod))
+  const [paidAt, setPaidAt] = useState(brToday)
   const [card, setCard] = useState<CardPaymentValue>({ terminalId: null, installmentCount: 1, expectedRate: null })
   const [accountId, setAccountId] = useState<string | undefined>()
   const [quotes, setQuotes] = useState<Record<string, number | 'error' | null>>({})
@@ -82,15 +100,35 @@ export function ChargeActionDialogs({
   const payOpen = dialog === 'pay'
   const single = entryIds.length === 1
 
+  // Each opening starts from today and the charge's planned method.
+  const [wasOpen, setWasOpen] = useState(payOpen)
+  if (payOpen !== wasOpen) {
+    setWasOpen(payOpen)
+    if (payOpen) {
+      setPaidAt(brToday())
+      setPaymentMethod(plannedMethod(payee?.paymentMethod))
+      setAccountId(undefined)
+    }
+  }
+
   const cardMethod =
     isCardMethod(paymentMethod) ? paymentMethod : null
   const paidAtIso = toPaidAtIso(paidAt)
+  // A row pays one installment, so its amount is quoted for the title; a bulk selection only for a card sale.
+  const quoting = payOpen && (payee !== undefined || cardMethod !== null)
   const quoteStates = installmentIds.map((id) => quotes[id] ?? null)
   const quoteFailed = quoteStates.includes('error')
   const quotesReady = quoteStates.every((q) => typeof q === 'number')
-  const cardGross = quotesReady
+  const amountDue = quotesReady
     ? Math.round(quoteStates.reduce<number>((sum, q) => sum + (q as number) * 100, 0)) / 100
-    : 0
+    : null
+  const amountText = amountDue !== null ? `${formatCurrency(amountDue)} ` : ''
+  const title = payee
+    ? `Receber ${amountText}de ${payee.patientName}`
+    : `Receber ${plural(installmentIds.length, 'parcela', 'parcelas')}`
+  const description = payee
+    ? payee.detail
+    : `${plural(entryIds.length, 'cobrança selecionada', 'cobranças selecionadas')}.`
 
   function handleQuote(id: string, state: number | 'error' | null) {
     setQuotes((prev) => (prev[id] === state ? prev : { ...prev, [id]: state }))
@@ -112,6 +150,7 @@ export function ChargeActionDialogs({
         accountId: cardMethod ? undefined : accountId,
       })
       close()
+      toast.success(amountDue !== null ? `Pagamento de ${formatCurrency(amountDue)} registrado` : 'Pagamento registrado')
       onSuccess?.()
       promptAfterPayment(result?.nfse)
     } catch (err) {
@@ -157,14 +196,14 @@ export function ChargeActionDialogs({
       <Dialog open={payOpen} onOpenChange={(open) => (open ? onDialogChange('pay') : close())}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-lg font-semibold text-charcoal">
-              {single ? 'Registrar pagamento' : 'Pagamento em Lote'}
+            <DialogTitle className="text-lg font-semibold text-charcoal" data-testid="pay-dialog-title">
+              {title}
             </DialogTitle>
-            <DialogDescription className="text-mid">
-              Registrar pagamento para {installmentIds.length} parcela(s).
-            </DialogDescription>
+            {description && <DialogDescription className="text-mid">{description}</DialogDescription>}
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {quoting &&
+              installmentIds.map((id) => <QuoteProbe key={id} id={id} paidAt={paidAtIso} onTotal={handleQuote} />)}
             <div className="space-y-2">
               <Label className="uppercase tracking-wider text-xs font-medium text-mid">Método de Pagamento</Label>
               <Select items={PAYMENT_METHOD_ITEMS} value={paymentMethod} onValueChange={(v) => setPaymentMethod((v ?? 'pix') as PaymentMethod)}>
@@ -175,7 +214,7 @@ export function ChargeActionDialogs({
               </Select>
             </div>
             <div className="space-y-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento (opcional)</Label>
+              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento</Label>
               <DatePicker
                 value={paidAt}
                 onChange={(v) => setPaidAt(v)}
@@ -185,13 +224,10 @@ export function ChargeActionDialogs({
             </div>
             {cardMethod && payOpen && (
               <>
-                {installmentIds.map((id) => (
-                  <QuoteProbe key={id} id={id} paidAt={paidAtIso} onTotal={handleQuote} />
-                ))}
-                {quotesReady ? (
+                {amountDue !== null ? (
                   <CardPaymentFields
                     method={cardMethod}
-                    gross={cardGross}
+                    gross={amountDue}
                     paymentYmd={paidAt || brToday()}
                     value={card}
                     onChange={setCard}
@@ -212,9 +248,10 @@ export function ChargeActionDialogs({
               Cancelar
             </Button>
             <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay}
-              disabled={bulkPay.isPending || (cardMethod !== null && (!quotesReady || card.terminalId === null))}
+              disabled={bulkPay.isPending || (quoting && !quotesReady) || (cardMethod !== null && card.terminalId === null)}
+              data-testid="pay-confirm"
             >
-              {bulkPay.isPending ? 'Processando...' : 'Confirmar'}
+              {bulkPay.isPending ? 'Processando...' : 'Confirmar recebimento'}
             </Button>
           </DialogFooter>
         </DialogContent>

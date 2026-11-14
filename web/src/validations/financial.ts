@@ -132,8 +132,11 @@ export const bulkUncancelSchema = z.object({
 
 export const financialFilterSchema = z.object({
   patientId: z.string().uuid().optional(),
-  status: z.enum(financialStatuses as unknown as [string, ...string[]]).optional(),
+  // 'open' is every charge still to receive: pending, partial or overdue.
+  status: z.enum([...financialStatuses, 'open']).optional(),
   isOverdue: z.boolean().optional(),
+  dueSoon: z.boolean().optional(),
+  receivedThisMonth: z.boolean().optional(),
   isPartial: z.boolean().optional(),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]]).optional(),
   dateFrom: z.string().optional(),

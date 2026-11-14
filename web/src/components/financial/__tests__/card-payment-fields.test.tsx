@@ -175,6 +175,24 @@ describe('CardPaymentFields', () => {
     expect(screen.queryByText('Você recebe')).toBeNull()
   })
 
+  it('records the first card sale with only a terminal name and this sale\'s rate', async () => {
+    mockTerminals([], true)
+    createMutateAsync.mockResolvedValue({ success: true, data: terminal({ id: 'quick-term' }) })
+    const onChange = vi.fn()
+    render(<CardPaymentFields {...emptyProps} value={{ ...emptyProps.value, installmentCount: 3 }} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Maquininha'), { target: { value: 'Stone' } })
+    fireEvent.change(screen.getByLabelText('Taxa no crédito em 3x (%)'), { target: { value: '4,5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar maquininha' }))
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({ terminalId: 'quick-term', installmentCount: 3, expectedRate: null }),
+    )
+    expect(createMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Stone', isDefault: true, debitRate: 4.5, creditRates: Array(12).fill(4.5) }),
+    )
+  })
+
   it('tells a non-owner to ask the owner instead of offering the form', () => {
     mockTerminals([], false)
     render(<CardPaymentFields {...emptyProps} onChange={vi.fn()} />)

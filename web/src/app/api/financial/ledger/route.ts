@@ -4,12 +4,12 @@ import { listCashMovements, getLedgerSummary } from '@/db/queries/cash-movements
 import { ledgerFilterSchema } from '@/validations/financial'
 import { handleApiError } from '@/lib/api-error'
 import { canManageAccounts } from '@/lib/financial/account-roles'
+import { hasRole, LEDGER_VIEWER_ROLES } from '@/lib/financial/charge-roles'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Ledger: owner, financial, receptionist
-    if (!['owner', 'financial', 'receptionist'].includes(ctx.role)) {
+    if (!hasRole(LEDGER_VIEWER_ROLES, ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 

@@ -2,11 +2,14 @@
 
 import { useEffect, useId, useMemo, useState } from 'react'
 import { PlusIcon } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { CardTerminalDialog } from '@/components/financial/settings/card-terminal-dialog'
 import { Select, SelectContent, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
+import { useCardTerminals, useCreateCardTerminal } from '@/hooks/queries/use-card-terminals'
+import { cardTerminalSchema } from '@/validations/card-terminals'
 import {
   buildCardSchedule,
   cardInstallmentCountFor,
@@ -104,8 +107,20 @@ export function CardPaymentFields({
     }
     return (
       <div className="space-y-2">
-        <p className="text-sm text-mid">Nenhuma maquininha cadastrada.</p>
-        <Button type="button" variant="outline" size="sm" onClick={() => setCreating(true)} disabled={disabled}>
+        <QuickTerminalForm
+          method={method}
+          installmentCount={value.installmentCount}
+          disabled={disabled}
+          onCreated={(id) => onChange({ ...value, terminalId: id })}
+        />
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          className="h-auto px-0 text-mid"
+          onClick={() => setCreating(true)}
+          disabled={disabled}
+        >
           <PlusIcon className="h-3.5 w-3.5" />
           Cadastrar maquininha
         </Button>
@@ -175,6 +190,79 @@ export function CardPaymentFields({
           <p className="text-xs text-mid pt-1">{describeCardSchedule(schedule)}</p>
         </div>
       )}
+    </div>
+  )
+}
+
+/**
+ * The first card sale without a terminal: a name and this sale's rate are
+ * enough. Every other rate starts at the same value, which the summary of
+ * each later sale shows until the owner adjusts it.
+ */
+function QuickTerminalForm({
+  method,
+  installmentCount,
+  disabled,
+  onCreated,
+}: {
+  method: 'credit_card' | 'debit_card'
+  installmentCount: number
+  disabled?: boolean
+  onCreated: (terminalId: string) => void
+}) {
+  const nameId = useId()
+  const rateId = useId()
+  const [name, setName] = useState('')
+  const [rate, setRate] = useState('')
+  const createTerminal = useCreateCardTerminal()
+  const rateLabel =
+    method === 'debit_card' ? 'Taxa no débito (%)' : `Taxa no crédito em ${cardInstallmentCountFor(method, installmentCount)}x (%)`
+
+  async function save() {
+    if (rate.trim() === '') {
+      toast.error('Informe a taxa')
+      return
+    }
+    const value = Number(rate.replace(',', '.'))
+    const parsed = cardTerminalSchema.safeParse({
+      name,
+      isDefault: true,
+      debitRate: value,
+      debitPayoutDays: 1,
+      creditRates: Array.from({ length: 12 }, () => value),
+      creditPayoutMode: 'per_installment',
+      creditLumpSumDays: 1,
+      payoutAccountId: null,
+    })
+    if (!parsed.success) {
+      toast.error(parsed.error.issues[0]?.message)
+      return
+    }
+    try {
+      const created = await createTerminal.mutateAsync(parsed.data)
+      onCreated(created.data.id)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Erro ao salvar maquininha')
+    }
+  }
+
+  return (
+    <div className="space-y-3 rounded-lg border border-topbar-border bg-content-bg p-3" data-testid="quick-terminal">
+      <p className="text-sm text-mid">Nenhuma maquininha cadastrada. Informe a taxa desta venda para registrar agora.</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div className="space-y-1">
+          <Label htmlFor={nameId} className={LABEL_CLASS}>Maquininha</Label>
+          <Input id={nameId} value={name} placeholder="Ex.: Stone" onChange={(e) => setName(e.target.value)} disabled={disabled} />
+        </div>
+        <div className="space-y-1">
+          <Label htmlFor={rateId} className={LABEL_CLASS}>{rateLabel}</Label>
+          <Input id={rateId} inputMode="decimal" value={rate} placeholder="0,00" onChange={(e) => setRate(e.target.value)} disabled={disabled} />
+        </div>
+      </div>
+      <p className="text-xs text-mid">As outras taxas começam com este valor. Ajuste em Configurações › Financeiro.</p>
+      <Button type="button" size="sm" onClick={save} disabled={disabled || createTerminal.isPending}>
+        {createTerminal.isPending ? 'Salvando...' : 'Salvar maquininha'}
+      </Button>
     </div>
   )
 }

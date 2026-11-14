@@ -37,6 +37,8 @@ import {
 import { useReversePayment } from '@/hooks/mutations/use-financial-mutations'
 import { useNfseStatus } from '@/hooks/queries/use-nfse-documents'
 import { toast } from 'sonner'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { CHARGE_MANAGER_ROLES, CHARGE_PAYER_ROLES, hasRole } from '@/lib/financial/charge-roles'
 
 interface PaymentRecord {
   id: string
@@ -137,6 +139,9 @@ export function InstallmentTable({
   const accountNames = new Map(liveAccounts.map((a) => [a.id, a.name]))
   // Same gate as the Extrato's "Trocar conta": owner/financeiro, two accounts or more.
   const canMove = (accountsResponse?.canManage ?? false) && liveAccounts.length >= 2
+  const { role } = useSubscriptionAccess()
+  const canPay = hasRole(CHARGE_PAYER_ROLES, role)
+  const canReverse = hasRole(CHARGE_MANAGER_ROLES, role)
 
   const { data: entryData, isLoading } = useQuery({
     queryKey: ['financial', 'detail', entryId],
@@ -269,7 +274,7 @@ export function InstallmentTable({
 
                 {/* Actions */}
                 <div className="flex items-center gap-1 shrink-0">
-                  {isPendingOrOverdue && (
+                  {isPendingOrOverdue && canPay && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -401,21 +406,22 @@ export function InstallmentTable({
                           </div>
                         )}
 
-                        {/* Reverse button */}
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-11 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 sm:h-6 sm:text-[10px]"
-                          data-testid="payment-reverse"
-                          onClick={() => {
-                            setReverseDialogPayment(pr)
-                            setReversalReason('')
-                            setCancelNfse(true)
-                          }}
-                        >
-                          <Undo2Icon className="h-3 w-3" />
-                          Estornar
-                        </Button>
+                        {canReverse && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-11 px-2 text-xs text-red-600 hover:bg-red-50 hover:text-red-700 sm:h-6 sm:text-[10px]"
+                            data-testid="payment-reverse"
+                            onClick={() => {
+                              setReverseDialogPayment(pr)
+                              setReversalReason('')
+                              setCancelNfse(true)
+                            }}
+                          >
+                            <Undo2Icon className="h-3 w-3" />
+                            Estornar
+                          </Button>
+                        )}
                       </div>
                     )
                   })}

@@ -6,10 +6,11 @@ import { BusinessError } from '@/lib/errors'
 import { handleApiError } from '@/lib/api-error'
 import { processDocuments } from '@/lib/nfse/emission'
 import { sendPaymentConfirmations } from '@/lib/whatsapp-payment-confirmation'
+import { CHARGE_PAYER_ROLES } from '@/lib/financial/charge-roles'
 
 export async function POST(request: Request) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'receptionist', 'financial')
+    const { ctx, blocked } = await requireWrite(...CHARGE_PAYER_ROLES)
     if (blocked) return blocked
 
     const body = await request.json()

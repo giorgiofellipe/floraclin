@@ -105,6 +105,14 @@ describe('InstallmentTable', () => {
     expect(payButtons).toHaveLength(2)
   })
 
+  it('hides Pagar from a practitioner, whom the pay route answers with 403', async () => {
+    mockRole = 'practitioner'
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+
+    await screen.findByText('Parcela 1/3')
+    expect(screen.queryByTestId('installment-pay')).not.toBeInTheDocument()
+  })
+
   it('shows penalty info for overdue installment with penalties', async () => {
     render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
 
@@ -369,6 +377,17 @@ describe('InstallmentTable NFS-e reversal', () => {
     fireEvent.click(screen.getByText('Confirmar Estorno'))
 
     await waitFor(() => expect(reverseBody(fetchSpy)).toMatchObject({ cancelNfse: true }))
+  })
+
+  it('hides Estornar from a receptionist, whom the reverse route answers with 403', async () => {
+    mockRole = 'receptionist'
+    mockEntry(null)
+    render(<InstallmentTable entryId="entry-1" />, { wrapper: createWrapper() })
+    await screen.findByText('Parcela 1/1')
+    fireEvent.click(screen.getByTestId('installment-expand-payments'))
+
+    expect(await screen.findByText('Histórico de pagamentos')).toBeInTheDocument()
+    expect(screen.queryByTestId('payment-reverse')).not.toBeInTheDocument()
   })
 
   it('sends cancelNfse false when the payment has no issued note', async () => {

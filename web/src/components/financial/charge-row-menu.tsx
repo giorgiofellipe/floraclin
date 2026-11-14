@@ -10,8 +10,9 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toBrYmd } from '@/lib/dates'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { CHARGE_MANAGER_ROLES, hasRole, LEDGER_VIEWER_ROLES } from '@/lib/financial/charge-roles'
 import {
-  BanknoteIcon,
   BookOpenIcon,
   MoreHorizontalIcon,
   RefreshCwIcon,
@@ -25,10 +26,7 @@ export interface ChargeRowMenuEntry {
   patientId: string
   status: string
   createdAt: Date | string
-  pendingInstallmentIds?: string[]
 }
-
-const OPEN_STATUSES = ['pending', 'partial', 'overdue']
 
 /** Why Renegociar is off for this charge, or null when it applies (same rule as the bulk bar). */
 export function renegotiateBlockedReason(status: string): string | null {
@@ -50,9 +48,10 @@ export function ledgerHrefFor(entry: Pick<ChargeRowMenuEntry, 'patientId' | 'cre
 }
 
 /**
- * The "⋯" on a charge row: every action of the bulk bar for this one charge,
- * plus a jump to its payments in the Extrato. Off items say why in the menu
- * itself, so the reason is readable on touch too.
+ * The "⋯" on a charge row: renegotiate, cancel or reactivate this one charge,
+ * plus a jump to its payments in the Extrato. Receber is the row's own
+ * button. Off items say why in the menu itself, so the reason is readable on
+ * touch too.
  */
 export function ChargeRowMenu({
   entry,
@@ -63,9 +62,13 @@ export function ChargeRowMenu({
   onDialog: (dialog: ChargeDialog) => void
   onRenegotiate: () => void
 }) {
-  const canPay = OPEN_STATUSES.includes(entry.status) && (entry.pendingInstallmentIds?.length ?? 0) > 0
+  const { role } = useSubscriptionAccess()
+  const canManage = hasRole(CHARGE_MANAGER_ROLES, role)
+  const canSeeLedger = hasRole(LEDGER_VIEWER_ROLES, role)
   const renegotiateReason = renegotiateBlockedReason(entry.status)
   const isCancelled = entry.status === 'cancelled'
+
+  if (!canManage && !canSeeLedger) return null
 
   return (
     <DropdownMenu>
@@ -82,33 +85,33 @@ export function ChargeRowMenu({
         }
       />
       <DropdownMenuContent align="end" className="w-60">
-        {canPay && (
-          <DropdownMenuItem className="min-h-11" onClick={() => onDialog('pay')}>
-            <BanknoteIcon />
-            Registrar pagamento
+        {canManage && (
+          <>
+            <DropdownMenuItem className="min-h-11 flex-wrap" disabled={renegotiateReason !== null} onClick={onRenegotiate}>
+              <RefreshCwIcon />
+              Renegociar
+              {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
+            </DropdownMenuItem>
+            {isCancelled ? (
+              <DropdownMenuItem className="min-h-11" onClick={() => onDialog('uncancel')}>
+                <Undo2Icon />
+                Reativar
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem className="min-h-11" variant="destructive" onClick={() => onDialog('cancel')}>
+                <XCircleIcon />
+                Cancelar
+              </DropdownMenuItem>
+            )}
+          </>
+        )}
+        {canManage && canSeeLedger && <DropdownMenuSeparator />}
+        {canSeeLedger && (
+          <DropdownMenuItem className="min-h-11" render={<Link href={ledgerHrefFor(entry)} />}>
+            <BookOpenIcon />
+            Ver no extrato
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem className="min-h-11 flex-wrap" disabled={renegotiateReason !== null} onClick={onRenegotiate}>
-          <RefreshCwIcon />
-          Renegociar
-          {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
-        </DropdownMenuItem>
-        {isCancelled ? (
-          <DropdownMenuItem className="min-h-11" onClick={() => onDialog('uncancel')}>
-            <Undo2Icon />
-            Reativar
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem className="min-h-11" variant="destructive" onClick={() => onDialog('cancel')}>
-            <XCircleIcon />
-            Cancelar
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="min-h-11" render={<Link href={ledgerHrefFor(entry)} />}>
-          <BookOpenIcon />
-          Ver no extrato
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

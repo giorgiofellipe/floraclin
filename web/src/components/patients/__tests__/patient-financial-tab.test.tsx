@@ -11,6 +11,11 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
+vi.mock('@/components/layout/subscription-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/layout/subscription-access')>()),
+  useSubscriptionAccess: () => ({ role: 'owner', readOnly: false }),
+}))
+
 vi.mock('@/components/financial/payment-form', () => ({
   PaymentForm: () => null,
 }))
@@ -94,7 +99,7 @@ describe('PatientFinancialTab', () => {
     expect(screen.queryByText(/^Juros\s*R\$/)).toBeNull()
   })
 
-  it('shows "Renegociado" label when entry was renegotiated', async () => {
+  it('shows "Renegociada" when entry was renegotiated', async () => {
     setup([
       makeEntry({
         id: 'entry-old',
@@ -106,8 +111,7 @@ describe('PatientFinancialTab', () => {
     ])
 
     await screen.findAllByText('Botox frontal')
-    // Renegotiated entries render both a status badge and an inline label — expect at least one.
-    expect(screen.getAllByText('Renegociado').length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText('Renegociada')).toBeInTheDocument()
   })
 
   it('shows "Renegociação" label when entry originates from renegotiation', async () => {
@@ -181,13 +185,12 @@ describe('PatientFinancialTab', () => {
   it('shows empty state when no charges exist', async () => {
     setup([])
 
-    expect(await screen.findByText('Nenhuma cobrança registrada')).toBeInTheDocument()
+    expect(await screen.findByText('Nenhuma cobrança')).toBeInTheDocument()
   })
 
-  it('shows the total registros count', async () => {
+  it('shows the total charge count', async () => {
     setup([makeEntry(), makeEntry({ id: 'e2', description: 'Preenchimento labial' })])
 
-    // FinancialList renders "{total} registros" (plural) in its top bar.
-    expect(await screen.findByText('2 registros')).toBeInTheDocument()
+    expect(await screen.findByText('2 cobranças')).toBeInTheDocument()
   })
 })
