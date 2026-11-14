@@ -6,7 +6,7 @@ import { getPatient } from '@/db/queries/patients'
 import { listConversations, upsertConversation, createMessage, pushSseEvent, getSendableTemplate } from '@/db/queries/whatsapp'
 import { conversationFilterSchema } from '@/validations/whatsapp'
 import { sendTemplateMessage, resolveTemplateBody } from '@/lib/whatsapp'
-import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
+import { canRoleUseWhatsApp, isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { requireWrite } from '@/lib/write-access'
 import { normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 import { handleApiError } from '@/lib/api-error'
@@ -25,8 +25,7 @@ async function checkWhatsAppAccess() {
     return { error: NextResponse.json({ error: 'WhatsApp não habilitado' }, { status: 403 }) }
   }
 
-  const allowedRoles = (settings.whatsapp_allowed_roles as string[]) ?? ['owner']
-  if (!allowedRoles.includes(ctx.role) && ctx.role !== 'owner') {
+  if (!canRoleUseWhatsApp(settings, ctx.role)) {
     return { error: NextResponse.json({ error: 'Forbidden' }, { status: 403 }) }
   }
 

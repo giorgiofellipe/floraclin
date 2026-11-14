@@ -9,6 +9,13 @@ export function canWriteClinical(role: Role): boolean {
   return (CLINICAL_ROLES as readonly Role[]).includes(role)
 }
 
+/** Roles that register patients and book appointments. */
+export const FRONT_DESK_ROLES = ['owner', 'practitioner', 'receptionist'] as const satisfies readonly Role[]
+
+export function canWriteFrontDesk(role: string): boolean {
+  return (FRONT_DESK_ROLES as readonly string[]).includes(role)
+}
+
 export const APPOINTMENT_STATUS_COLORS: Record<string, string> = {
   scheduled: 'bg-blue-50 text-blue-700',
   confirmed: 'bg-emerald-50 text-emerald-700',

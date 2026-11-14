@@ -3,16 +3,28 @@
 import { useQuery } from '@tanstack/react-query'
 import { DEFAULT_PAGE_SIZE } from '@/lib/constants'
 import { queryKeys } from './query-keys'
+import type { PatientListRow } from '@/db/queries/patients'
+import type { PaginatedResult } from '@/types'
+import type { PatientSortKey, SortDirection } from '@/validations/patient'
 
-export function usePatients(search = '', page = 1) {
+export interface PatientListQuery {
+  search: string
+  page: number
+  sort: PatientSortKey
+  direction: SortDirection
+}
+
+export function usePatients({ search, page, sort, direction }: PatientListQuery) {
   return useQuery({
-    queryKey: queryKeys.patients.list(search, page),
+    queryKey: queryKeys.patients.list(search, page, sort, direction),
     placeholderData: (prev) => prev,
-    queryFn: async () => {
+    queryFn: async (): Promise<PaginatedResult<PatientListRow>> => {
       const params = new URLSearchParams()
       if (search) params.set('search', search)
       params.set('page', String(page))
       params.set('limit', String(DEFAULT_PAGE_SIZE))
+      params.set('sort', sort)
+      params.set('direction', direction)
       const res = await fetch(`/api/patients?${params}`)
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))

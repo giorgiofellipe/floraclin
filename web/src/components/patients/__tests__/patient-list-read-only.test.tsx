@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { screen } from '@testing-library/react'
 import { renderWithProviders as render } from '@/tests/test-utils'
 import { SubscriptionAccessProvider } from '@/components/layout/subscription-access'
@@ -16,16 +16,18 @@ vi.mock('next/navigation', async () => {
     useSearchParams: () => new URLSearchParams(`${NEW_PATIENT_PATH.split('?')[1]}&nome=Ana`),
   }
 })
-vi.mock('@/actions/patients', () => ({ deletePatientAction: vi.fn() }))
 vi.mock('../patient-form', () => ({
   PatientForm: ({ open }: { open: boolean }) => (open ? <div data-testid="patient-form-open" /> : null),
 }))
+
+beforeEach(() => vi.stubGlobal('matchMedia', () => ({ matches: true })))
+afterEach(() => vi.unstubAllGlobals())
 
 const EMPTY = { data: [], total: 0, page: 1, limit: 20, totalPages: 0 }
 
 function renderList(readOnly: boolean) {
   return render(
-    <SubscriptionAccessProvider readOnly={readOnly} reason={readOnly ? 'trial' : null} tenantId="t1" canSubscribe plans={[]}>
+    <SubscriptionAccessProvider readOnly={readOnly} reason={readOnly ? 'trial' : null} tenantId="t1" canSubscribe plans={[]} role="owner">
       <PatientList result={EMPTY as never} />
     </SubscriptionAccessProvider>,
   )
@@ -37,9 +39,9 @@ describe('PatientList ?novo=1 deep link', () => {
     expect(screen.getByTestId('patient-form-open')).toBeInTheDocument()
   })
 
-  it('opens nothing in read-only mode and shows Novo Paciente as unavailable', () => {
+  it('opens nothing in read-only mode and shows the create button as unavailable', () => {
     renderList(true)
     expect(screen.queryByTestId('patient-form-open')).not.toBeInTheDocument()
-    expect(screen.getByTestId('read-only-guard')).toHaveAccessibleName('Novo Paciente')
+    expect(screen.getByTestId('read-only-guard')).toHaveAccessibleName('Cadastrar primeiro paciente')
   })
 })

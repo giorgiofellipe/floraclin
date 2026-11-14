@@ -85,3 +85,10 @@ export function todayMonthDay(): { month: number; day: number } {
 export function currentBrYear(): number {
   return parseInt(brToday().slice(0, 4), 10)
 }
+
+/** Inclusive `YYYY-MM-DD` bounds of a calendar month (`month` is 1-based). */
+export function monthRange(year: number, month: number): { from: string; to: string } {
+  const lastDay = new Date(year, month, 0).getDate()
+  const mm = String(month).padStart(2, '0')
+  return { from: `${year}-${mm}-01`, to: `${year}-${mm}-${String(lastDay).padStart(2, '0')}` }
+}

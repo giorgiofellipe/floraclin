@@ -5,7 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createPatientSchema, type CreatePatientInput, type UpdatePatientInput } from '@/validations/patient'
-import { useCreatePatient, useUpdatePatient } from '@/hooks/mutations/use-patient-mutations'
+import { useCreatePatient, useDeletePatient, useUpdatePatient } from '@/hooks/mutations/use-patient-mutations'
+import { useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
 import type { Patient } from '@/db/queries/patients'
 
 import { Button } from '@/components/ui/button'
@@ -17,6 +18,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { maskPhone, maskCPF, maskCEP } from '@/lib/masks'
 import { formatBrPhone } from '@/lib/phone'
 import { toLocalYmd } from '@/lib/dates'
+import { canWriteFrontDesk } from '@/lib/constants'
+import { toast } from 'sonner'
 import { DatePicker } from '@/components/ui/date-picker'
 import {
   Sheet,
@@ -32,7 +35,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronDownIcon, ChevronRightIcon } from 'lucide-react'
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { ChevronDownIcon, ChevronRightIcon, TrashIcon } from 'lucide-react'
 
 const GENDER_ITEMS: Record<string, string> = {
   feminino: 'Feminino',
@@ -66,6 +78,11 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
   const [addressOpen, setAddressOpen] = useState(false)
   const createPatient = useCreatePatient()
   const updatePatientMutation = useUpdatePatient()
+  const deletePatient = useDeletePatient()
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const { role } = useSubscriptionAccess()
+  const guardWrite = useWriteGuard()
+  const canDelete = canWriteFrontDesk(role)
   const isPending = createPatient.isPending || updatePatientMutation.isPending
 
   const isEditing = !!patient
@@ -105,27 +122,70 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
     form.reset(patientDefaults)
   }, [patientDefaults, form])
 
+  async function handleDelete() {
+    if (!patient) return
+    try {
+      await deletePatient.mutateAsync(patient.id)
+      setConfirmDelete(false)
+      if (inline) router.push('/pacientes')
+      else onOpenChange(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Erro ao excluir paciente')
+    }
+  }
+
   async function onSubmit(data: CreatePatientInput) {
     setServerError(null)
 
     try {
       if (isEditing && patient) {
         await updatePatientMutation.mutateAsync({ id: patient.id, ...data })
-      } else {
-        await createPatient.mutateAsync(data as Record<string, unknown>)
+        onOpenChange(false)
+        router.refresh()
+        return
       }
+      const created = await createPatient.mutateAsync(data as Record<string, unknown>)
       onOpenChange(false)
-      // Only reset to blank defaults when creating; in edit mode the form will
-      // either close (Sheet) or stay with up-to-date data after router.refresh().
-      if (!isEditing) {
-        form.reset()
-      }
-      router.refresh()
+      form.reset()
+      router.push(`/pacientes/${created.data.id}`)
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Erro ao salvar paciente'
       setServerError(message)
     }
   }
+
+  const deleteButton = patient && canDelete && (
+    <Button
+      type="button"
+      variant="ghost"
+      onClick={guardWrite(() => setConfirmDelete(true))}
+      className="h-11 md:h-9 sm:mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+      data-testid="patient-delete-button"
+    >
+      <TrashIcon className="size-4" data-icon="inline-start" />
+      Excluir paciente
+    </Button>
+  )
+
+  const confirmDeleteDialog = patient && (
+    <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Excluir paciente</DialogTitle>
+          <DialogDescription>
+            Tem certeza que deseja excluir o paciente <strong>{patient.fullName}</strong>? Esta ação
+            pode ser revertida posteriormente.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" className="h-11 md:h-8" />}>Cancelar</DialogClose>
+          <Button variant="destructive" onClick={handleDelete} disabled={deletePatient.isPending} className="h-11 md:h-8">
+            {deletePatient.isPending ? 'Excluindo...' : 'Excluir'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 
   const formContent = (
     <form onSubmit={form.handleSubmit(onSubmit)} className={inline ? "flex flex-col gap-5" : "flex flex-col gap-5 px-4"} data-testid="patient-form">
@@ -393,13 +453,15 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
       </label>
 
       {inline ? (
-        <div className="flex justify-end gap-2 pt-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 pt-2">
+          {deleteButton}
           <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="patient-form-submit">
             {isPending ? 'Salvando...' : 'Salvar alterações'}
           </Button>
         </div>
       ) : (
         <SheetFooter className="mx-0 px-0 pt-2">
+          {deleteButton}
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)} className="border-sage/30 text-mid hover:bg-petal transition-colors">
             Cancelar
           </Button>
@@ -412,7 +474,12 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
   )
 
   if (inline) {
-    return formContent
+    return (
+      <>
+        {formContent}
+        {confirmDeleteDialog}
+      </>
+    )
   }
 
   return (
@@ -427,6 +494,7 @@ export function PatientForm({ open, onOpenChange, patient, inline, prefill }: Pa
           </SheetDescription>
         </SheetHeader>
         {formContent}
+        {confirmDeleteDialog}
       </SheetContent>
     </Sheet>
   )

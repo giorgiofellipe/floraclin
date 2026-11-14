@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
+import { FRONT_DESK_ROLES } from '@/lib/constants'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
 import {
   listAppointments,
@@ -43,7 +44,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    const { ctx, blocked } = await requireWrite(...FRONT_DESK_ROLES)
     if (blocked) return blocked
 
     const body = await request.json()

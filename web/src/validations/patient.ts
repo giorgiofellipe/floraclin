@@ -46,10 +46,17 @@ export const updatePatientSchema = z.object({
   marketingOptOut: z.boolean().optional(),
 })
 
+export const patientSortSchema = z.enum(['nome', 'proximo', 'ultima-visita'])
+export const sortDirectionSchema = z.enum(['asc', 'desc'])
+export type PatientSortKey = z.infer<typeof patientSortSchema>
+export type SortDirection = z.infer<typeof sortDirectionSchema>
+
 export const patientSearchSchema = z.object({
   search: z.string().optional().default(''),
   page: z.number().int().positive().optional().default(1),
   limit: z.number().int().positive().max(100).optional().default(20),
+  sort: patientSortSchema.optional().default('nome'),
+  direction: sortDirectionSchema.optional().default('asc'),
 })
 
 export type CreatePatientInput = z.infer<typeof createPatientSchema>

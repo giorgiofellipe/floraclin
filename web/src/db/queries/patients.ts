@@ -1,16 +1,38 @@
 import { db } from '@/db/client'
-import { patients } from '@/db/schema'
-import { eq, and, isNull, ilike, or, sql, asc, lt } from 'drizzle-orm'
+import { appointments, patients } from '@/db/schema'
+import { eq, and, isNull, ilike, or, sql, lt, getTableColumns, type SQL } from 'drizzle-orm'
+import { brToday } from '@/lib/dates'
 import type { PaginatedResult } from '@/types'
-import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
+import type { CreatePatientInput, PatientSortKey, SortDirection, UpdatePatientInput } from '@/validations/patient'
 import { isCanonicalBrPhone, normalizeBrPhone, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
 
 export type Patient = typeof patients.$inferSelect
 
+export type PatientListRow = Patient & {
+  /** BR wall-clock `YYYY-MM-DDTHH:MM` of the next scheduled or confirmed appointment. */
+  nextAppointmentAt: string | null
+  /** `YYYY-MM-DD` of the latest completed appointment, or past one still booked but never closed. */
+  lastVisitDate: string | null
+}
+
 export async function listPatients(
   tenantId: string,
-  { search = '', page = 1, limit = 20, responsibleUserId }: { search?: string; page?: number; limit?: number; responsibleUserId?: string }
-): Promise<PaginatedResult<Patient>> {
+  {
+    search = '',
+    page = 1,
+    limit = 20,
+    responsibleUserId,
+    sort = 'nome',
+    direction = 'asc',
+  }: {
+    search?: string
+    page?: number
+    limit?: number
+    responsibleUserId?: string
+    sort?: PatientSortKey
+    direction?: SortDirection
+  }
+): Promise<PaginatedResult<PatientListRow>> {
   const offset = (page - 1) * limit
 
   const baseConditions = [
@@ -27,11 +49,14 @@ export async function listPatients(
   const phoneCondition = digitsOnly.length >= 2
     ? sql`regexp_replace(${patients.phone}, '[^0-9]', '', 'g') like ${'%' + digitsOnly + '%'}`
     : ilike(patients.phone, `%${escaped}%`)
+  const cpfCondition = digitsOnly.length >= 2
+    ? sql`regexp_replace(coalesce(${patients.cpf}, ''), '[^0-9]', '', 'g') like ${'%' + digitsOnly + '%'}`
+    : ilike(patients.cpf, `%${escaped}%`)
   const searchCondition = escaped
     ? or(
         ilike(patients.fullName, `%${escaped}%`),
         phoneCondition,
-        ilike(patients.cpf, `%${escaped}%`)
+        cpfCondition
       )
     : undefined
 
@@ -39,12 +64,45 @@ export async function listPatients(
     ? and(...baseConditions, searchCondition)
     : and(...baseConditions)
 
+  const today = brToday()
+  const ownAppointment = sql`${appointments.tenantId} = ${patients.tenantId}
+    and ${appointments.patientId} = ${patients.id}
+    and ${appointments.deletedAt} is null`
+  const nextAppointmentAt = sql<string | null>`(
+    select to_char(min(${appointments.date} + ${appointments.startTime}), 'YYYY-MM-DD"T"HH24:MI')
+    from ${appointments}
+    where ${ownAppointment}
+      and ${appointments.date} + ${appointments.startTime} >= (now() at time zone 'America/Sao_Paulo')
+      and ${appointments.status} in ('scheduled', 'confirmed')
+  )`
+  const lastVisitDate = sql<string | null>`(
+    select max(${appointments.date})::text
+    from ${appointments}
+    where ${ownAppointment}
+      and ${appointments.date} <= ${today}::date
+      and (
+        ${appointments.status} = 'completed'
+        or (${appointments.date} < ${today}::date and ${appointments.status} in ('scheduled', 'confirmed', 'in_progress'))
+      )
+  )`
+
+  const dir = direction === 'desc' ? sql`desc` : sql`asc`
+  const orderBy: Record<PatientSortKey, SQL[]> = {
+    nome: [sql`${patients.fullName} ${dir}`, sql`${patients.id} asc`],
+    proximo: [sql`${nextAppointmentAt} ${dir} nulls last`, sql`${patients.fullName} asc`, sql`${patients.id} asc`],
+    'ultima-visita': [sql`${lastVisitDate} ${dir} nulls last`, sql`${patients.fullName} asc`, sql`${patients.id} asc`],
+  }
+
   const [data, countResult] = await Promise.all([
     db
-      .select()
+      .select({
+        ...getTableColumns(patients),
+        nextAppointmentAt: nextAppointmentAt.as('next_appointment_at'),
+        lastVisitDate: lastVisitDate.as('last_visit_date'),
+      })
       .from(patients)
       .where(whereConditions)
-      .orderBy(asc(patients.fullName))
+      .orderBy(...orderBy[sort])
       .limit(limit)
       .offset(offset),
     db
