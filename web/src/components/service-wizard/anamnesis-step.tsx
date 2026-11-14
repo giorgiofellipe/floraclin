@@ -4,7 +4,7 @@ import { AlertTriangle, ClipboardList } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
 import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
-import { anamnesisAlerts, hasAnamnesisAnswers } from '@/lib/anamnesis/summary'
+import { anamnesisAlerts, coversAlertQuestions, hasAnamnesisAnswers } from '@/lib/anamnesis/summary'
 import { brCalendarDaysBetween, formatBrDate } from '@/lib/dates'
 import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { WizardOverrides } from './types'
@@ -43,16 +43,36 @@ export function AnamnesisStep({
   onOpenForm,
   onSkip,
 }: AnamnesisStepProps) {
+  const sendLink =
+    !readOnly && patient.phone ? (
+      <SendAnamnesisDialog
+        patientId={patient.id}
+        patientName={patient.fullName}
+        patientPhone={patient.phone}
+        whatsappApiEnabled={whatsappApiEnabled}
+        label="Enviar link por WhatsApp"
+        className="min-h-11 sm:min-h-8"
+      />
+    ) : null
+
   if (formOpen) {
     return (
-      <AnamnesisForm
-        patientId={patient.id}
-        record={record}
-        currentTemplate={template}
-        updatedByName={updatedByName}
-        wizardOverrides={wizardOverrides}
-        readOnly={readOnly}
-      />
+      <div className="space-y-4">
+        {sendLink && (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-mid">Envie o link para o paciente preencher a anamnese pelo celular.</p>
+            {sendLink}
+          </div>
+        )}
+        <AnamnesisForm
+          patientId={patient.id}
+          record={record}
+          currentTemplate={template}
+          updatedByName={updatedByName}
+          wizardOverrides={wizardOverrides}
+          readOnly={readOnly}
+        />
+      </div>
     )
   }
 
@@ -73,9 +93,12 @@ export function AnamnesisStep({
               </p>
             </div>
           </div>
-          <Button type="button" variant="outline" className="min-h-11 sm:min-h-9" onClick={onOpenForm}>
-            {readOnly ? 'Ver respostas' : 'Editar'}
-          </Button>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            {sendLink}
+            <Button type="button" variant="outline" className="min-h-11 sm:min-h-9" onClick={onOpenForm}>
+              {readOnly ? 'Ver respostas' : 'Editar'}
+            </Button>
+          </div>
         </div>
         {alerts.length > 0 ? (
           <ul className="mt-4 flex flex-wrap gap-2" aria-label="Alertas da anamnese">
@@ -91,7 +114,9 @@ export function AnamnesisStep({
             ))}
           </ul>
         ) : (
-          <p className="mt-4 text-xs text-mid">Nenhuma alergia, condição de saúde ou gestação registrada.</p>
+          coversAlertQuestions(record) && (
+            <p className="mt-4 text-xs text-mid">Nenhuma alergia, condição de saúde ou gestação registrada.</p>
+          )
         )}
       </section>
     )
@@ -112,16 +137,7 @@ export function AnamnesisStep({
         Envie o link para o paciente responder pelo celular, ou preencha agora junto com ele.
       </p>
       <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        {patient.phone && (
-          <SendAnamnesisDialog
-            patientId={patient.id}
-            patientName={patient.fullName}
-            patientPhone={patient.phone}
-            whatsappApiEnabled={whatsappApiEnabled}
-            label="Enviar link por WhatsApp"
-            className="min-h-11 sm:min-h-8"
-          />
-        )}
+        {sendLink}
         <Button type="button" variant="outline" className="min-h-11 sm:min-h-8" onClick={onOpenForm}>
           Preencher agora
         </Button>

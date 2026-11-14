@@ -49,7 +49,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
-import { formatBrDate, parseLocalDate } from '@/lib/dates'
+import { brToday, formatBrDate, parseLocalDate } from '@/lib/dates'
 import { isOpenDiagram } from '@/lib/face-diagram-status'
 import {
   countPendingSessions,
@@ -98,7 +98,7 @@ interface ServiceWizardProps {
   deepLinkProcedureId?: string | null
   autoStartNext?: boolean
   /** The appointment this atendimento serves: prefills its procedure type and is completed on finalize. */
-  appointment?: { id: string; status: string; procedureTypeId: string | null } | null
+  appointment?: { id: string; status: string; date: string; procedureTypeId: string | null } | null
   /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
   initialDiagramGroupId?: string | null
 }
@@ -114,6 +114,14 @@ function calculateAge(birthDate: string): number {
     age--
   }
   return age
+}
+
+// Only today's visit that is still open is finished with the atendimento. A resumed
+// plan can point at an older appointment, and cancelled or no-show visits keep their status.
+const COMPLETABLE_APPOINTMENT_STATUSES = new Set(['scheduled', 'confirmed', 'in_progress'])
+
+function shouldCompleteAppointment(appointment: { status: string; date: string }): boolean {
+  return COMPLETABLE_APPOINTMENT_STATUSES.has(appointment.status) && appointment.date === brToday()
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -486,7 +494,7 @@ export function ServiceWizard({
       encId = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36)
       setEncounterId(encId)
     }
-    if (!localProcedure) {
+    if (!localProcedure || state.cart.lines.length === 0) {
       toast.error('Carregando dados do procedimento, aguarde um instante.')
       return
     }
@@ -636,11 +644,12 @@ export function ServiceWizard({
   const finishAtendimento = useCallback(async () => {
     setIsFinishing(true)
     try {
-      if (appointment && appointment.status !== 'completed') {
+      if (appointment && shouldCompleteAppointment(appointment)) {
         try {
           await updateAppointmentStatus.mutateAsync({ id: appointment.id, status: 'completed' })
         } catch {
-          toast.error('Não foi possível marcar o agendamento como concluído. Atualize o status na Agenda.')
+          setError('Não foi possível marcar o agendamento como concluído. Tente finalizar novamente.', 'server')
+          return
         }
       }
       isExitingRef.current = true
@@ -649,7 +658,7 @@ export function ServiceWizard({
     } finally {
       setIsFinishing(false)
     }
-  }, [appointment, updateAppointmentStatus, router, patient.id])
+  }, [appointment, updateAppointmentStatus, setError, router, patient.id])
 
   // ─── Next handler ──────────────────────────────────────────────
 
@@ -778,6 +787,9 @@ export function ServiceWizard({
   const busy = state.isSaving || isFinalizing || isFinishing
   const nextDisabled = busy || isFinalizeBlocked
   const nextText = primaryLabel()
+  const savedPlan = (procedure as { financialPlan?: { totalAmount?: number | string } | null } | null | undefined)
+    ?.financialPlan
+  const resumeTotal = savedPlan?.totalAmount != null ? Number(savedPlan.totalAmount) : null
   const appointmentTypeId =
     !procedure && !initialDiagramGroupId ? (appointment?.procedureTypeId ?? null) : null
 
@@ -893,6 +905,7 @@ export function ServiceWizard({
                     onCartChange={handleCartChange}
                     selectedTypeIds={state.selectedTypeIds}
                     appointmentTypeId={appointmentTypeId}
+                    resumeTotal={resumeTotal}
                     readOnly={isReadOnlyAfterApproval}
                   />
                 </div>
@@ -1120,6 +1133,7 @@ export function ServiceWizard({
               type="button"
               onClick={handleNext}
               disabled={nextDisabled}
+              title={isFinalizeBlocked ? finalizeBlockedText : undefined}
               className="flex min-h-12 items-center justify-center gap-1.5 rounded-[3px] bg-forest px-6 py-2.5 text-sm font-medium text-cream transition-colors hover:bg-sage disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-forest"
             >
               {nextText}

@@ -40,25 +40,27 @@ export function WizardStepper({
             const isCurrent = step === currentStep
             return (
               <div key={step} className="flex items-center">
-                <button
-                  type="button"
-                  onClick={available ? () => onStepClick(step) : undefined}
-                  disabled={!available}
-                  aria-current={isCurrent ? 'step' : undefined}
-                  aria-label={`Passo ${step}: ${STEP_LABELS[step]}${completed ? ' (concluído)' : ''}`}
-                  className="flex size-11 items-center justify-center disabled:cursor-not-allowed"
-                >
-                  <span
-                    className={cn(
-                      'flex size-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors',
-                      isCurrent && 'bg-forest text-cream',
-                      completed && !isCurrent && 'bg-sage text-cream',
-                      !completed && !isCurrent && (available ? 'bg-mid/10 text-mid' : 'bg-mid/5 text-mid/40'),
-                    )}
+                <InfoPopover content={isStepAvailable(step) || disabled ? null : STEP_UNAVAILABLE_REASONS[step]}>
+                  <button
+                    type="button"
+                    onClick={available ? () => onStepClick(step) : undefined}
+                    disabled={!available}
+                    aria-current={isCurrent ? 'step' : undefined}
+                    aria-label={`Passo ${step}: ${STEP_LABELS[step]}${completed ? ' (concluído)' : ''}`}
+                    className="flex size-11 items-center justify-center disabled:cursor-not-allowed"
                   >
-                    {completed && !isCurrent ? <Check className="size-3" /> : step}
-                  </span>
-                </button>
+                    <span
+                      className={cn(
+                        'flex size-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors',
+                        isCurrent && 'bg-forest text-cream',
+                        completed && !isCurrent && 'bg-sage text-cream',
+                        !completed && !isCurrent && (available ? 'bg-mid/10 text-mid' : 'bg-mid/5 text-mid/40'),
+                      )}
+                    >
+                      {completed && !isCurrent ? <Check className="size-3" /> : step}
+                    </span>
+                  </button>
+                </InfoPopover>
                 {i < STEPS.length - 1 && (
                   <div className={cn('h-px w-4', completed ? 'bg-sage/40' : 'bg-mid/15')} />
                 )}

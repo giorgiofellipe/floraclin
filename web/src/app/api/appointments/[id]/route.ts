@@ -30,8 +30,8 @@ export async function GET(
     if (!appointment) {
       return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
     }
-    const { patientId, procedureTypeId, status } = appointment
-    return NextResponse.json({ id, patientId, procedureTypeId, status })
+    const { patientId, procedureTypeId, status, date } = appointment
+    return NextResponse.json({ id, patientId, procedureTypeId, status, date })
   } catch (error) {
     return handleApiError(error, request)
   }

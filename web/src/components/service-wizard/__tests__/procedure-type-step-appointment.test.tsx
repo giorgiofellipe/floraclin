@@ -24,7 +24,15 @@ const types = [
   { id: 't-filler', name: 'Preenchimento', category: 'filler', defaultPrice: '1200.00', estimatedDurationMin: 45 },
 ]
 
-function Harness({ onCart, appointmentTypeId }: { onCart: (c: EncounterCart) => void; appointmentTypeId: string | null }) {
+function Harness({
+  onCart,
+  appointmentTypeId,
+  resume,
+}: {
+  onCart: (c: EncounterCart) => void
+  appointmentTypeId: string | null
+  resume?: { typeIds: string[]; total: number }
+}) {
   const [cart, setCart] = useState(emptyCart)
   return (
     <ProcedureTypeStep
@@ -35,16 +43,18 @@ function Harness({ onCart, appointmentTypeId }: { onCart: (c: EncounterCart) => 
         setCart(c)
       }}
       appointmentTypeId={appointmentTypeId}
+      selectedTypeIds={resume?.typeIds}
+      resumeTotal={resume?.total}
     />
   )
 }
 
-function renderStep(appointmentTypeId: string | null) {
+function renderStep(appointmentTypeId: string | null, resume?: { typeIds: string[]; total: number }) {
   const onCart = vi.fn()
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   render(
     <QueryClientProvider client={qc}>
-      <Harness onCart={onCart} appointmentTypeId={appointmentTypeId} />
+      <Harness onCart={onCart} appointmentTypeId={appointmentTypeId} resume={resume} />
     </QueryClientProvider>,
   )
   return onCart
@@ -82,5 +92,21 @@ describe('ProcedureTypeStep opened from an appointment', () => {
     expect(onCart.mock.lastCall?.[0].lines).toEqual([
       expect.objectContaining({ procedureTypeId: 't-filler', defaultPrice: 1000 }),
     ])
+  })
+})
+
+describe('ProcedureTypeStep resuming a saved plan', () => {
+  beforeEach(() => {
+    mockGroups.mockReset().mockReturnValue([])
+    global.fetch = vi.fn(async (url: string) =>
+      new Response(JSON.stringify(String(url).includes('procedure-types') ? types : [])),
+    ) as unknown as typeof fetch
+  })
+
+  // Rebuilding the cart from today's catalog replaced the negotiated total the clinic had saved.
+  it('keeps the saved total when it differs from catalog prices', async () => {
+    const onCart = renderStep(null, { typeIds: ['t-botox'], total: 700 })
+    await waitFor(() => expect(onCart).toHaveBeenCalled())
+    expect(onCart.mock.calls[0][0]).toMatchObject({ totalOverride: 700, lines: [expect.objectContaining({ procedureTypeId: 't-botox' })] })
   })
 })

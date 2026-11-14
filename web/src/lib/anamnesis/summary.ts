@@ -25,6 +25,12 @@ export function hasAnamnesisAnswers(record: AnamnesisRecord | null | undefined):
   )
 }
 
+/** False when a clinic template dropped the questions the alerts read, so "nothing to flag" would mislead. */
+export function coversAlertQuestions(record: AnamnesisRecord): boolean {
+  const ids = new Set(record.templateSnapshot.flatMap((s) => s.questions.map((q) => q.id)))
+  return [ALLERGIES_ID, MEDICAL_HISTORY_ID, PREGNANT_ID].every((id) => ids.has(id))
+}
+
 /** Answers a practitioner must see before a procedure: allergies, health conditions, pregnancy. */
 export function anamnesisAlerts(record: AnamnesisRecord): string[] {
   const alerts: string[] = []

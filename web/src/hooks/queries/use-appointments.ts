@@ -53,6 +53,8 @@ export interface AppointmentDetail {
   patientId: string | null
   procedureTypeId: string | null
   status: string
+  /** BR calendar day, `YYYY-MM-DD`. */
+  date: string
 }
 
 export function useAppointment(id: string) {

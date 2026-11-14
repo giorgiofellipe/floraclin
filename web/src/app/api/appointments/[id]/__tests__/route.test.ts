@@ -174,7 +174,13 @@ describe('GET /api/appointments/[id]', () => {
     const res = await get(APPOINTMENT_ID)
 
     expect(getAppointmentById).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID)
-    expect(await res.json()).toEqual({ id: APPOINTMENT_ID, patientId: 'pat-1', procedureTypeId: 'type-1', status: 'scheduled' })
+    expect(await res.json()).toEqual({
+      id: APPOINTMENT_ID,
+      patientId: 'pat-1',
+      procedureTypeId: 'type-1',
+      status: 'scheduled',
+      date: '2026-10-12',
+    })
   })
 
   // A malformed id reached Postgres as a uuid cast and came back as a 500.

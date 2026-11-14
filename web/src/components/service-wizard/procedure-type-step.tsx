@@ -33,6 +33,8 @@ interface ProcedureTypeStepProps {
   onCartChange: (next: EncounterCart) => void
   /** Type ids of the procedure being resumed; backfilled into an empty cart. */
   selectedTypeIds?: string[]
+  /** Saved total of the resumed procedure; kept when it differs from today's catalog prices. */
+  resumeTotal?: number | null
   /** Procedure type booked on the appointment this atendimento serves; prefilled at its catalog price. */
   appointmentTypeId?: string | null
   readOnly?: boolean
@@ -66,6 +68,7 @@ export function ProcedureTypeStep({
   onCartChange,
   selectedTypeIds: initialSelectedTypeIds,
   appointmentTypeId,
+  resumeTotal,
   readOnly,
 }: ProcedureTypeStepProps) {
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
@@ -161,8 +164,10 @@ export function ProcedureTypeStep({
     if (lines.length === 0) return
     hydratedRef.current = true
     setSeededFromAppointment(fromAppointment)
-    onCartChange({ ...cart, lines })
-  }, [procedureTypes, cart, initialSelectedTypeIds, appointmentTypeId, selectedGroupId, onCartChange])
+    const catalogTotal = lines.reduce((sum, l) => sum + l.defaultPrice * l.sessions, 0)
+    const keepSavedTotal = !fromAppointment && !!resumeTotal && resumeTotal !== catalogTotal
+    onCartChange({ ...cart, lines, totalOverride: keepSavedTotal ? resumeTotal : cart.totalOverride })
+  }, [procedureTypes, cart, initialSelectedTypeIds, appointmentTypeId, selectedGroupId, resumeTotal, onCartChange])
 
   // ─── Template chooser handler ─────────────────────────────────────
 

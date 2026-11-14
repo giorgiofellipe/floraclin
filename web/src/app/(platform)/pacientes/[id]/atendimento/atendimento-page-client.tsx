@@ -51,9 +51,12 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   // procedures tab.
   // Deep link wins over the latest-non-executed query so the wizard mounts
   // with the deep-linked record as its primary procedure context.
+  // An appointment id from the URL counts only when it belongs to this patient.
+  const { data: urlAppointment, isLoading: urlAppointmentLoading } = useAppointment(appointmentId ?? '')
+  const visitAppointmentId = urlAppointment?.patientId === patientId ? appointmentId : undefined
   // A draft that already belongs to another appointment is not this visit's.
   const resumedForOtherVisit =
-    !!appointmentId && !!resumedProcedure?.appointmentId && resumedProcedure.appointmentId !== appointmentId
+    !!visitAppointmentId && !!resumedProcedure?.appointmentId && resumedProcedure.appointmentId !== visitAppointmentId
   const procedure = hasDeepLink
     ? (deepLinkRecord ?? null)
     : forceNew || resumedForOtherVisit
@@ -67,10 +70,11 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedureDetailQueryId)
 
   // The visit's appointment: from the URL, or the one a resumed procedure already belongs to.
-  const linkedAppointmentId = appointmentId ?? procedure?.appointmentId ?? ''
+  const linkedAppointmentId = visitAppointmentId ?? procedure?.appointmentId ?? ''
   const { data: linkedAppointment, isLoading: appointmentLoading } = useAppointment(linkedAppointmentId)
 
   const isLoading = patientLoading || tenantLoading || anamnesisLoading || templateLoading ||
+    (!!appointmentId && urlAppointmentLoading) ||
     (!!linkedAppointmentId && appointmentLoading) ||
     (!forceNew && !hasDeepLink && procedureLoading) ||
     (hasDeepLink && deepLinkLoading) ||
@@ -161,6 +165,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
           ? {
               id: linkedAppointment.id,
               status: linkedAppointment.status,
+              date: linkedAppointment.date,
               procedureTypeId: linkedAppointment.procedureTypeId,
             }
           : null
