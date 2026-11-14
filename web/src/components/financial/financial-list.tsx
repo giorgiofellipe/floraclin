@@ -30,7 +30,9 @@ import {
   RefreshCwIcon,
   CircleDotIcon,
 } from 'lucide-react'
-import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { useClearCreateParams } from '@/hooks/use-clear-create-params'
+import { CHARGE_CREATE_ROLES } from '@/lib/create-roles'
 
 interface Patient {
   id: string
@@ -112,10 +114,16 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   const page = parseInt(searchParams.get('page') ?? '1', 10)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const readOnly = useReadOnly()
+  const { readOnly, role } = useSubscriptionAccess()
+  const canCreateCharge = CHARGE_CREATE_ROLES.includes(role)
+  const clearCreateParams = useClearCreateParams()
   const [showPaymentForm, setShowPaymentForm] = useState(
-    () => !defaultPatientId && !readOnly && searchParams.get('novo') === '1',
+    () => canCreateCharge && !defaultPatientId && !readOnly && searchParams.get('novo') === '1',
   )
+  const closePaymentForm = () => {
+    setShowPaymentForm(false)
+    clearCreateParams()
+  }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [renegDialogOpen, setRenegDialogOpen] = useState(false)
   // Set when Renegociar comes from one row's menu instead of the selection.
@@ -294,16 +302,18 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
           </span>
         </div>
 
-        <ReadOnlyGuard label="Nova Cobrança">
-          <Button
-            className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
-            onClick={() => setShowPaymentForm(true)}
-            data-testid="financial-new-charge"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Nova Cobrança
-          </Button>
-        </ReadOnlyGuard>
+        {canCreateCharge && (
+          <ReadOnlyGuard label="Nova Cobrança">
+            <Button
+              className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
+              onClick={() => setShowPaymentForm(true)}
+              data-testid="financial-new-charge"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Nova Cobrança
+            </Button>
+          </ReadOnlyGuard>
+        )}
       </div>
 
       {/* Collapsible filters */}
@@ -649,10 +659,10 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
       {showPaymentForm && (
         <PaymentForm
           open={showPaymentForm}
-          onClose={() => setShowPaymentForm(false)}
+          onClose={closePaymentForm}
           defaultPatient={defaultPatient}
           onSuccess={() => {
-            setShowPaymentForm(false)
+            closePaymentForm()
             fetchEntries()
           }}
         />

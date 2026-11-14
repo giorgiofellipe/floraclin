@@ -7,7 +7,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+  usePathname: () => '/agenda',
+  useSearchParams: () => new URLSearchParams('open=new'),
+}))
 vi.mock('@/components/layout/subscription-access', () => ({
   useSubscriptionAccess: () => ({ readOnly: false, openPaywall: vi.fn() }),
   ReadOnlyGuard: ({ children }: { children: ReactNode }) => <>{children}</>,

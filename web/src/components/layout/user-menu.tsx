@@ -40,9 +40,9 @@ export function UserMenu({ userName, userEmail }: UserMenuProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        className="relative h-10 w-10 rounded-full focus:outline-none"
+        className="relative size-11 rounded-full focus:outline-none md:size-10"
         render={
-          <Button variant="ghost" className="relative h-10 w-10 rounded-full">
+          <Button variant="ghost" className="relative size-11 rounded-full md:size-10">
             <Avatar className="h-10 w-10">
               <AvatarFallback className="bg-sage text-cream">{initials}</AvatarFallback>
             </Avatar>

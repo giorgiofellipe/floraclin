@@ -49,6 +49,7 @@ import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import type { Role } from '@/types'
 import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { useClearCreateParams } from '@/hooks/use-clear-create-params'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -373,12 +374,14 @@ export function CalendarView({
     updateUrl(newDate, 'day', practitionerId)
   }
 
+  const clearCreateParams = useClearCreateParams()
   const handleFormOpenChange = React.useCallback((open: boolean) => {
     setFormOpen(open)
     if (!open) {
       setEditingAppointment(null)
+      clearCreateParams()
     }
-  }, [])
+  }, [clearCreateParams])
 
   // After mutations, React Query invalidation handles refetch automatically
   const handleFormSaved = React.useCallback(() => {

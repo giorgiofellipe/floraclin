@@ -1,7 +1,7 @@
 'use client'
 
 import { Fragment, useState } from 'react'
-import { useRouter, useSearchParams } from 'next/navigation'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Banknote, CalendarPlus, Plus, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -12,32 +12,38 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
 import { NEW_APPOINTMENT_PATH, NEW_CHARGE_PATH, NEW_PATIENT_PATH } from '@/lib/deep-links'
+import { APPOINTMENT_CREATE_ROLES, CHARGE_CREATE_ROLES, PATIENT_CREATE_ROLES } from '@/lib/create-roles'
 
-// Roles mirror the POST checks of /api/appointments, /api/patients and /api/financial.
 const QUICK_CREATE_ITEMS = [
-  { key: 'appointment', label: 'Novo agendamento', href: NEW_APPOINTMENT_PATH, icon: CalendarPlus, roles: ['owner', 'practitioner', 'receptionist'] },
-  { key: 'patient', label: 'Novo paciente', href: NEW_PATIENT_PATH, icon: UserPlus, roles: ['owner', 'practitioner', 'receptionist'] },
-  { key: 'charge', label: 'Nova cobrança', href: NEW_CHARGE_PATH, icon: Banknote, roles: ['owner', 'receptionist', 'financial'] },
-] as const
+  { key: 'appointment', label: 'Novo agendamento', href: NEW_APPOINTMENT_PATH, icon: CalendarPlus, roles: APPOINTMENT_CREATE_ROLES },
+  { key: 'patient', label: 'Novo paciente', href: NEW_PATIENT_PATH, icon: UserPlus, roles: PATIENT_CREATE_ROLES },
+  { key: 'charge', label: 'Nova cobrança', href: NEW_CHARGE_PATH, icon: Banknote, roles: CHARGE_CREATE_ROLES },
+]
 
 type QuickCreateItem = (typeof QUICK_CREATE_ITEMS)[number]
 
-function quickCreateItemsFor(role: string): QuickCreateItem[] {
-  return QUICK_CREATE_ITEMS.filter((item) => (item.roles as readonly string[]).includes(role))
-}
-
 // The target pages open their form from the URL only on mount. A fresh `qc`
 // on every pick remounts the page (QuickCreateBoundary), so the form also
-// opens when the user is already on that page.
+// opens when the user is already on that page; the page clears it on close
+// (useClearCreateParams).
 const NONCE_PARAM = 'qc'
 
 export function useQuickCreate() {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const guardWrite = useWriteGuard()
   const { role } = useSubscriptionAccess()
-  const items = quickCreateItemsFor(role)
+  const items = QUICK_CREATE_ITEMS.filter((item) => item.roles.includes(role))
   const open = (item: QuickCreateItem) =>
-    guardWrite(() => router.push(`${item.href}&${NONCE_PARAM}=${Date.now()}`))()
+    guardWrite(() => {
+      const [targetPath, targetQuery] = item.href.split('?')
+      // On the target page already: keep its date, view and filters.
+      const params = new URLSearchParams(targetPath === pathname ? searchParams.toString() : '')
+      new URLSearchParams(targetQuery).forEach((value, key) => params.set(key, value))
+      params.set(NONCE_PARAM, String(Date.now()))
+      router.push(`${targetPath}?${params}`)
+    })()
   return { items, open }
 }
 

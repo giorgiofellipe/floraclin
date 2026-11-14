@@ -31,6 +31,7 @@ import {
 } from '@/components/ui/dialog'
 import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
 import { ReadOnlyGuard, useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
+import { useClearCreateParams } from '@/hooks/use-clear-create-params'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -50,6 +51,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   // read-only mode it must not open a form whose save would 402.
   const { readOnly } = useSubscriptionAccess()
   const guardWrite = useWriteGuard()
+  const clearCreateParams = useClearCreateParams()
   const [formOpen, setFormOpen] = useState(novoParam === '1' && !readOnly)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
   const [prefillData] = useState(
@@ -266,7 +268,10 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open)
-          if (!open) setEditingPatient(null)
+          if (!open) {
+            setEditingPatient(null)
+            clearCreateParams()
+          }
         }}
         patient={editingPatient}
         prefill={prefillData ?? undefined}

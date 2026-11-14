@@ -4,11 +4,11 @@ import userEvent from '@testing-library/user-event'
 import { BottomNav } from '../bottom-nav'
 import { SubscriptionAccessProvider, useSubscriptionAccess } from '../subscription-access'
 
-const route = vi.hoisted(() => ({ pathname: '/agenda', push: vi.fn() }))
+const route = vi.hoisted(() => ({ pathname: '/agenda', search: '', push: vi.fn() }))
 vi.mock('next/navigation', () => ({
   usePathname: () => route.pathname,
   useRouter: () => ({ push: route.push, refresh: vi.fn() }),
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(route.search),
 }))
 
 function PaywallProbe() {
@@ -34,6 +34,7 @@ async function openCreateMenu() {
 describe('BottomNav', () => {
   beforeEach(() => {
     route.pathname = '/agenda'
+    route.search = ''
     route.push.mockClear()
   })
 
@@ -44,6 +45,13 @@ describe('BottomNav', () => {
     '/whatsapp',
   ])('stays out of the way on %s, which has its own bottom bar or fills the screen', (pathname) => {
     route.pathname = pathname
+    renderNav()
+    expect(screen.queryByRole('navigation', { name: 'Navegação principal' })).not.toBeInTheDocument()
+  })
+
+  it('stays out of the way of the sticky photo bar on the patient Fotos section only', () => {
+    route.pathname = '/pacientes/p1'
+    route.search = 'tab=fotos'
     renderNav()
     expect(screen.queryByRole('navigation', { name: 'Navegação principal' })).not.toBeInTheDocument()
   })
@@ -72,11 +80,25 @@ describe('BottomNav', () => {
     expect(await openCreateMenu()).toEqual(expected)
   })
 
-  it('opens the new appointment form from the + menu', async () => {
+  it('opens the new appointment form from the + menu and keeps the agenda day and view', async () => {
+    route.search = 'date=2026-11-20&view=week'
     renderNav()
     await openCreateMenu()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Novo agendamento' }))
-    expect(route.push).toHaveBeenCalledWith(expect.stringMatching(/^\/agenda\?open=new&/))
+    const [url] = route.push.mock.calls[0]
+    const params = new URLSearchParams(url.split('?')[1])
+    expect(url.startsWith('/agenda?')).toBe(true)
+    expect(Object.fromEntries(params)).toMatchObject({ date: '2026-11-20', view: 'week', open: 'new' })
+  })
+
+  it('does not carry the current page filters into another page', async () => {
+    route.pathname = '/financeiro'
+    route.search = 'status=overdue'
+    renderNav()
+    await openCreateMenu()
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Novo paciente' }))
+    const [url] = route.push.mock.calls[0]
+    expect(url).toMatch(/^\/pacientes\?novo=1&qc=\d+$/)
   })
 
   it('opens the paywall instead of a create form in read-only mode', async () => {

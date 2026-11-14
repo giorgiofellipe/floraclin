@@ -82,8 +82,9 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
             <h2 className="font-sans text-base font-medium leading-tight text-charcoal">
               {title}
             </h2>
+            {/* The date can differ between server render and hydration across BR midnight. */}
             {subtitle && (
-              <p className="text-xs leading-tight text-mid-dark">{subtitle}</p>
+              <p className="text-xs leading-tight text-mid-dark" suppressHydrationWarning>{subtitle}</p>
             )}
           </div>
           <div className="min-w-0 md:hidden">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useSyncExternalStore } from 'react'
 import { useRouter } from 'next/navigation'
 import { SearchIcon, UserRound } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -16,14 +16,21 @@ import { usePatientSearch } from '@/hooks/queries/use-patients'
 import { useDebounced } from '@/hooks/use-debounced'
 import { formatBrPhone } from '@/lib/phone'
 
+const subscribeNoop = () => () => {}
+const isMac = () => /Mac|iPhone|iPad/.test(navigator.platform)
+
 export function PatientSearch() {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const debounced = useDebounced(query, 250)
-  const { data: results, isFetching } = usePatientSearch(debounced, { enabled: open })
+  const { data: results, isFetching, isError } = usePatientSearch(debounced, { enabled: open })
+  const shortcut = useSyncExternalStore(subscribeNoop, () => (isMac() ? '⌘K' : 'Ctrl K'), () => 'Ctrl K')
   const ready = debounced.trim().length >= 2
-  const hint = !ready ? 'Digite pelo menos 2 caracteres.' : isFetching && !results ? 'Buscando...' : null
+  let hint: string | null = null
+  if (!ready) hint = 'Digite pelo menos 2 caracteres.'
+  else if (isError) hint = 'Não foi possível buscar. Tente novamente.'
+  else if (isFetching && !results) hint = 'Buscando...'
 
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
@@ -67,7 +74,7 @@ export function PatientSearch() {
       >
         <SearchIcon className="size-4 shrink-0" />
         <span className="flex-1 truncate">Buscar paciente</span>
-        <kbd className="rounded border border-topbar-border bg-white px-1.5 font-sans text-[10px] text-mid-dark">Ctrl K</kbd>
+        <kbd className="rounded border border-topbar-border bg-white px-1.5 font-sans text-[10px] text-mid-dark">{shortcut}</kbd>
       </button>
 
       <CommandDialog
@@ -87,7 +94,7 @@ export function PatientSearch() {
           />
           <CommandList>
             {hint ? (
-              <p className="py-6 text-center text-sm text-mid-dark">{hint}</p>
+              <p role="status" className="py-6 text-center text-sm text-mid-dark">{hint}</p>
             ) : (
               <>
                 <CommandEmpty>Nenhum paciente encontrado.</CommandEmpty>

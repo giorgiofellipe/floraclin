@@ -41,4 +41,13 @@ describe('PatientSearch', () => {
     await userEvent.type(await screen.findByPlaceholderText('Nome, telefone ou CPF'), 'zzz')
     expect(await screen.findByText('Nenhum paciente encontrado.')).toBeInTheDocument()
   })
+
+  it('says the search failed instead of claiming no patient matches', async () => {
+    usePatientSearch.mockReturnValue({ data: undefined, isFetching: false, isError: true })
+    render(<PatientSearch />)
+    await userEvent.click(screen.getByRole('button', { name: 'Buscar paciente' }))
+    await userEvent.type(await screen.findByPlaceholderText('Nome, telefone ou CPF'), 'mar')
+    expect(await screen.findByText('Não foi possível buscar. Tente novamente.')).toBeInTheDocument()
+    expect(screen.queryByText('Nenhum paciente encontrado.')).not.toBeInTheDocument()
+  })
 })

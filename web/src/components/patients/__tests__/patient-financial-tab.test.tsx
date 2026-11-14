@@ -11,6 +11,12 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }))
 
+const access = vi.hoisted(() => ({ role: 'owner' }))
+vi.mock('@/components/layout/subscription-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/layout/subscription-access')>()),
+  useSubscriptionAccess: () => ({ readOnly: false, role: access.role, openPaywall: vi.fn() }),
+}))
+
 vi.mock('@/components/financial/payment-form', () => ({
   PaymentForm: () => null,
 }))
@@ -62,6 +68,7 @@ function setup(entries: ReturnType<typeof makeEntry>[] = [makeEntry()]) {
 }
 
 beforeEach(() => {
+  access.role = 'owner'
   vi.restoreAllMocks()
 })
 
@@ -130,6 +137,15 @@ describe('PatientFinancialTab', () => {
 
     const btn = await screen.findByRole('button', { name: /Nova Cobrança/i })
     expect(btn).toBeInTheDocument()
+  })
+
+  // POST /api/financial answers 403 to a practitioner.
+  it('hides "Nova Cobrança" from a practitioner', async () => {
+    access.role = 'practitioner'
+    setup([makeEntry()])
+
+    await screen.findAllByText('Botox frontal')
+    expect(screen.queryByRole('button', { name: /Nova Cobrança/i })).not.toBeInTheDocument()
   })
 
   it('shows the patient-tab financial summary cards with correct totals', async () => {
