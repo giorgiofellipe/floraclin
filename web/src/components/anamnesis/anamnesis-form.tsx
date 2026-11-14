@@ -396,6 +396,8 @@ export function AnamnesisForm({
                 </span>
               ) : null}
             </div>
+            {/* The wizard bar saves; only the autosave status stays visible there. */}
+            {!wizardOverrides?.hideSaveButton && (
             <Button
               type="submit"
               disabled={isPending}
@@ -410,6 +412,7 @@ export function AnamnesisForm({
                 'Salvar'
               )}
             </Button>
+            )}
           </div>
         )}
       </form>

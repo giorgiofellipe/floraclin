@@ -6,6 +6,7 @@ import { InfoPopover } from '@/components/ui/info-popover'
 import {
   STEP_LABELS,
   STEP_UNAVAILABLE_REASONS,
+  WIZARD_STEPS,
   type WizardStep,
 } from '@/hooks/use-service-wizard'
 
@@ -15,9 +16,11 @@ interface WizardStepperProps {
   isStepCompleted: (step: WizardStep) => boolean
   onStepClick: (step: WizardStep) => void
   disabled?: boolean
+  /** Phone layout: numbered 44px targets with a "Passo N de M" caption. */
+  compact?: boolean
 }
 
-const STEPS: WizardStep[] = [1, 2, 3, 4, 5]
+const STEPS = WIZARD_STEPS
 
 export function WizardStepper({
   currentStep,
@@ -25,7 +28,51 @@ export function WizardStepper({
   isStepCompleted,
   onStepClick,
   disabled,
+  compact,
 }: WizardStepperProps) {
+  if (compact) {
+    return (
+      <div className="flex flex-col items-center gap-0.5">
+        <nav aria-label="Etapas do atendimento" className="flex items-center">
+          {STEPS.map((step, i) => {
+            const available = isStepAvailable(step) && !disabled
+            const completed = isStepCompleted(step)
+            const isCurrent = step === currentStep
+            return (
+              <div key={step} className="flex items-center">
+                <button
+                  type="button"
+                  onClick={available ? () => onStepClick(step) : undefined}
+                  disabled={!available}
+                  aria-current={isCurrent ? 'step' : undefined}
+                  aria-label={`Passo ${step}: ${STEP_LABELS[step]}${completed ? ' (concluído)' : ''}`}
+                  className="flex size-11 items-center justify-center disabled:cursor-not-allowed"
+                >
+                  <span
+                    className={cn(
+                      'flex size-6 items-center justify-center rounded-full text-[11px] font-bold transition-colors',
+                      isCurrent && 'bg-forest text-cream',
+                      completed && !isCurrent && 'bg-sage text-cream',
+                      !completed && !isCurrent && (available ? 'bg-mid/10 text-mid' : 'bg-mid/5 text-mid/40'),
+                    )}
+                  >
+                    {completed && !isCurrent ? <Check className="size-3" /> : step}
+                  </span>
+                </button>
+                {i < STEPS.length - 1 && (
+                  <div className={cn('h-px w-4', completed ? 'bg-sage/40' : 'bg-mid/15')} />
+                )}
+              </div>
+            )
+          })}
+        </nav>
+        <p className="text-xs text-mid">
+          Passo {currentStep} de {STEPS.length} · <span className="font-medium text-charcoal">{STEP_LABELS[currentStep]}</span>
+        </p>
+      </div>
+    )
+  }
+
   return (
     <nav
       aria-label="Etapas do atendimento"

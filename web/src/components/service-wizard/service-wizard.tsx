@@ -3,11 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { format } from 'date-fns'
-import { X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { X, ChevronLeft, ChevronRight, MoreHorizontal } from 'lucide-react'
 import { toast } from 'sonner'
 import { cn } from '@/lib/utils'
-import { useServiceWizard, type WizardStep } from '@/hooks/use-service-wizard'
+import {
+  STEP_TIMESTAMP_KEYS,
+  useServiceWizard,
+  type StepTimestamps,
+  type WizardStep,
+} from '@/hooks/use-service-wizard'
+import { useUpdateAppointmentStatus } from '@/hooks/mutations/use-appointment-mutations'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { computeCartTotal, type EncounterCart } from '@/validations/encounter-cart'
 import {
   Dialog,
   DialogContent,
@@ -22,8 +34,7 @@ import { ProcedureTypeStep } from './procedure-type-step'
 import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups'
 import { queryKeys } from '@/hooks/queries/query-keys'
 import { SaveStatusIndicator } from './save-status-indicator'
-import { AnamnesisForm } from '@/components/anamnesis/anamnesis-form'
-import { SendAnamnesisDialog } from '@/components/patients/send-anamnesis-dialog'
+import { AnamnesisStep } from './anamnesis-step'
 import { ProcedureForm } from '@/components/procedures/procedure-form'
 import { ProcedureApproval } from '@/components/procedures/procedure-approval'
 import { ProcedureExecution } from '@/components/procedures/procedure-execution'
@@ -38,6 +49,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
+import { formatBrDate, parseLocalDate } from '@/lib/dates'
 import { isOpenDiagram } from '@/lib/face-diagram-status'
 import {
   countPendingSessions,
@@ -77,13 +89,7 @@ interface ServiceWizardProps {
   anamnesis?: AnamnesisRecord | null
   anamnesisTemplate: AnamnesisTemplate
   anamnesisUpdatedByName?: string
-  stepTimestamps?: {
-    anamnesis: Date | null
-    procedureTypes: Date | null
-    planning: Date | null
-    approval: Date | null
-    execution: Date | null
-  }
+  stepTimestamps?: StepTimestamps
   /**
    * Deep-link from "Executar próxima sessão" on the package card: when set,
    * `<ProcedureExecution>` mounts directly in execute mode for this record so
@@ -91,8 +97,8 @@ interface ServiceWizardProps {
    */
   deepLinkProcedureId?: string | null
   autoStartNext?: boolean
-  /** The appointment this atendimento serves; saved on a new procedure record. */
-  appointmentId?: string
+  /** The appointment this atendimento serves: prefills its procedure type and is completed on finalize. */
+  appointment?: { id: string; status: string; procedureTypeId: string | null } | null
   /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
   initialDiagramGroupId?: string | null
 }
@@ -101,7 +107,7 @@ interface ServiceWizardProps {
 
 function calculateAge(birthDate: string): number {
   const today = new Date()
-  const birth = new Date(birthDate)
+  const birth = parseLocalDate(birthDate)
   let age = today.getFullYear() - birth.getFullYear()
   const monthDiff = today.getMonth() - birth.getMonth()
   if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
@@ -128,7 +134,7 @@ export function ServiceWizard({
   deepLinkProcedureId,
   autoStartNext,
   initialDiagramGroupId,
-  appointmentId,
+  appointment,
 }: ServiceWizardProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -182,10 +188,10 @@ export function ServiceWizard({
     getNextLabel,
     updateProcedureStatus,
     updateStepTimestamp,
-    setSelectedTypeIds,
     setCart,
     setEncounterId,
     setProcedureRecordIds,
+    setError,
     clearError,
   } = wizard
 
@@ -204,7 +210,6 @@ export function ServiceWizard({
       2: (d: boolean) => setStepDirty((p) => (p[2] === d ? p : { ...p, 2: d })),
       3: (d: boolean) => setStepDirty((p) => (p[3] === d ? p : { ...p, 3: d })),
       4: (d: boolean) => setStepDirty((p) => (p[4] === d ? p : { ...p, 4: d })),
-      5: (d: boolean) => setStepDirty((p) => (p[5] === d ? p : { ...p, 5: d })),
     }),
     [],
   )
@@ -259,7 +264,7 @@ export function ServiceWizard({
         setEvalTemplates(formTemplates)
         setEvalTemplatesLoadedForIds(key)
       } catch {
-        // Non-blocking — templates won't show
+        // Non-blocking: templates won't show
       } finally {
         setLoadingEvalTemplates(false)
       }
@@ -268,10 +273,10 @@ export function ServiceWizard({
   }, [state.selectedTypeIds, evalTemplatesLoadedForIds])
 
   // Load existing evaluation responses when resuming a procedure
-  // Re-run when navigating back to step 3 (responses may have been saved in a previous visit)
+  // Re-run when navigating back to planning (responses may have been saved in a previous visit)
   useEffect(() => {
     if (!state.procedureId) return
-    if (state.currentStep !== 3) return
+    if (state.currentStep !== 2) return
 
     async function loadResponses() {
       try {
@@ -293,18 +298,23 @@ export function ServiceWizard({
     loadResponses()
   }, [state.procedureId, state.currentStep])
 
-  // ─── beforeunload protection for steps 2-5 ─────────────────────
+  // ─── Leave protection: only unsaved edits on the current step can be lost ───
+
+  // All steps stay mounted, so edits left on another step are lost on exit too.
+  const hasUnsavedChanges = Object.values(stepDirty).some(Boolean)
+  const hasUnsavedChangesRef = useRef(hasUnsavedChanges)
+  hasUnsavedChangesRef.current = hasUnsavedChanges
+  const [showExitDialog, setShowExitDialog] = useState(false)
+  const isExitingRef = useRef(false)
 
   useEffect(() => {
-    if (state.currentStep === 1) return
-
     function handleBeforeUnload(e: BeforeUnloadEvent) {
-      if (isExitingRef.current) return
+      if (isExitingRef.current || !hasUnsavedChangesRef.current) return
       e.preventDefault()
     }
 
     function handlePopState() {
-      if (isExitingRef.current) return // allow navigation when exiting
+      if (isExitingRef.current || !hasUnsavedChangesRef.current) return
       // Push state back so the user stays on the page
       window.history.pushState(null, '', window.location.href)
       setShowExitDialog(true)
@@ -321,19 +331,15 @@ export function ServiceWizard({
     }
   }, [state.currentStep])
 
-  // ─── Exit confirmation dialog ───────────────────────────────────
-
-  const [showExitDialog, setShowExitDialog] = useState(false)
-
   const handleExit = useCallback(() => {
-    if (state.currentStep > 1) {
+    if (hasUnsavedChanges) {
       setShowExitDialog(true)
       return
     }
+    isExitingRef.current = true
     router.push(`/pacientes/${patient.id}`)
-  }, [state.currentStep, router, patient.id])
+  }, [hasUnsavedChanges, router, patient.id])
 
-  const isExitingRef = useRef(false)
   // `pendingAction` is lifted to React state (not a ref) so `validationMode`
   // in getOverridesForStep can be derived safely during render. See the note
   // on getOverridesForStep for details.
@@ -344,6 +350,13 @@ export function ServiceWizard({
     router.push(`/pacientes/${patient.id}`)
   }, [router, patient.id])
 
+  // Step 1 shows a status card; the full anamnesis form mounts only on demand.
+  const [anamnesisFormOpen, setAnamnesisFormOpen] = useState(false)
+  // A step without an editable form never answers triggerSave (isSaving would stay stuck).
+  let currentStepSaves = false
+  if (state.currentStep === 1) currentStepSaves = anamnesisFormOpen
+  else if (state.currentStep === 2) currentStepSaves = state.cart.lines.length > 0 && !isStepReadOnly(2)
+
   // ─── Smart context message ─────────────────────────────────────
 
   function getContextMessage(): { text: string; dotColor: string } | null {
@@ -352,19 +365,15 @@ export function ServiceWizard({
       return { text: 'Novo atendimento', dotColor: 'bg-forest' }
     }
     if (currentStatus === 'planned') {
-      const dateStr = state.stepTimestamps.planning
-        ? format(new Date(state.stepTimestamps.planning), 'dd/MM/yyyy')
-        : null
+      const dateStr = state.stepTimestamps.planning ? formatBrDate(state.stepTimestamps.planning) : null
       return {
-        text: dateStr
-          ? `Continuando planejamento \u2014 criado em ${dateStr}`
-          : 'Continuando planejamento',
+        text: dateStr ? `Continuando planejamento de ${dateStr}` : 'Continuando planejamento',
         dotColor: 'bg-amber',
       }
     }
     if (currentStatus === 'approved') {
       return {
-        text: 'Procedimento aprovado \u2014 pronto para execu\u00e7\u00e3o',
+        text: 'Procedimento aprovado, pronto para execução',
         dotColor: 'bg-sage',
       }
     }
@@ -388,27 +397,16 @@ export function ServiceWizard({
       onSaveComplete(result)
 
       if (result.success) {
-        // Update step timestamp on successful save
-        const stepTimestampMap: Record<number, 'anamnesis' | 'procedureTypes' | 'planning' | 'approval' | 'execution'> = {
-          1: 'anamnesis',
-          2: 'procedureTypes',
-          3: 'planning',
-          4: 'approval',
-          5: 'execution',
-        }
-        const timestampKey = stepTimestampMap[state.currentStep]
-        if (timestampKey) {
-          updateStepTimestamp(timestampKey, new Date())
-        }
+        updateStepTimestamp(STEP_TIMESTAMP_KEYS[state.currentStep], new Date())
 
-        // Leaving step 2 for the first time → mint the encounter id that
-        // will key the finalize POST at step 4 and the execution at step 5.
-        if (state.currentStep === 2 && pending === 'advance' && !state.encounterId) {
+        // The first planning save mints the encounter id that keys the
+        // finalize POST at approval and the execution sessions.
+        if (state.currentStep === 2 && !state.encounterId) {
           setEncounterId(globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2) + Date.now().toString(36))
         }
 
-        // After step 3 creates/updates a procedure, fetch fresh data client-side
-        if (state.currentStep === 3 && result.procedureId) {
+        // After planning creates/updates a procedure, fetch fresh data client-side
+        if (state.currentStep === 2 && result.procedureId) {
           try {
             const fetchRes = await fetch(`/api/procedures/${result.procedureId}`)
             if (fetchRes.ok) {
@@ -418,20 +416,10 @@ export function ServiceWizard({
               setLocalApplications((procData as { productApplications?: ProductApplicationRecord[] }).productApplications ?? null)
             }
           } catch {
-            // Non-blocking — steps 4-5 will show placeholder if fetch fails
+            // Non-blocking: approval and execution show a placeholder if the fetch fails
           }
         }
 
-        // Step 4 approval is now driven by the wizard's own finalize POST
-        // (see handleApprove). The legacy useApproveProcedure path is no
-        // longer triggered here.
-        if (state.currentStep === 4) {
-          updateProcedureStatus('approved')
-        }
-
-        // Exit path takes priority: if the user clicked "Salvar e sair" on
-        // any step (including step 5), route out with the partial-save toast
-        // — never show the terminal-finalize message.
         if (pending === 'exit') {
           isExitingRef.current = true
           toast.success('Atendimento salvo. Retome quando quiser.')
@@ -439,20 +427,10 @@ export function ServiceWizard({
           return
         }
 
-        // Step 5 commit path: finalize + redirect
-        if (state.currentStep === 5) {
-          toast.success('Atendimento finalizado com sucesso')
-          router.push(`/pacientes/${patient.id}`)
-          return
-        }
-
-        // Don't auto-advance past step 3 if the server marked the procedure
-        // as draft (missing financialPlan or diagram points). Stay on step 3
-        // so the user can finish filling the required fields.
-        if (state.currentStep === 3 && result.procedureStatus === 'draft') {
-          console.log(
-            '[wizard] staying on step 3 — server returned draft status (incomplete planning)',
-          )
+        // Stay on planning while the server keeps the procedure as a draft
+        // (missing financial plan or diagram points).
+        if (state.currentStep === 2 && result.procedureStatus === 'draft') {
+          console.log('[wizard] staying on planning: server returned draft status')
           toast.info('Preencha o plano financeiro para avançar à aprovação.')
           return
         }
@@ -470,7 +448,6 @@ export function ServiceWizard({
       state.currentStep,
       state.encounterId,
       nextStep,
-      updateProcedureStatus,
       updateStepTimestamp,
       setEncounterId,
       router,
@@ -481,22 +458,21 @@ export function ServiceWizard({
   // ─── Skip/Adiar handler ────────────────────────────────────────
 
   const handleSkip = useCallback(() => {
-    if (state.currentStep === 4) {
-      // "Adiar Aprovação" — exits wizard
+    if (state.currentStep === 3) {
+      // "Adiar aprovação" exits the wizard
+      isExitingRef.current = true
       toast.info('Atendimento salvo como planejado. Retorne para aprovar quando o paciente estiver pronto.')
       router.push(`/pacientes/${patient.id}`)
       return
     }
-    // Regular skip — advance to next step
+    // Regular skip: advance to next step
     nextStep()
   }, [state.currentStep, nextStep, router, patient.id])
 
-  // ─── Step 4 approval → finalize encounter ───────────────────────
+  // ─── Approval → finalize encounter ───────────────────────────────
   //
-  // The wizard now owns the approval POST. It calls the new finalize endpoint
-  // (`POST /api/encounters/{encounterId}/finalize`) with the cart + draft
-  // record ids that the planning step produced. On success, we adopt the
-  // returned procedureRecordIds and advance to step 5.
+  // POST /api/encounters/{encounterId}/finalize approves the drafts, records
+  // the charge and returns the approved record ids used by execution.
   const [isFinalizing, setIsFinalizing] = useState(false)
   const cardPaymentRef = useRef<CardPaymentChoice>({ cardNow: false, terminalId: null, expectedRate: null })
   const handleCardPaymentChange = useCallback((value: CardPaymentChoice) => {
@@ -511,7 +487,7 @@ export function ServiceWizard({
       setEncounterId(encId)
     }
     if (!localProcedure) {
-      toast.error('Carregando dados do procedimento — aguarde um instante.')
+      toast.error('Carregando dados do procedimento, aguarde um instante.')
       return
     }
 
@@ -627,82 +603,87 @@ export function ServiceWizard({
     promptAfterPayment,
   ])
 
-  // ─── Next handler ──────────────────────────────────────────────
-  //
-  // On step 5 (Execução), "Próximo" becomes "Finalizar Atendimento" — a
-  // terminal, irreversible action. Gate it behind a confirmation dialog so
-  // the user doesn't accidentally lock the record. Additionally, block the
-  // action entirely while any executable session is still pending.
-  const [showFinalizeDialog, setShowFinalizeDialog] = useState(false)
+  // ─── Execution → finish ──────────────────────────────────────────
+  // Finishing is blocked while any executable session is still pending.
 
-  // Subscribe to the encounter view (shared cache with SessionPicker — no
+  // Subscribe to the encounter view (shared cache with SessionPicker, no
   // extra fetch) so we can tell whether any session is still pending.
-  const { data: encounterView, error: encounterViewError } = useQuery({
+  const { data: encounterView, error: encounterViewError, isLoading: encounterViewLoading } = useQuery({
     ...encounterViewQueryOptions(state.encounterId ?? ''),
-    enabled: !!state.encounterId && state.currentStep === 5,
+    enabled: !!state.encounterId && state.currentStep === 4,
   })
 
   const pendingSessionsRemaining = encounterView ? countPendingSessions(encounterView) : 0
   const pendingCheckFailed =
     !!encounterViewError && !(encounterViewError instanceof EncounterViewNotFoundError)
+  // Until the pending-session check answers, finishing could skip unexecuted sessions.
   const isFinalizeBlocked =
-    state.currentStep === 5 && (pendingCheckFailed || pendingSessionsRemaining > 0)
+    state.currentStep === 4 && (encounterViewLoading || pendingCheckFailed || pendingSessionsRemaining > 0)
 
-  let finalizeBlockedTitle = PENDING_CHECK_FAILED_MESSAGE
   let finalizeBlockedText = PENDING_CHECK_FAILED_MESSAGE
-  if (!pendingCheckFailed) {
-    const sessionsLabel = pendingSessionsRemaining === 1 ? 'sessão pendente' : 'sessões pendentes'
-    finalizeBlockedTitle = `${pendingSessionsRemaining} ${sessionsLabel} — execute ou encerre o pacote antes de finalizar.`
+  if (encounterViewLoading) {
+    finalizeBlockedText = 'Verificando sessões pendentes...'
+  } else if (!pendingCheckFailed) {
     finalizeBlockedText =
       pendingSessionsRemaining === 1
         ? '1 sessão pendente. Execute ou encerre o pacote antes de finalizar.'
         : `${pendingSessionsRemaining} sessões pendentes. Execute todas ou encerre o pacote antes de finalizar.`
   }
 
+  const updateAppointmentStatus = useUpdateAppointmentStatus()
+  const [isFinishing, setIsFinishing] = useState(false)
+
+  const finishAtendimento = useCallback(async () => {
+    setIsFinishing(true)
+    try {
+      if (appointment && appointment.status !== 'completed') {
+        try {
+          await updateAppointmentStatus.mutateAsync({ id: appointment.id, status: 'completed' })
+        } catch {
+          toast.error('Não foi possível marcar o agendamento como concluído. Atualize o status na Agenda.')
+        }
+      }
+      isExitingRef.current = true
+      toast.success('Atendimento finalizado')
+      router.push(`/pacientes/${patient.id}`)
+    } finally {
+      setIsFinishing(false)
+    }
+  }, [appointment, updateAppointmentStatus, router, patient.id])
+
+  // ─── Next handler ──────────────────────────────────────────────
+
   const handleNext = useCallback(() => {
-    console.log('[wizard] handleNext clicked', {
-      currentStep: state.currentStep,
-      pendingAction,
-      procedureStatus: state.procedureStatus,
-      procedureId: state.procedureId,
-    })
-    if (state.currentStep === 5) {
-      setShowFinalizeDialog(true)
+    if (state.currentStep === 4) {
+      void finishAtendimento()
       return
     }
-    if (state.currentStep === 4) {
+    if (state.currentStep === 3) {
       void handleApprove()
+      return
+    }
+    if (state.currentStep === 2 && state.cart.lines.length === 0) {
+      setError('Selecione ao menos um tipo de procedimento.', 'precondition')
+      return
+    }
+    if (!currentStepSaves) {
+      nextStep()
       return
     }
     triggerSave()
   }, [
     state.currentStep,
+    state.cart.lines.length,
+    currentStepSaves,
     triggerSave,
-    pendingAction,
-    state.procedureStatus,
-    state.procedureId,
+    nextStep,
+    setError,
     handleApprove,
+    finishAtendimento,
   ])
 
-  const confirmFinalize = useCallback(() => {
-    // Step 5 has nothing left to save — sessions persist independently
-    // through POST /api/procedures/[id]/sessions as the clinician executes
-    // each one. "Finalizar atendimento" here is purely a navigation gate:
-    // close the wizard and route the user back to the patient. The old
-    // single-shot execution form used `triggerSave()` to flush state at
-    // this point, but the new picker/orchestrator doesn't observe the
-    // trigger — calling it would leave state.isSaving stuck at true.
-    setShowFinalizeDialog(false)
-    isExitingRef.current = true
-    toast.success('Atendimento finalizado com sucesso')
-    router.push(`/pacientes/${patient.id}`)
-  }, [router, patient.id])
-
   const handleSaveAndExit = useCallback(() => {
-    // Step 5 has no wizard-managed form to flush — sessions persist
-    // independently and the picker/orchestrator doesn't observe
-    // triggerSave, which would leave isSaving stuck. Exit directly.
-    if (state.currentStep === 5) {
+    if (!currentStepSaves) {
       isExitingRef.current = true
       toast.success('Atendimento salvo. Retome quando quiser.')
       router.push(`/pacientes/${patient.id}`)
@@ -710,7 +691,15 @@ export function ServiceWizard({
     }
     setPendingAction('exit')
     triggerSave()
-  }, [state.currentStep, triggerSave, router, patient.id])
+  }, [currentStepSaves, triggerSave, router, patient.id])
+
+  const handleCartChange = useCallback(
+    (cart: EncounterCart) => {
+      setCart(cart)
+      if (cart.lines.length > 0) clearError()
+    },
+    [setCart, clearError],
+  )
 
   // ─── Wizard overrides for each step ────────────────────────────
 
@@ -742,17 +731,13 @@ export function ServiceWizard({
   // All steps are mounted simultaneously (display:none), so passing
   // triggerSave to all of them would cause all to fire at once.
   //
-  // `validationMode` is derived from `pendingAction` STATE (not a ref) — reading
+  // `validationMode` is derived from `pendingAction` STATE (not a ref); reading
   // a mutable ref during render violates React concurrency guarantees. State
   // changes are committed before the form's triggerSave effect fires, so by
   // the time the form reads wizardOverrides.validationMode, the correct value
   // is visible.
-  function getOverridesForStep(step: 1 | 2 | 3 | 4 | 5): WizardOverrides {
-    const isFinalValidation = step === 3 && pendingAction === 'advance'
-    // Step 5's Salvar e sair routes through the regular update endpoint to
-    // avoid triggering the status transition from approved → executed.
-    const saveMode: 'commit' | 'partial' =
-      step === 5 && pendingAction === 'exit' ? 'partial' : 'commit'
+  function getOverridesForStep(step: WizardStep): WizardOverrides {
+    const isFinalValidation = step === 2 && pendingAction === 'advance'
     return {
       ...baseOverridesBase,
       triggerSave: state.currentStep === step ? state.triggerSave : 0,
@@ -760,45 +745,52 @@ export function ServiceWizard({
       onAutoSaved: step === 1 ? anamnesisOnAutoSaved : undefined,
       onUserEdit: handleUserEdit,
       validationMode: isFinalValidation ? 'final' : 'draft',
-      saveMode,
     }
   }
 
   // ─── Derived state ─────────────────────────────────────────────
 
-  const isReadOnlyAfterApproval =
-    state.procedureStatus === 'approved' ||
-    state.procedureStatus === 'in_progress' ||
-    state.procedureStatus === 'completed'
+  const isReadOnlyAfterApproval = isStepReadOnly(1)
 
   // additionalTypeIds: prefer wizard state (includes unsaved additions) over DB record
   const additionalTypeIds = state.selectedTypeIds.length > 1
     ? state.selectedTypeIds.slice(1)
     : (localProcedure?.additionalTypeIds as string[] | null) ?? []
 
-  const showSaveAndExit =
-    state.currentStep === 1 || state.currentStep === 3 || state.currentStep === 5
+  const showSaveAndExit = state.currentStep !== 3
 
   // ─── Render ────────────────────────────────────────────────────
 
   const skipLabel = getSkipLabel(state.currentStep)
-  const nextLabel =
-    state.currentStep === 4 && pendingSignatureLabels.length > 0
-      ? 'Aprovar e assinar depois'
-      : getNextLabel(state.currentStep)
+  function primaryLabel(): string {
+    if (isFinalizing) return 'Aprovando...'
+    if (isFinishing) return 'Finalizando...'
+    if (state.isSaving) return 'Salvando...'
+    if (state.currentStep !== 3) return getNextLabel(state.currentStep)
+    if (pendingSignatureLabels.length > 0) return 'Aprovar e assinar depois'
+    return computeCartTotal(state.cart) > 0 ? 'Aprovar e cobrar' : 'Aprovar'
+  }
+
   const showBack = state.currentStep > 1
-  const showSkip = canSkip(state.currentStep)
+  // On the anamnesis status card the card offers its own "Pular".
+  const showSkip = canSkip(state.currentStep) && !(state.currentStep === 1 && !anamnesisFormOpen) && !!skipLabel
   const age = patient.birthDate ? calculateAge(patient.birthDate) : null
+  const busy = state.isSaving || isFinalizing || isFinishing
+  const nextDisabled = busy || isFinalizeBlocked
+  const nextText = primaryLabel()
+  const appointmentTypeId =
+    !procedure && !initialDiagramGroupId ? (appointment?.procedureTypeId ?? null) : null
+
+  const secondaryButton =
+    'rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-12 disabled:cursor-not-allowed disabled:opacity-50'
 
   return (
-    <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-[#F4F6F8]">
-      {/* ─── Unified header: patient + stepper ─────────────────────── */}
+    <div className="-m-4 md:-m-6 flex min-h-screen flex-col bg-content-bg">
       {/* env() padding keeps it clear of the notch / home-indicator insets (viewport-fit=cover). */}
       <header className="sticky top-0 z-30 bg-white pt-[env(safe-area-inset-top)] shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
-        <div className="flex items-center justify-between px-6 py-2.5">
-          {/* Left: patient info */}
-          <div className="flex items-center gap-3 shrink-0">
-            <div className="flex size-8 items-center justify-center rounded-full bg-sage/15 text-[12px] font-semibold text-sage">
+        <div className="flex items-center justify-between px-4 py-1.5 sm:px-6 sm:py-2.5">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-sage/15 text-[12px] font-semibold text-sage">
               {patient.fullName.split(/\s+/).map(p => p[0]).slice(0, 2).join('').toUpperCase()}
             </div>
             <div className="hidden sm:block">
@@ -809,46 +801,42 @@ export function ServiceWizard({
                 {patient.phone && formatBrPhone(patient.phone)}
               </p>
             </div>
-            {/* Mobile: just name */}
-            <span className="sm:hidden text-[13px] font-semibold text-charcoal truncate max-w-[140px]">{patient.fullName}</span>
+            <span className="sm:hidden min-w-0 truncate text-[13px] font-semibold text-charcoal">{patient.fullName}</span>
           </div>
 
-          {/* Center: stepper (desktop only) */}
           <div className="hidden sm:block">
             <WizardStepper
               currentStep={state.currentStep}
               isStepAvailable={isStepAvailable}
               isStepCompleted={isStepCompleted}
               onStepClick={goToStep}
-              disabled={state.isSaving}
+              disabled={busy}
             />
           </div>
 
-          {/* Right: close */}
           <button
             type="button"
             onClick={handleExit}
-            className="flex items-center justify-center size-8 rounded-lg text-mid transition-colors hover:bg-[#F4F6F8] hover:text-charcoal shrink-0"
+            className="flex size-11 shrink-0 items-center justify-center rounded-lg text-mid transition-colors hover:bg-content-bg hover:text-charcoal sm:size-8"
             aria-label="Fechar atendimento"
           >
             <X className="size-4" />
           </button>
         </div>
 
-        {/* Mobile: stepper on its own row */}
-        <div className="sm:hidden border-t border-[#F4F6F8] px-4 py-2 flex justify-center">
+        <div className="sm:hidden border-t border-content-bg px-4 pb-1.5">
           <WizardStepper
+            compact
             currentStep={state.currentStep}
             isStepAvailable={isStepAvailable}
             isStepCompleted={isStepCompleted}
             onStepClick={goToStep}
-            disabled={state.isSaving}
+            disabled={busy}
           />
         </div>
 
-        {/* Context message — inside header as a subtle sub-bar */}
         {contextMessage && (
-          <div className="border-t border-[#F4F6F8] px-6 py-1.5">
+          <div className="border-t border-content-bg px-4 py-1.5 sm:px-6">
             <div className="flex items-center gap-2">
               <span className={cn('inline-block size-1.5 rounded-full', contextMessage.dotColor)} />
               <span className="text-[12px] text-mid">{contextMessage.text}</span>
@@ -857,17 +845,11 @@ export function ServiceWizard({
         )}
       </header>
 
-      {/* ─── Main content area ────────────────────────────────────── */}
-      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-6 py-4 pb-52 md:pb-24">
-
-        {/* Step content — all steps mounted, only active visible */}
+      <main className="mx-auto flex w-full flex-1 flex-col gap-4 px-4 py-4 pb-[calc(7rem+env(safe-area-inset-bottom))] sm:px-6 md:pb-24">
+        {/* All steps stay mounted so their form state survives navigation; only the active one is visible. */}
         <div className="flex-1">
-          {/* Step 1: Anamnese */}
           <div style={{ display: state.currentStep === 1 ? 'block' : 'none' }}>
-            <WizardStepWrapper
-              title="Anamnese"
-              timestamp={state.stepTimestamps.anamnesis}
-            >
+            <WizardStepWrapper title="Anamnese" timestamp={state.stepTimestamps.anamnesis}>
               {isReadOnlyAfterApproval && (
                 <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-4 py-3">
                   <p className="text-sm text-amber-800">
@@ -875,110 +857,87 @@ export function ServiceWizard({
                   </p>
                 </div>
               )}
-              {!isReadOnlyAfterApproval && patient.phone && (
-                <div className="mb-4 flex items-center justify-between">
-                  <p className="text-xs text-mid">
-                    Envie o link para o paciente preencher a anamnese pelo celular.
-                  </p>
-                  <SendAnamnesisDialog
-                    patientId={patient.id}
-                    patientName={patient.fullName}
-                    patientPhone={patient.phone}
-                    whatsappApiEnabled={tenant.whatsappApiEnabled}
-                  />
-                </div>
-              )}
-              <AnamnesisForm
-                patientId={patient.id}
+              <AnamnesisStep
+                patient={{ id: patient.id, fullName: patient.fullName, phone: patient.phone }}
+                whatsappApiEnabled={tenant.whatsappApiEnabled}
                 record={anamnesis ?? null}
-                currentTemplate={anamnesisTemplate}
+                template={anamnesisTemplate}
                 updatedByName={anamnesisUpdatedByName}
                 wizardOverrides={getOverridesForStep(1)}
                 readOnly={isReadOnlyAfterApproval}
+                formOpen={anamnesisFormOpen}
+                onOpenForm={() => setAnamnesisFormOpen(true)}
+                onSkip={handleSkip}
               />
             </WizardStepWrapper>
           </div>
 
-          {/* Step 2: Procedimentos (type selection) */}
           <div style={{ display: state.currentStep === 2 ? 'block' : 'none' }}>
-            <WizardStepWrapper
-              title="Procedimentos"
-              timestamp={state.stepTimestamps.procedureTypes}
-            >
+            <WizardStepWrapper title="Planejamento" timestamp={state.stepTimestamps.planning}>
               {isReadOnlyAfterApproval && (
                 <div className="mb-4 rounded-[3px] border border-amber-200 bg-amber-50 px-4 py-3">
                   <p className="text-sm text-amber-800">
-                    Tipos de procedimento não podem ser alterados após aprovação.
+                    Procedimentos não podem ser alterados após aprovação.
                   </p>
                 </div>
               )}
-              <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
-                <ProcedureTypeStep
-                  patientId={patient.id}
-                  quoteSelection={{
-                    selectedGroupId: sourceDiagramGroupId,
-                    onSelect: setSourceDiagramGroupId,
-                  }}
-                  cart={state.cart}
-                  onCartChange={setCart}
-                  selectedTypeIds={state.selectedTypeIds}
-                  onSelectedTypeIdsChange={setSelectedTypeIds}
-                  wizardOverrides={getOverridesForStep(2)}
-                  readOnly={isReadOnlyAfterApproval}
-                />
+              <div className="space-y-5">
+                <div className={isReadOnlyAfterApproval ? 'pointer-events-none opacity-75' : undefined}>
+                  <ProcedureTypeStep
+                    patientId={patient.id}
+                    quoteSelection={{
+                      selectedGroupId: sourceDiagramGroupId,
+                      onSelect: setSourceDiagramGroupId,
+                    }}
+                    cart={state.cart}
+                    onCartChange={handleCartChange}
+                    selectedTypeIds={state.selectedTypeIds}
+                    appointmentTypeId={appointmentTypeId}
+                    readOnly={isReadOnlyAfterApproval}
+                  />
+                </div>
+                <div hidden={state.cart.lines.length === 0}>
+                  <ProcedureForm
+                    patientId={patient.id}
+                    appointmentId={appointment?.id}
+                    patientGender={patient.gender}
+                    procedure={localProcedure ?? undefined}
+                    diagrams={localDiagrams ?? undefined}
+                    sourceDiagram={
+                      sourceDiagramGroup
+                        ? { groupId: sourceDiagramGroup.id, views: sourceDiagramGroup.views }
+                        : null
+                    }
+                    existingApplications={localApplications ?? undefined}
+                    initialTypeIds={state.selectedTypeIds}
+                    cart={state.cart.lines.length > 0 ? state.cart : undefined}
+                    draftRecordIds={
+                      state.procedureRecordIds.length > 0
+                        ? state.procedureRecordIds
+                        : state.procedureId
+                          ? [state.procedureId]
+                          : undefined
+                    }
+                    onCartChange={handleCartChange}
+                    mode={
+                      isReadOnlyAfterApproval
+                        ? 'view'
+                        : localProcedure
+                          ? 'edit'
+                          : 'create'
+                    }
+                    wizardOverrides={{ ...getOverridesForStep(2), hideProcedureTypes: true }}
+                    evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
+                    existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
+                    loadingEvaluationTemplates={loadingEvalTemplates}
+                  />
+                </div>
               </div>
             </WizardStepWrapper>
           </div>
 
-          {/* Step 3: Planejamento */}
           <div style={{ display: state.currentStep === 3 ? 'block' : 'none' }}>
-            <WizardStepWrapper
-              title="Planejamento"
-              timestamp={state.stepTimestamps.planning}
-            >
-              <ProcedureForm
-                patientId={patient.id}
-                appointmentId={appointmentId}
-                patientGender={patient.gender}
-                procedure={localProcedure ?? undefined}
-                diagrams={localDiagrams ?? undefined}
-                sourceDiagram={
-                  sourceDiagramGroup
-                    ? { groupId: sourceDiagramGroup.id, views: sourceDiagramGroup.views }
-                    : null
-                }
-                existingApplications={localApplications ?? undefined}
-                initialTypeIds={state.selectedTypeIds}
-                cart={state.cart.lines.length > 0 ? state.cart : undefined}
-                draftRecordIds={
-                  state.procedureRecordIds.length > 0
-                    ? state.procedureRecordIds
-                    : state.procedureId
-                      ? [state.procedureId]
-                      : undefined
-                }
-                onCartChange={setCart}
-                mode={
-                  isReadOnlyAfterApproval
-                    ? 'view'
-                    : localProcedure
-                      ? 'edit'
-                      : 'create'
-                }
-                wizardOverrides={{ ...getOverridesForStep(3), hideProcedureTypes: true }}
-                evaluationTemplates={evalTemplates.length > 0 ? evalTemplates : undefined}
-                existingEvaluationResponses={existingEvalResponses.length > 0 ? existingEvalResponses : undefined}
-                loadingEvaluationTemplates={loadingEvalTemplates}
-              />
-            </WizardStepWrapper>
-          </div>
-
-          {/* Step 4: Aprovação */}
-          <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
-            <WizardStepWrapper
-              title="Aprovação"
-              timestamp={state.stepTimestamps.approval}
-            >
+            <WizardStepWrapper title="Aprovação" timestamp={state.stepTimestamps.approval}>
               {state.procedureId && localProcedure ? (
                 <ProcedureApproval
                   procedure={localProcedure}
@@ -1001,7 +960,7 @@ export function ServiceWizard({
                         : undefined
                   }
                   encounterId={state.encounterId}
-                  wizardOverrides={getOverridesForStep(4)}
+                  wizardOverrides={getOverridesForStep(3)}
                   onPendingSignaturesChange={setPendingSignatureLabels}
                 />
               ) : (
@@ -1014,19 +973,15 @@ export function ServiceWizard({
             </WizardStepWrapper>
           </div>
 
-          {/* Step 5: Execução */}
-          <div style={{ display: state.currentStep === 5 ? 'block' : 'none' }}>
-            <WizardStepWrapper
-              title="Execução"
-              timestamp={state.stepTimestamps.execution}
-            >
-              {state.currentStep === 5 && state.encounterId && (
+          <div style={{ display: state.currentStep === 4 ? 'block' : 'none' }}>
+            <WizardStepWrapper title="Execução" timestamp={state.stepTimestamps.execution}>
+              {state.currentStep === 4 && state.encounterId && (
                 state.procedureId &&
                 (state.procedureStatus === 'approved' ||
                   state.procedureStatus === 'in_progress' ||
                   state.procedureStatus === 'completed') &&
                 localProcedure ? (
-                  <div className="rounded-[3px] bg-white p-6 shadow-[0_1px_4px_rgba(0,0,0,0.06)]">
+                  <div className="rounded-[3px] bg-white p-4 shadow-[0_1px_4px_rgba(0,0,0,0.06)] sm:p-6">
                     <ProcedureExecution
                       encounterId={state.encounterId}
                       procedureRecordIds={
@@ -1044,7 +999,7 @@ export function ServiceWizard({
                       existingApplications={localApplications ?? undefined}
                       deepLinkProcedureId={deepLinkProcedureId ?? null}
                       autoStartNext={autoStartNext ?? false}
-                      wizardOverrides={getOverridesForStep(5)}
+                      wizardOverrides={getOverridesForStep(4)}
                     />
                   </div>
                 ) : (
@@ -1060,13 +1015,11 @@ export function ServiceWizard({
         </div>
       </main>
 
-      {/* ─── Sticky bottom navigation bar ─────────────────────────── */}
       {/* env() padding keeps it clear of the notch / home-indicator insets (viewport-fit=cover). */}
       <nav className="fixed bottom-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] md:left-[calc(200px+env(safe-area-inset-left))] z-30 border-t border-gray-100 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_4px_rgba(0,0,0,0.06)]">
-        {/* Error display above navigation controls */}
         {state.error && (
-          <div className="border-b border-red-100 bg-red-50 px-6 py-2">
-            <p className="mx-auto text-sm text-red-800">
+          <div className="border-b border-red-100 bg-red-50 px-4 py-2 sm:px-6">
+            <p role="alert" className="mx-auto text-sm text-red-800">
               {state.errorType === 'validation' &&
                 'Corrija os campos destacados antes de continuar.'}
               {state.errorType === 'precondition' && state.error}
@@ -1075,19 +1028,65 @@ export function ServiceWizard({
             </p>
           </div>
         )}
+        {isFinalizeBlocked && (
+          <p className="border-b border-gray-100 px-4 py-1.5 text-[11px] text-mid md:hidden">{finalizeBlockedText}</p>
+        )}
 
-        <div className="mx-auto flex flex-col gap-2 px-6 py-3 md:flex-row md:items-center md:justify-between">
-          {/* Left: Voltar */}
-          <div className="hidden md:block md:min-w-[100px]">
+        {/* Phone: back icon, full-width primary, overflow for the secondary actions */}
+        <div className="flex items-center gap-2 px-4 py-2.5 md:hidden">
+          {showBack && (
+            <button
+              type="button"
+              onClick={prevStep}
+              disabled={busy}
+              aria-label="Voltar"
+              className="flex size-11 shrink-0 items-center justify-center rounded-[3px] border border-forest text-forest transition-colors hover:bg-petal disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleNext}
+            disabled={nextDisabled}
+            className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-[3px] bg-forest px-4 text-sm font-medium text-cream transition-colors hover:bg-sage disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-forest"
+          >
+            {nextText}
+            {state.currentStep < 4 && !busy && <ChevronRight className="size-4" />}
+          </button>
+          {(showSaveAndExit || showSkip) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label="Mais ações"
+                    className="flex size-11 shrink-0 items-center justify-center rounded-[3px] border border-forest text-forest transition-colors hover:bg-petal disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <MoreHorizontal className="size-5" />
+                  </button>
+                }
+              />
+              <DropdownMenuContent align="end" side="top">
+                {showSaveAndExit && (
+                  <DropdownMenuItem onClick={handleSaveAndExit}>Salvar e sair</DropdownMenuItem>
+                )}
+                {showSkip && <DropdownMenuItem onClick={handleSkip}>{skipLabel}</DropdownMenuItem>}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+
+        {/* Desktop */}
+        <div className="mx-auto hidden items-center justify-between gap-3 px-6 py-3 md:flex">
+          <div className="min-w-[100px]">
             {showBack && (
               <button
                 type="button"
                 onClick={prevStep}
-                disabled={state.isSaving}
-                className={cn(
-                  'flex items-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px]',
-                  state.isSaving && 'opacity-50 cursor-not-allowed',
-                )}
+                disabled={busy}
+                className={cn(secondaryButton, 'flex items-center gap-1.5')}
               >
                 <ChevronLeft className="h-4 w-4" />
                 Voltar
@@ -1095,103 +1094,48 @@ export function ServiceWizard({
             )}
           </div>
 
-          {/* Middle: save status indicator (desktop only) */}
           <SaveStatusIndicator
             isSaving={state.isSaving}
             isDirty={!!stepDirty[state.currentStep]}
-            lastSavedAt={
-              state.currentStep === 1 ? (state.stepTimestamps.anamnesis ?? null)
-              : state.currentStep === 2 ? (state.stepTimestamps.procedureTypes ?? null)
-              : state.currentStep === 3 ? (state.stepTimestamps.planning ?? null)
-              : state.currentStep === 4 ? (state.stepTimestamps.approval ?? null)
-              : (state.stepTimestamps.execution ?? null)
-            }
+            lastSavedAt={state.stepTimestamps[STEP_TIMESTAMP_KEYS[state.currentStep]] ?? null}
             errorType={state.errorType}
             now={now}
           />
 
-          {/* Mobile: full-width stacked buttons / Desktop: inline */}
-          <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
-            <button
-              type="button"
-              onClick={handleNext}
-              disabled={state.isSaving || isFinalizing || isFinalizeBlocked}
-              title={isFinalizeBlocked ? finalizeBlockedTitle : undefined}
-              className={cn(
-                'flex w-full items-center justify-center gap-1.5 rounded-[3px] px-6 py-2.5 text-sm font-medium transition-colors min-h-[48px] md:w-auto md:order-3',
-                'bg-forest text-cream hover:bg-sage',
-                (state.isSaving || isFinalizing || isFinalizeBlocked) &&
-                  'opacity-50 cursor-not-allowed hover:bg-forest',
-              )}
-            >
-              {isFinalizing
-                ? 'Aprovando...'
-                : state.isSaving
-                  ? 'Salvando...'
-                  : nextLabel}
-              {state.currentStep < 5 && !state.isSaving && !isFinalizing && (
-                <ChevronRight className="h-4 w-4" />
-              )}
-            </button>
+          <div className="flex items-center gap-3">
             {isFinalizeBlocked && (
-              <p className="text-[11px] text-mid md:order-2 md:max-w-[260px] md:text-right">
-                {finalizeBlockedText}
-              </p>
+              <p className="max-w-[260px] text-right text-[11px] text-mid">{finalizeBlockedText}</p>
             )}
-
-            {showSaveAndExit && (
-              <button
-                type="button"
-                onClick={handleSaveAndExit}
-                disabled={state.isSaving}
-                className={cn(
-                  'w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-2',
-                  state.isSaving && 'opacity-50 cursor-not-allowed',
-                )}
-              >
-                Salvar e sair
-              </button>
-            )}
-
-            {showSkip && skipLabel && (
-              <button
-                type="button"
-                onClick={handleSkip}
-                disabled={state.isSaving}
-                className={cn(
-                  'w-full rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:w-auto md:order-1',
-                  state.isSaving && 'opacity-50 cursor-not-allowed',
-                )}
-              >
+            {showSkip && (
+              <button type="button" onClick={handleSkip} disabled={busy} className={secondaryButton}>
                 {skipLabel}
               </button>
             )}
-
-            {showBack && (
-              <button
-                type="button"
-                onClick={prevStep}
-                disabled={state.isSaving}
-                className={cn(
-                  'flex w-full items-center justify-center gap-1.5 rounded-[3px] border border-forest px-4 py-2.5 text-sm font-medium text-forest transition-colors hover:bg-petal min-h-[48px] md:hidden',
-                  state.isSaving && 'opacity-50 cursor-not-allowed',
-                )}
-              >
-                <ChevronLeft className="h-4 w-4" />
-                Voltar
+            {showSaveAndExit && (
+              <button type="button" onClick={handleSaveAndExit} disabled={busy} className={secondaryButton}>
+                Salvar e sair
               </button>
             )}
+            <button
+              type="button"
+              onClick={handleNext}
+              disabled={nextDisabled}
+              className="flex min-h-12 items-center justify-center gap-1.5 rounded-[3px] bg-forest px-6 py-2.5 text-sm font-medium text-cream transition-colors hover:bg-sage disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-forest"
+            >
+              {nextText}
+              {state.currentStep < 4 && !busy && <ChevronRight className="h-4 w-4" />}
+            </button>
           </div>
         </div>
       </nav>
 
-      {/* ─── Exit confirmation dialog ─────────────────────────────── */}
       <Dialog open={showExitDialog} onOpenChange={setShowExitDialog}>
         <DialogContent showCloseButton={false}>
           <DialogHeader>
-            <DialogTitle>Fechar atendimento</DialogTitle>
+            <DialogTitle>Sair do atendimento?</DialogTitle>
             <DialogDescription>
-              Tem certeza que deseja sair? O progresso do passo atual será perdido.
+              As alterações ainda não salvas serão perdidas. A anamnese já salva
+              automaticamente e os passos concluídos continuam guardados.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1207,47 +1151,7 @@ export function ServiceWizard({
               onClick={confirmExit}
               className="rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage"
             >
-              Sim, fechar
-            </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* ─── Finalize confirmation dialog (step 5 — irreversible) ──── */}
-      <Dialog open={showFinalizeDialog} onOpenChange={setShowFinalizeDialog}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>Finalizar atendimento</DialogTitle>
-            <DialogDescription>
-              Você está prestes a finalizar este atendimento. Esta ação não pode ser desfeita.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="text-sm text-mid">
-            Após confirmar, o registro fica bloqueado e nenhuma informação deste
-            atendimento poderá mais ser alterada.
-          </div>
-          <DialogFooter>
-            <button
-              type="button"
-              onClick={() => setShowFinalizeDialog(false)}
-              disabled={state.isSaving}
-              className={cn(
-                'rounded-[3px] border border-forest px-4 py-2 text-sm font-medium text-forest transition-colors hover:bg-petal',
-                state.isSaving && 'opacity-50 cursor-not-allowed',
-              )}
-            >
-              Voltar e revisar
-            </button>
-            <button
-              type="button"
-              onClick={confirmFinalize}
-              disabled={state.isSaving}
-              className={cn(
-                'rounded-[3px] bg-forest px-4 py-2 text-sm font-medium text-cream transition-colors hover:bg-sage',
-                state.isSaving && 'opacity-50 cursor-not-allowed',
-              )}
-            >
-              {state.isSaving ? 'Finalizando...' : 'Sim, finalizar'}
+              Sair sem salvar
             </button>
           </DialogFooter>
         </DialogContent>

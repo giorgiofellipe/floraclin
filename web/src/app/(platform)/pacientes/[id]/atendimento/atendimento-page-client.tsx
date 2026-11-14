@@ -6,6 +6,7 @@ import { usePatient } from '@/hooks/queries/use-patients'
 import { useAnamnesis, useAnamnesisTemplate } from '@/hooks/queries/use-anamnesis'
 import { useLatestNonExecutedProcedure, useProcedure } from '@/hooks/queries/use-procedures'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { useAppointment } from '@/hooks/queries/use-appointments'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { ServiceWizard } from '@/components/service-wizard/service-wizard'
 import type { ProcedureStatus } from '@/types'
@@ -23,7 +24,7 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const step = searchParams.get('step')
   const forceNew = searchParams.get('new') === '1'
   // Deep-link from session-picker (Task J1): `?procedure=<recordId>&action=executeNext`
-  // mounts the wizard at step 5 and auto-starts the next-session flow for the
+  // mounts the wizard at the execution step and auto-starts the next-session flow for the
   // referenced procedure record.
   const deepLinkProcedureId = searchParams.get('procedure')
   const deepLinkAction = searchParams.get('action')
@@ -65,7 +66,12 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
     : (procedure?.id ?? '')
   const { data: procedureDetail, isLoading: detailLoading } = useProcedure(procedureDetailQueryId)
 
+  // The visit's appointment: from the URL, or the one a resumed procedure already belongs to.
+  const linkedAppointmentId = appointmentId ?? procedure?.appointmentId ?? ''
+  const { data: linkedAppointment, isLoading: appointmentLoading } = useAppointment(linkedAppointmentId)
+
   const isLoading = patientLoading || tenantLoading || anamnesisLoading || templateLoading ||
+    (!!linkedAppointmentId && appointmentLoading) ||
     (!forceNew && !hasDeepLink && procedureLoading) ||
     (hasDeepLink && deepLinkLoading) ||
     (!!procedure?.id && !hasDeepLink && detailLoading)
@@ -108,9 +114,6 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   // Build step timestamps
   const stepTimestamps = {
     anamnesis: anamnesis?.updatedAt ? new Date(anamnesis.updatedAt) : null,
-    procedureTypes: procedure?.procedureTypeId
-      ? (procedure?.createdAt ? new Date(procedure.createdAt) : new Date())
-      : null,
     planning: procedure?.updatedAt ? new Date(procedure.updatedAt) : null,
     approval: procedure?.approvedAt ? new Date(procedure.approvedAt) : null,
     execution: procedure?.performedAt && procedure.status === 'completed'
@@ -119,10 +122,10 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   }
 
   const stepParam = step ? parseInt(step, 10) : undefined
-  // Deep-link `?procedure=...&action=executeNext` forces step 5 (execution).
+  // Deep-link `?procedure=...&action=executeNext` forces the execution step.
   const initialStep = hasDeepLink
-    ? 5
-    : stepParam && stepParam >= 1 && stepParam <= 5
+    ? 4
+    : stepParam && stepParam >= 1 && stepParam <= 4
       ? stepParam
       : undefined
 
@@ -153,7 +156,15 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
       deepLinkProcedureId={hasDeepLink ? deepLinkProcedureId : null}
       autoStartNext={hasDeepLink ? autoStartNext : false}
       initialDiagramGroupId={diagramGroupId}
-      appointmentId={appointmentId}
+      appointment={
+        linkedAppointment && linkedAppointment.patientId === patient.id
+          ? {
+              id: linkedAppointment.id,
+              status: linkedAppointment.status,
+              procedureTypeId: linkedAppointment.procedureTypeId,
+            }
+          : null
+      }
     />
   )
 }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import Link from 'next/link'
 import { Loader2, Stethoscope } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -8,10 +9,8 @@ import { usePatientDiagramGroups } from '@/hooks/queries/use-face-diagram-groups
 import { buildCartFromQuote, quoteTotal } from '@/lib/diagram-quote'
 import { formatBrDate } from '@/lib/dates'
 import { cn, formatCurrency } from '@/lib/utils'
-import type { WizardOverrides } from './types'
 import type { EncounterCart, CartLine } from '@/validations/encounter-cart'
 import { TemplateChooser } from './template-chooser'
-import { WizardCart } from './wizard-cart'
 
 // ─── Types ──────────────────────────────────────────────────────────
 
@@ -32,11 +31,10 @@ interface ProcedureTypeStepProps {
   }
   cart: EncounterCart
   onCartChange: (next: EncounterCart) => void
-  /** Legacy multi-select API — preserved so the wizard can keep its derived
-   *  selectedTypeIds state in sync until F2 migrates the wizard to cart. */
+  /** Type ids of the procedure being resumed; backfilled into an empty cart. */
   selectedTypeIds?: string[]
-  onSelectedTypeIdsChange?: (typeIds: string[]) => void
-  wizardOverrides?: WizardOverrides
+  /** Procedure type booked on the appointment this atendimento serves; prefilled at its catalog price. */
+  appointmentTypeId?: string | null
   readOnly?: boolean
 }
 
@@ -67,7 +65,7 @@ export function ProcedureTypeStep({
   cart,
   onCartChange,
   selectedTypeIds: initialSelectedTypeIds,
-  wizardOverrides,
+  appointmentTypeId,
   readOnly,
 }: ProcedureTypeStepProps) {
   const [procedureTypes, setProcedureTypes] = useState<ProcedureType[]>([])
@@ -100,11 +98,18 @@ export function ProcedureTypeStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [groups, selectedGroupId])
 
+  // The appointment prefill is a suggestion: a saved quotation can still replace it.
+  const [seededFromAppointment, setSeededFromAppointment] = useState(false)
+  const cartIsAppointmentSeed =
+    seededFromAppointment &&
+    cart.lines.length === 1 &&
+    cart.lines[0].procedureTypeId === appointmentTypeId &&
+    cart.templateId === null
   const showQuoteCard =
     !readOnly &&
     !quoteDismissed &&
     !selectedGroupId &&
-    cart.lines.length === 0 &&
+    (cart.lines.length === 0 || cartIsAppointmentSeed) &&
     quotes.length > 0
   const chosenQuote = quotes.find((g) => g.id === pickedQuoteId) ?? quotes[0]
 
@@ -125,9 +130,8 @@ export function ProcedureTypeStep({
   }, [])
 
   // ─── Hydrate cart on resume ───────────────────────────────────────
-  // When the wizard is resumed (e.g. user navigates back to step 2 after
-  // step 3), the legacy `selectedTypeIds` is seeded from the existing
-  // procedure but the cart starts empty. Once procedure types are
+  // When an atendimento is resumed, `selectedTypeIds` is seeded from the
+  // existing procedure but the cart starts empty. Once procedure types are
   // loaded, backfill cart lines so the selection is visible AND
   // downstream steps see the cart they expect.
   const hydratedRef = useRef(false)
@@ -140,7 +144,9 @@ export function ProcedureTypeStep({
       hydratedRef.current = true
       return
     }
-    const seedIds = initialSelectedTypeIds ?? []
+    const resumeIds = initialSelectedTypeIds ?? []
+    const fromAppointment = resumeIds.length === 0 && !!appointmentTypeId && !selectedGroupId
+    const seedIds = fromAppointment ? [appointmentTypeId] : resumeIds
     if (seedIds.length === 0) return
     const lines: CartLine[] = seedIds
       .map((id) => procedureTypes.find((t) => t.id === id))
@@ -154,55 +160,9 @@ export function ProcedureTypeStep({
       }))
     if (lines.length === 0) return
     hydratedRef.current = true
+    setSeededFromAppointment(fromAppointment)
     onCartChange({ ...cart, lines })
-  }, [procedureTypes, cart, initialSelectedTypeIds, onCartChange])
-
-  // ─── Handle wizard triggerSave ─────────────────────────────────────
-  const selectedTypeIdsRef = useRef(selectedTypeIds)
-  selectedTypeIdsRef.current = selectedTypeIds
-  const onSaveCompleteRef = useRef(wizardOverrides?.onSaveComplete)
-  onSaveCompleteRef.current = wizardOverrides?.onSaveComplete
-  const prevTriggerRef = useRef(wizardOverrides?.triggerSave ?? 0)
-
-  useEffect(() => {
-    const current = wizardOverrides?.triggerSave ?? 0
-    // When the wizard resets triggerSave to 0 (after a save completes),
-    // also reset our "seen" marker. Otherwise the next press increments
-    // back to 1 and gets treated as a duplicate, silently skipping the save.
-    if (current === 0) {
-      prevTriggerRef.current = 0
-      return
-    }
-    if (current === prevTriggerRef.current) {
-      console.log('[step2] triggerSave effect SKIPPED — same value as prev', {
-        current,
-        prev: prevTriggerRef.current,
-      })
-      return
-    }
-    prevTriggerRef.current = current
-
-    console.log('[step2] triggerSave effect firing', {
-      current,
-      selectedCount: selectedTypeIdsRef.current.length,
-      selectedIds: selectedTypeIdsRef.current,
-    })
-
-    if (selectedTypeIdsRef.current.length === 0) {
-      console.log('[step2] reporting validation error — no types selected')
-      onSaveCompleteRef.current?.({
-        success: false,
-        error: 'Selecione ao menos um tipo de procedimento.',
-        errorType: 'validation',
-      })
-      return
-    }
-    console.log('[step2] reporting success', {
-      onSaveCompletePresent: !!onSaveCompleteRef.current,
-    })
-    onSaveCompleteRef.current?.({ success: true })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wizardOverrides?.triggerSave])
+  }, [procedureTypes, cart, initialSelectedTypeIds, appointmentTypeId, selectedGroupId, onCartChange])
 
   // ─── Template chooser handler ─────────────────────────────────────
 
@@ -293,26 +253,6 @@ export function ProcedureTypeStep({
     onCartChange({ ...cart, lines: [...cart.lines, newLine] })
   }
 
-  // ─── Cart panel handlers ──────────────────────────────────────────
-
-  function handleRemoveLine(procedureTypeId: string) {
-    onCartChange({
-      ...cart,
-      lines: cart.lines.filter((l) => l.procedureTypeId !== procedureTypeId),
-    })
-  }
-
-  function handleClearTemplate() {
-    onCartChange({
-      ...cart,
-      templateId: null,
-      templateName: null,
-      templateDefaultPrice: null,
-      templateValidityMonths: null,
-      lines: cart.lines.filter((l) => l.sourceTemplateLineId === null),
-    })
-  }
-
   // ─── Group by category ────────────────────────────────────────────
 
   const grouped = procedureTypes.reduce<Record<string, ProcedureType[]>>((acc, type) => {
@@ -399,11 +339,25 @@ export function ProcedureTypeStep({
               <Loader2 className="size-4 animate-spin" />
               Carregando tipos...
             </div>
+          ) : procedureTypes.length === 0 ? (
+            <p className="text-sm text-mid">
+              Nenhum procedimento cadastrado.{' '}
+              <Link href="/configuracoes?tab=procedimentos" className="font-medium text-forest underline underline-offset-2">
+                Cadastre procedimentos e preços em Configurações
+              </Link>
+              .
+            </p>
           ) : (
             <div className="space-y-4">
               <p className="text-xs text-mid">
                 Selecione um ou mais tipos de procedimento (o primeiro será o principal).
               </p>
+              {cart.lines.length > 0 && (
+                <p className="text-sm text-charcoal">
+                  <span className="text-mid">Selecionados: </span>
+                  {cart.lines.map((l) => l.procedureTypeName).join(', ')}
+                </p>
+              )}
 
               {Object.entries(grouped).map(([category, types]) => (
                 <div key={category} className="space-y-2">
@@ -486,16 +440,6 @@ export function ProcedureTypeStep({
         </CardContent>
       </Card>
 
-      {cart.lines.length > 0 && (
-        <WizardCart
-          cart={cart}
-          onChange={onCartChange}
-          onRemoveLine={handleRemoveLine}
-          onClearTemplate={handleClearTemplate}
-          readOnly
-          previewHint="Pré-visualização. Você poderá ajustar valores e número de sessões na etapa de Planejamento."
-        />
-      )}
     </div>
   )
 }
