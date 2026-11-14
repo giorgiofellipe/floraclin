@@ -1,6 +1,6 @@
 import { db } from '@/db/client'
-import { patients } from '@/db/schema'
-import { eq, and, isNull, ilike, or, sql, asc, lt } from 'drizzle-orm'
+import { appointments, patients } from '@/db/schema'
+import { eq, and, isNull, ilike, or, sql, asc, desc, lt } from 'drizzle-orm'
 import type { PaginatedResult } from '@/types'
 import type { CreatePatientInput, UpdatePatientInput } from '@/validations/patient'
 import { isCanonicalBrPhone, normalizeBrPhone, normalizeBrPhoneForWhatsApp } from '@/lib/phone'
@@ -62,6 +62,41 @@ export async function listPatients(
     limit,
     totalPages: Math.ceil(total / limit),
   }
+}
+
+/** Patients the clinic touched last: the newest bookings and the newest registrations, merged by date. */
+export async function listRecentPatients(
+  tenantId: string,
+  { limit, responsibleUserId }: { limit: number; responsibleUserId?: string }
+) {
+  const scope = and(
+    eq(patients.tenantId, tenantId),
+    isNull(patients.deletedAt),
+    responsibleUserId ? eq(patients.responsibleUserId, responsibleUserId) : undefined
+  )
+  const lastBooking = sql<Date>`max(${appointments.createdAt})`
+  const [booked, registered] = await Promise.all([
+    db
+      .select({ id: patients.id, fullName: patients.fullName, phone: patients.phone, at: lastBooking })
+      .from(appointments)
+      .innerJoin(patients, eq(appointments.patientId, patients.id))
+      .where(and(scope, eq(appointments.tenantId, tenantId), isNull(appointments.deletedAt)))
+      .groupBy(patients.id)
+      .orderBy(desc(lastBooking))
+      .limit(limit),
+    db
+      .select({ id: patients.id, fullName: patients.fullName, phone: patients.phone, at: patients.createdAt })
+      .from(patients)
+      .where(scope)
+      .orderBy(desc(patients.createdAt))
+      .limit(limit),
+  ])
+  const seen = new Set<string>()
+  return [...booked, ...registered]
+    .sort((x, y) => new Date(y.at).getTime() - new Date(x.at).getTime())
+    .filter((p) => !seen.has(p.id) && !!seen.add(p.id))
+    .slice(0, limit)
+    .map(({ id, fullName, phone }) => ({ id, fullName, phone }))
 }
 
 export async function getPatient(tenantId: string, patientId: string): Promise<Patient | null> {

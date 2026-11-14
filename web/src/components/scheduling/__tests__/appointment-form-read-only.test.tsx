@@ -13,6 +13,10 @@ vi.mock('@/hooks/mutations/use-patient-mutations', () => ({
   useCreatePatient: () => ({ mutate, mutateAsync: mutate, isPending: false }),
 }))
 vi.mock('@/hooks/queries/use-tenant', () => ({ useTenant: () => ({ data: null }) }))
+vi.mock('@/hooks/queries/use-patients', () => ({
+  usePatientSearch: () => ({ data: [], isFetching: false, isSuccess: true }),
+  useRecentPatients: () => ({ data: [] }),
+}))
 
 import { AppointmentForm } from '../appointment-form'
 

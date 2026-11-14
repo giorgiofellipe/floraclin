@@ -3,21 +3,20 @@
  * Before, confirming or checking in took 5 clicks through the agenda.
  */
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Toaster } from 'sonner'
 import type { ReactNode } from 'react'
 import type { TodayAppointment } from '@/db/queries/dashboard'
 
-type MutateOpts = { onSuccess?: () => void; onSettled?: () => void }
-const mutate = vi.hoisted(() => vi.fn((_vars: unknown, opts?: MutateOpts) => { opts?.onSuccess?.(); opts?.onSettled?.() }))
+const mutate = vi.hoisted(() => vi.fn(async (_vars: unknown) => ({})))
 const push = vi.hoisted(() => vi.fn())
 const access = vi.hoisted(() => ({ role: 'owner', readOnly: false, openPaywall: vi.fn() }))
 const paymentForm = vi.hoisted(() => ({ props: null as Record<string, unknown> | null }))
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
 vi.mock('next/link', () => ({ default: ({ children, href, ...rest }: { children: ReactNode; href: string }) => <a href={href} {...rest}>{children}</a> }))
-vi.mock('@/hooks/mutations/use-appointment-mutations', () => ({ useUpdateAppointmentStatus: () => ({ mutate }) }))
+vi.mock('@/hooks/mutations/use-appointment-mutations', () => ({ useUpdateAppointmentStatus: () => ({ mutateAsync: mutate }) }))
 vi.mock('@/components/layout/subscription-access', () => ({
   ReadOnlyGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
   useSubscriptionAccess: () => access,
@@ -96,7 +95,7 @@ describe('TodayAppointments row actions', () => {
     await userEvent.click(screen.getByRole('button', { name: /Iniciar atendimento/ }))
 
     expect(mutate.mock.calls[0][0]).toEqual({ id: 'a1', status: 'in_progress' })
-    expect(push).toHaveBeenCalledWith('/pacientes/p1/atendimento?appointment=a1')
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/pacientes/p1/atendimento?appointment=a1'))
   })
 
   it('charges a finished appointment that has no charge, linking the charge to it', async () => {

@@ -6,11 +6,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import type { ReactNode } from 'react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn(), replace: vi.fn() }) }))
 vi.mock('@/components/layout/subscription-access', () => ({
   useSubscriptionAccess: () => ({ readOnly: false, openPaywall: vi.fn() }),
   ReadOnlyGuard: ({ children }: { children: ReactNode }) => <>{children}</>,
+  useWriteGuard: () => (action: () => void) => action,
 }))
 vi.mock('@/hooks/queries/use-appointments', () => ({ useAppointments: () => ({ data: [] }) }))
 vi.mock('@/hooks/queries/use-calendar', () => {
@@ -18,6 +20,12 @@ vi.mock('@/hooks/queries/use-calendar', () => {
   return { useDeleteCalendarBlock: m, useCreateCalendarBlock: m }
 })
 vi.mock('@/hooks/queries/use-tenant', () => ({ useTenant: () => ({ data: null }) }))
+vi.mock('@/hooks/queries/use-patients', () => ({
+  usePatientSearch: () => ({ data: [], isFetching: false, isSuccess: true }),
+  useRecentPatients: () => ({ data: [] }),
+}))
+vi.mock('@/hooks/use-is-mobile', () => ({ useIsMobile: () => false, useIsTouch: () => false }))
+vi.mock('@/hooks/mutations/use-move-appointment', () => ({ useMoveAppointment: () => ({ move: vi.fn(), canNotify: () => false, isMoving: () => false }) }))
 vi.mock('@/hooks/mutations/use-appointment-mutations', () => {
   const m = () => ({ mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false })
   return { useCreateAppointment: m, useUpdateAppointment: m, useUpdateAppointmentStatus: m, useDeleteAppointment: m }
@@ -31,6 +39,7 @@ import { CalendarView } from '../calendar-view'
 describe('CalendarView ?open=new deep link', () => {
   it('opens the new-appointment form on the viewed day with a 08:00-08:30 slot', () => {
     render(
+      <QueryClientProvider client={new QueryClient()}>
       <CalendarView
         initialDate="2026-11-20"
         initialView="day"
@@ -40,7 +49,8 @@ describe('CalendarView ?open=new deep link', () => {
         autoOpenNew
         role="owner"
         userId="u1"
-      />,
+      />
+      </QueryClientProvider>,
     )
 
     const dialog = screen.getByRole('dialog')
@@ -48,5 +58,25 @@ describe('CalendarView ?open=new deep link', () => {
     expect(dialog).toHaveTextContent('08:00')
     expect(dialog).toHaveTextContent('08:30')
     expect(dialog).toHaveTextContent('20/11/2026')
+  })
+
+  it('titles the day in sentence case', () => {
+    // Regression: a CSS `capitalize` turned the title into "20 De Novembro De 2026".
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <CalendarView
+          initialDate="2026-11-20"
+          initialView="day"
+          practitioners={[{ id: 'u1', fullName: 'Dra. Flora' }]}
+          procedureTypes={[]}
+          initialAppointments={[]}
+          role="owner"
+          userId="u1"
+        />
+      </QueryClientProvider>,
+    )
+
+    expect(screen.getByTestId('calendar-title')).toHaveTextContent(/^Sexta-feira, 20 de novembro$/)
+    expect(screen.getByRole('button', { name: 'Mês' })).toBeInTheDocument()
   })
 })

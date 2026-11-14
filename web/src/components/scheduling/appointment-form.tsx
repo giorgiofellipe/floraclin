@@ -6,11 +6,11 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { DatePicker } from '@/components/ui/date-picker'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   Select,
@@ -29,19 +29,28 @@ import {
   useDeleteAppointment,
 } from '@/hooks/mutations/use-appointment-mutations'
 import { useCreatePatient } from '@/hooks/mutations/use-patient-mutations'
-import { PlusIcon } from 'lucide-react'
-import { maskPhone } from '@/lib/masks'
-import { STATUS_LABELS, STATUS_SELECT_ITEMS } from '@/components/scheduling/appointment-card'
+import { useAppointmentStatusChange } from '@/hooks/mutations/use-appointment-status-change'
+import { MoreHorizontalIcon } from 'lucide-react'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { PatientPicker, resolvePatientChoice, type PatientChoice } from '@/components/scheduling/patient-picker'
+import type { BookingDraft } from '@/components/scheduling/quick-book-card'
+import { APPOINTMENT_STATUS_DOT, APPOINTMENT_STATUS_LABELS } from '@/lib/appointment-status'
+import { SETTLED_STATUSES } from '@/lib/appointment-actions'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { AppointmentStatus } from '@/types'
 import { START_TIMES, END_TIMES, timeItems } from '@/lib/time-options'
-import { formatBrPhone } from '@/lib/phone'
 import { useTenant } from '@/hooks/queries/use-tenant'
 import { isWhatsAppEnabled } from '@/lib/whatsapp-mode'
 import { useSubscriptionAccess } from '@/components/layout/subscription-access'
 import { canSendRescheduleNotice } from '@/validations/appointment'
 import { brToday } from '@/lib/dates'
 import type { RescheduleNotification } from '@/lib/whatsapp-reschedule'
+import { RESCHEDULE_NOTICE_SENT, RESCHEDULE_NOTICE_TOASTS } from '@/lib/reschedule-notice-copy'
 
 interface Practitioner {
   id: string
@@ -52,13 +61,6 @@ interface ProcedureType {
   id: string
   name: string
   estimatedDurationMin: number | null
-}
-
-interface PatientOption {
-  id: string
-  fullName: string
-  phone: string
-  cpf?: string | null
 }
 
 interface AppointmentFormProps {
@@ -72,16 +74,23 @@ interface AppointmentFormProps {
   defaultStartTime?: string
   defaultPractitionerId?: string
   defaultPatient?: { id: string; fullName: string }
+  /** What the quick booking card already had filled in ("Mais opções"). */
+  draft?: BookingDraft | null
+  /** The role can read appointments but not change them (financial). */
+  viewOnly?: boolean
 }
 
 const TIME_ITEMS = timeItems(START_TIMES)
 
-const NOTIFICATION_TOASTS: Record<Exclude<RescheduleNotification, 'sent'>, string> = {
-  unavailable: 'Reagendado. O aviso por WhatsApp não está disponível para esta clínica.',
-  no_phone: 'Reagendado. O paciente não tem um telefone válido para o aviso por WhatsApp.',
-  no_credits: 'Reagendado. Sem créditos de WhatsApp para enviar o aviso.',
-  failed: 'Reagendado, mas o aviso por WhatsApp não foi enviado.',
-}
+const STATUS_SELECT_ITEMS: Record<string, React.ReactNode> = Object.fromEntries(
+  Object.entries(APPOINTMENT_STATUS_LABELS).map(([key, label]) => [
+    key,
+    <span key={key} className="flex items-center gap-2">
+      <span className={`size-2 shrink-0 rounded-full ${APPOINTMENT_STATUS_DOT[key] ?? 'bg-slate-300'}`} />
+      {label}
+    </span>,
+  ])
+)
 
 export const DEFAULT_START_TIME = '08:00'
 
@@ -104,45 +113,43 @@ export function AppointmentForm({
   defaultStartTime,
   defaultPractitionerId,
   defaultPatient,
+  draft,
+  viewOnly = false,
 }: AppointmentFormProps) {
   const isEditing = !!appointment
   // Read-only mode (subscription ended): an existing appointment opens for
   // reading only, every field and action disabled, so nothing can be saved
   // only to fail with a 402.
-  const { readOnly, openPaywall } = useSubscriptionAccess()
+  const { readOnly: subscriptionReadOnly, openPaywall } = useSubscriptionAccess()
+  const readOnly = subscriptionReadOnly || viewOnly
   const createAppointment = useCreateAppointment()
   const updateAppointment = useUpdateAppointment()
   const updateAppointmentStatus = useUpdateAppointmentStatus()
   const deleteAppointmentMutation = useDeleteAppointment()
   const createPatient = useCreatePatient()
+  const { changeStatus, pendingIds } = useAppointmentStatusChange()
   const [error, setError] = React.useState<string | null>(null)
-  const [showNewPatient, setShowNewPatient] = React.useState(false)
-  const [newPatientName, setNewPatientName] = React.useState('')
-  const [newPatientPhone, setNewPatientPhone] = React.useState('')
+  const [confirmDelete, setConfirmDelete] = React.useState(false)
 
-  const [patientSearch, setPatientSearch] = React.useState('')
-  const [patientOptions, setPatientOptions] = React.useState<PatientOption[]>([])
-  const [selectedPatientId, setSelectedPatientId] = React.useState<string>(
-    appointment?.patientId ?? defaultPatient?.id ?? ''
-  )
-  const [selectedPatientName, setSelectedPatientName] = React.useState<string>(
-    appointment?.patientName ?? defaultPatient?.fullName ?? ''
-  )
-  const [showPatientDropdown, setShowPatientDropdown] = React.useState(false)
+  const initialPatient = (): PatientChoice | null => {
+    if (appointment?.patientId) return { kind: 'existing', id: appointment.patientId, fullName: appointment.patientName ?? '' }
+    // A phone here would register the online booker as a patient on every save; adding one is the user's call.
+    if (appointment?.bookingName) return { kind: 'new', fullName: appointment.bookingName, phone: '' }
+    if (appointment) return null
+    if (defaultPatient?.id) return { kind: 'existing', id: defaultPatient.id, fullName: defaultPatient.fullName }
+    return draft?.patient ?? null
+  }
+  const initialStart = () => appointment?.startTime.slice(0, 5) ?? draft?.startTime ?? (defaultStartTime || DEFAULT_START_TIME)
+  const initialEnd = () => appointment?.endTime.slice(0, 5) ?? draft?.endTime ?? getDefaultEndTime(defaultStartTime || DEFAULT_START_TIME)
 
+  const [patient, setPatient] = React.useState<PatientChoice | null>(initialPatient)
   const [practitionerId, setPractitionerId] = React.useState(
-    appointment?.practitionerId ?? defaultPractitionerId ?? practitioners[0]?.id ?? ''
+    appointment?.practitionerId ?? draft?.practitionerId ?? defaultPractitionerId ?? practitioners[0]?.id ?? ''
   )
-  const [procedureTypeId, setProcedureTypeId] = React.useState(
-    appointment?.procedureTypeId ?? ''
-  )
-  const [date, setDate] = React.useState(appointment?.date ?? defaultDate ?? '')
-  const [startTime, setStartTime] = React.useState(
-    appointment?.startTime?.slice(0, 5) ?? (defaultStartTime || DEFAULT_START_TIME)
-  )
-  const [endTime, setEndTime] = React.useState(
-    appointment?.endTime?.slice(0, 5) ?? getDefaultEndTime(defaultStartTime || DEFAULT_START_TIME)
-  )
+  const [procedureTypeId, setProcedureTypeId] = React.useState(appointment?.procedureTypeId ?? draft?.procedureTypeId ?? '')
+  const [date, setDate] = React.useState(appointment?.date ?? draft?.date ?? defaultDate ?? '')
+  const [startTime, setStartTime] = React.useState(initialStart)
+  const [endTime, setEndTime] = React.useState(initialEnd)
 
   const { data: tenant } = useTenant()
   const [notifyPatient, setNotifyPatient] = React.useState(true)
@@ -170,60 +177,17 @@ export function AppointmentForm({
   // Reset form on open
   React.useEffect(() => {
     if (open) {
-      if (appointment) {
-        setSelectedPatientId(appointment.patientId ?? '')
-        setSelectedPatientName(appointment.patientName ?? '')
-        setPractitionerId(appointment.practitionerId)
-        setProcedureTypeId(appointment.procedureTypeId ?? '')
-        setDate(appointment.date)
-        setStartTime(appointment.startTime.slice(0, 5))
-        setEndTime(appointment.endTime.slice(0, 5))
-      } else {
-        setSelectedPatientId(defaultPatient?.id ?? '')
-        setSelectedPatientName(defaultPatient?.fullName ?? '')
-        setPractitionerId(defaultPractitionerId ?? practitioners[0]?.id ?? '')
-        setProcedureTypeId('')
-        setDate(defaultDate ?? '')
-        setStartTime(defaultStartTime || DEFAULT_START_TIME)
-        setEndTime(getDefaultEndTime(defaultStartTime || DEFAULT_START_TIME))
-      }
-      setPatientSearch('')
-      setPatientOptions([])
+      setPatient(initialPatient())
+      setPractitionerId(appointment?.practitionerId ?? draft?.practitionerId ?? defaultPractitionerId ?? practitioners[0]?.id ?? '')
+      setProcedureTypeId(appointment?.procedureTypeId ?? draft?.procedureTypeId ?? '')
+      setDate(appointment?.date ?? draft?.date ?? defaultDate ?? '')
+      setStartTime(initialStart())
+      setEndTime(initialEnd())
       setNotifyPatient(true)
-      setShowNewPatient(false)
-      setNewPatientName('')
-      setNewPatientPhone('')
+      setError(null)
     }
-  }, [open, appointment, defaultDate, defaultStartTime, defaultPractitionerId, practitioners])
-
-  // Search patients via API
-  React.useEffect(() => {
-    if (patientSearch.length < 2) {
-      setPatientOptions([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      try {
-        const params = new URLSearchParams({ search: patientSearch, limit: '20' })
-        const res = await fetch(`/api/patients?${params}`)
-        if (res.ok) {
-          const json = await res.json()
-          const data = json.data ?? json
-          setPatientOptions(
-            (data as { id: string; fullName: string; phone: string; cpf?: string | null }[]).map((p) => ({
-              id: p.id,
-              fullName: p.fullName,
-              phone: p.phone,
-              cpf: p.cpf,
-            }))
-          )
-        }
-      } catch {
-        // ignore search errors
-      }
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [patientSearch])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resets only when the dialog opens on new inputs
+  }, [open, appointment, draft, defaultDate, defaultStartTime, defaultPractitionerId, practitioners])
 
   // Auto-set end time when procedure type changes
   const handleProcedureTypeChange = (value: string) => {
@@ -246,32 +210,44 @@ export function AppointmentForm({
       await updateAppointmentStatus.mutateAsync({ id: appointment.id, status })
       onSaved?.()
       onOpenChange(false)
-    } catch {
-      // error handled by mutation
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao alterar o status')
     }
+  }
+
+  const handleCancelAppointment = () => {
+    if (!appointment) return
+    changeStatus(appointment, 'cancelled', () => {
+      onSaved?.()
+      onOpenChange(false)
+    })
   }
 
   const handleDelete = async () => {
     if (!appointment) return
-    if (!confirm('Tem certeza que deseja excluir este agendamento?')) return
     try {
       await deleteAppointmentMutation.mutateAsync(appointment.id)
+      setConfirmDelete(false)
+      toast.success('Agendamento excluído')
       onSaved?.()
       onOpenChange(false)
-    } catch {
-      // error handled by mutation
+    } catch (err) {
+      setConfirmDelete(false)
+      setError(err instanceof Error ? err.message : 'Erro ao excluir')
     }
   }
+
+  const fieldLabel = 'uppercase tracking-wider text-xs font-medium text-mid'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader className="pb-2">
-          <DialogTitle className="text-lg font-semibold text-charcoal">{readOnly ? 'Agendamento' : isEditing ? 'Editar Agendamento' : 'Novo Agendamento'}</DialogTitle>
+          <DialogTitle className="text-lg font-semibold text-charcoal">{readOnly ? 'Agendamento' : isEditing ? 'Editar agendamento' : 'Novo agendamento'}</DialogTitle>
         </DialogHeader>
 
         {error && (
-          <div className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700 border border-red-100">
+          <div className="rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-700 border border-red-100" role="alert">
             {error}
           </div>
         )}
@@ -281,24 +257,11 @@ export function AppointmentForm({
           if (readOnly) return
           setError(null)
           const formData = new FormData(e.currentTarget)
-          let patientId = selectedPatientId || null
 
           try {
-            // Create patient inline if in new-patient mode
-            if (showNewPatient && newPatientName.trim() && newPatientPhone.trim()) {
-              const result = await createPatient.mutateAsync({
-                fullName: newPatientName.trim(),
-                phone: newPatientPhone.trim(),
-              }) as { data: { id: string } }
-              patientId = result.data.id
-            }
-
-            // Use bookingName for display: inline patient name, or typed search text when no patient selected
-            const bookingName = showNewPatient && newPatientName.trim()
-              ? newPatientName.trim()
-              : !patientId && patientSearch.trim()
-                ? patientSearch.trim()
-                : selectedPatientName || undefined
+            const { patientId, bookingName } = await resolvePatientChoice(patient, (input) => createPatient.mutateAsync(input))
+            // A retry after a refused slot must reuse the patient just registered, not register it again.
+            if (patient?.kind === 'new' && patientId) setPatient({ kind: 'existing', id: patientId, fullName: bookingName ?? '' })
 
             const data: Record<string, unknown> = {
               patientId,
@@ -318,9 +281,9 @@ export function AppointmentForm({
                 notifyPatient: canNotifyPatient && notifyPatient,
               }) as { notification?: RescheduleNotification }
               if (result.notification === 'sent') {
-                toast.success('Reagendado. Paciente avisado por WhatsApp.')
+                toast.success(RESCHEDULE_NOTICE_SENT)
               } else if (result.notification) {
-                toast.warning(NOTIFICATION_TOASTS[result.notification])
+                toast.warning(RESCHEDULE_NOTICE_TOASTS[result.notification])
               }
             } else {
               await createAppointment.mutateAsync(data)
@@ -334,128 +297,23 @@ export function AppointmentForm({
           <fieldset disabled={readOnly} className="contents" data-testid="appointment-form-fields">
           {isEditing && <input type="hidden" name="id" value={appointment.id} />}
 
-          {/* Patient search / quick create */}
-          <div className="grid gap-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="patient-search" className="uppercase tracking-wider text-xs font-medium text-mid">Paciente</Label>
-              {!showNewPatient && !selectedPatientId && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 px-2 text-xs text-[#4A6B52]"
-                  data-testid="appointment-new-patient"
-                  onClick={() => setShowNewPatient(true)}
-                >
-                  <PlusIcon className="h-3 w-3" />
-                  Novo paciente
-                </Button>
-              )}
-            </div>
-            {showNewPatient ? (
-              <div className="rounded-lg border border-[#4A6B52]/30 bg-[#4A6B52]/5 p-3 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-medium text-[#4A6B52] uppercase tracking-wider">Novo Paciente</span>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 px-2 text-xs text-mid"
-                    onClick={() => {
-                      setShowNewPatient(false)
-                      setNewPatientName('')
-                      setNewPatientPhone('')
-                    }}
-                  >
-                    Cancelar
-                  </Button>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <Input
-                    placeholder="Nome completo"
-                    value={newPatientName}
-                    onChange={(e) => setNewPatientName(e.target.value)}
-                    autoFocus
-                    required
-                    data-testid="new-patient-name"
-                  />
-                  <Input
-                    placeholder="(11) 99999-9999"
-                    value={maskPhone(newPatientPhone)}
-                    onChange={(e) => setNewPatientPhone(maskPhone(e.target.value))}
-                    required
-                    data-testid="new-patient-phone"
-                  />
-                </div>
-              </div>
-            ) : (
-              <div className="relative">
-                <Input
-                  id="patient-search"
-                  placeholder="Buscar paciente por nome..."
-                  value={selectedPatientName || patientSearch}
-                  disabled={!!defaultPatient?.id}
-                  onChange={(e) => {
-                    const val = (e.target as HTMLInputElement).value
-                    setPatientSearch(val)
-                    setSelectedPatientId('')
-                    setSelectedPatientName('')
-                    setShowPatientDropdown(true)
-                  }}
-                  onFocus={() => setShowPatientDropdown(true)}
-                  onBlur={() => setTimeout(() => setShowPatientDropdown(false), 200)}
-                />
-                <input type="hidden" name="patientId" value={selectedPatientId} />
-                {showPatientDropdown && patientSearch.length >= 2 && (
-                  <div className="absolute top-full z-50 mt-1 w-full rounded-md border bg-popover shadow-md">
-                    {patientOptions.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className="flex w-full items-center gap-3 px-3 py-2 text-sm hover:bg-muted"
-                        onMouseDown={(e) => {
-                          e.preventDefault()
-                          setSelectedPatientId(p.id)
-                          setSelectedPatientName(p.fullName)
-                          setPatientSearch('')
-                          setShowPatientDropdown(false)
-                        }}
-                      >
-                        <span className="flex-1 text-left">{p.fullName}</span>
-                        <span className="text-xs text-muted-foreground">{p.phone && formatBrPhone(p.phone)}</span>
-                        {p.cpf && <span className="text-xs text-muted-foreground">{p.cpf}</span>}
-                      </button>
-                    ))}
-                    {/* Quick create button */}
-                    <button
-                      type="button"
-                      className="flex w-full items-center gap-2 border-t px-3 py-2 text-sm font-medium text-[#4A6B52] hover:bg-muted"
-                      onMouseDown={(e) => {
-                        e.preventDefault()
-                        setNewPatientName(patientSearch)
-                        setShowNewPatient(true)
-                        setShowPatientDropdown(false)
-                        setPatientSearch('')
-                      }}
-                    >
-                      <PlusIcon className="h-3.5 w-3.5" />
-                      Criar paciente &ldquo;{patientSearch}&rdquo;
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          <PatientPicker
+            id="patient-search"
+            value={patient}
+            onChange={setPatient}
+            locked={!!defaultPatient?.id && !isEditing}
+            labelClassName={fieldLabel}
+          />
 
           {/* Practitioner */}
           <div className="grid gap-2">
-            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Profissional</Label>
+            <Label className={fieldLabel}>Profissional</Label>
             <Select
               items={practitionerItems}
               value={practitionerId}
               onValueChange={(v) => v && setPractitionerId(v)}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Profissional">
                 <SelectValue placeholder="Selecione o profissional" />
               </SelectTrigger>
               <SelectContent />
@@ -465,13 +323,13 @@ export function AppointmentForm({
 
           {/* Procedure type */}
           <div className="grid gap-2">
-            <Label className="uppercase tracking-wider text-xs font-medium text-mid">Tipo de Procedimento</Label>
+            <Label className={fieldLabel}>Tipo de procedimento</Label>
             <Select
               items={procedureTypeItems}
               value={procedureTypeId}
               onValueChange={(v) => v && handleProcedureTypeChange(v)}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger className="w-full" aria-label="Tipo de procedimento">
                 <SelectValue placeholder="Selecione (opcional)" />
               </SelectTrigger>
               <SelectContent>
@@ -490,7 +348,7 @@ export function AppointmentForm({
 
           {/* Date */}
           <div className="grid gap-2">
-            <Label htmlFor="date" className="uppercase tracking-wider text-xs font-medium text-mid">Data</Label>
+            <Label htmlFor="date" className={fieldLabel}>Data</Label>
             <DatePicker
               value={date}
               onChange={(v) => setDate(v)}
@@ -500,9 +358,9 @@ export function AppointmentForm({
           {/* Time */}
           <div className="grid grid-cols-2 gap-4">
             <div className="grid gap-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Inicio</Label>
+              <Label className={fieldLabel}>Início</Label>
               <Select items={TIME_ITEMS} value={startTime} onValueChange={(v) => v && handleStartTimeChange(v)}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Início">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent />
@@ -510,9 +368,9 @@ export function AppointmentForm({
               <input type="hidden" name="startTime" value={startTime} />
             </div>
             <div className="grid gap-2">
-              <Label className="uppercase tracking-wider text-xs font-medium text-mid">Termino</Label>
+              <Label className={fieldLabel}>Término</Label>
               <Select items={endTimeItems} value={endTime} onValueChange={(v) => v && setEndTime(v)}>
-                <SelectTrigger className="w-full">
+                <SelectTrigger className="w-full" aria-label="Término">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent />
@@ -537,7 +395,7 @@ export function AppointmentForm({
 
           {/* Notes */}
           <div className="grid gap-2">
-            <Label htmlFor="notes" className="uppercase tracking-wider text-xs font-medium text-mid">Observações</Label>
+            <Label htmlFor="notes" className={fieldLabel}>Observações</Label>
             <Textarea
               id="notes"
               name="notes"
@@ -552,50 +410,77 @@ export function AppointmentForm({
           {readOnly ? (
             <DialogFooter className="pt-2 border-t border-sage/10" data-testid="appointment-form-read-only">
               <div className="flex w-full flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="text-sm text-mid">Modo leitura: assine um plano para editar ou remarcar.</p>
+                <p className="text-sm text-mid">
+                  {subscriptionReadOnly ? 'Modo leitura: assine um plano para editar ou remarcar.' : 'Seu perfil pode ver este agendamento, mas não alterá-lo.'}
+                </p>
                 <div className="flex gap-2">
                   <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                     Fechar
                   </Button>
-                  <Button
-                    type="button"
-                    className="bg-forest text-cream hover:bg-sage"
-                    onClick={() => {
-                      onOpenChange(false)
-                      openPaywall()
-                    }}
-                  >
-                    Ver planos
-                  </Button>
+                  {subscriptionReadOnly && (
+                    <Button
+                      type="button"
+                      className="bg-forest text-cream hover:bg-sage"
+                      onClick={() => {
+                        onOpenChange(false)
+                        openPaywall()
+                      }}
+                    >
+                      Ver planos
+                    </Button>
+                  )}
                 </div>
               </div>
             </DialogFooter>
           ) : (
           <DialogFooter className="pt-2 border-t border-sage/10">
-            <div className="flex w-full items-center justify-between">
-              <div className="flex gap-2">
+            <div className="flex w-full flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
                 {isEditing && (
                   <>
                     <Select items={STATUS_SELECT_ITEMS} value={appointment?.status} onValueChange={(v) => v && handleStatusChange(v as AppointmentStatus)}>
-                      <SelectTrigger className="min-w-48 text-sm">
+                      <SelectTrigger className="min-w-44 text-sm" aria-label="Status">
                         <SelectValue placeholder="Alterar status" />
                       </SelectTrigger>
                       <SelectContent />
                     </Select>
-                    <Button type="button" variant="destructive" onClick={handleDelete}>
-                      Cancelar
-                    </Button>
+                    {!SETTLED_STATUSES.has(appointment.status) && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                        disabled={pendingIds.has(appointment.id)}
+                        onClick={handleCancelAppointment}
+                        data-testid="appointment-cancel-status"
+                      >
+                        Cancelar agendamento
+                      </Button>
+                    )}
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button type="button" variant="ghost" size="icon" className="size-9 text-mid" aria-label="Mais opções do agendamento" />
+                        }
+                      >
+                        <MoreHorizontalIcon className="size-4" />
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="w-52">
+                        <DropdownMenuItem variant="destructive" className="min-h-10" onClick={() => setConfirmDelete(true)} data-testid="appointment-delete">
+                          Excluir agendamento
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </>
                 )}
               </div>
-              <div className="flex gap-2">
+              <div className="flex justify-end gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors"
                   onClick={() => onOpenChange(false)}
                 >
-                  Cancelar
+                  Fechar
                 </Button>
                 <Button type="submit" disabled={isPending} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="appointment-form-submit">
                   {isPending ? 'Salvando...' : 'Salvar'}
@@ -606,6 +491,29 @@ export function AppointmentForm({
           )}
         </form>
       </DialogContent>
+
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Excluir agendamento</DialogTitle>
+            <DialogDescription>
+              O agendamento some da agenda e dos relatórios. Para manter o histórico, use Cancelar agendamento.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setConfirmDelete(false)}>Voltar</Button>
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={deleteAppointmentMutation.isPending}
+              data-testid="confirm-delete-appointment"
+            >
+              {deleteAppointmentMutation.isPending ? 'Excluindo...' : 'Excluir'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Dialog>
   )
 }

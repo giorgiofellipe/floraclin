@@ -14,53 +14,24 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { PaymentForm } from '@/components/financial/payment-form'
 import { ReadOnlyGuard, useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
-import { useUpdateAppointmentStatus } from '@/hooks/mutations/use-appointment-mutations'
-import { canWriteClinical } from '@/lib/constants'
-import { NEW_APPOINTMENT_PATH, NEW_PATIENT_PATH } from '@/lib/deep-links'
+import { useAppointmentStatusChange } from '@/hooks/mutations/use-appointment-status-change'
+import {
+  ACTIVE_STATUSES,
+  SETTLED_STATUSES,
+  atendimentoHref,
+  canWriteAppointments,
+  patientHref,
+  primaryAppointmentAction,
+  type PrimaryActionKind,
+} from '@/lib/appointment-actions'
+import { APPOINTMENT_STATUS_DOT, APPOINTMENT_STATUS_LABELS } from '@/lib/appointment-status'
+import { NEW_APPOINTMENT_PATH } from '@/lib/deep-links'
 import { cn } from '@/lib/utils'
 import type { TodayAppointment } from '@/db/queries/dashboard'
 import type { Role } from '@/types'
 
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: 'Agendado',
-  confirmed: 'Confirmado',
-  in_progress: 'Em atendimento',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-  no_show: 'Não compareceu',
-  pending_reschedule: 'Aguardando reagendamento',
-}
-
-const STATUS_DOT: Record<string, string> = {
-  scheduled: 'bg-blue-400',
-  confirmed: 'bg-emerald-500',
-  in_progress: 'bg-indigo-500',
-  completed: 'bg-slate-300',
-  cancelled: 'bg-red-300',
-  no_show: 'bg-rose-400',
-  pending_reschedule: 'bg-amber-400',
-}
-
-/** Rows that need nothing more today; their text steps back, their actions do not. */
-const SETTLED = new Set(['completed', 'cancelled', 'no_show'])
-const ACTIVE = new Set(['scheduled', 'confirmed', 'in_progress'])
-
-// Mirrors the API: PUT /api/appointments/[id]/status and POST /api/financial.
-const CAN_SET_STATUS = new Set<string>(['owner', 'practitioner', 'receptionist'])
-const CAN_CHARGE = new Set<string>(['owner', 'receptionist', 'financial'])
-
 /** Thumb-sized on phones; desktop keeps the compact size. */
 const ROW_ACTION = 'max-sm:h-11 max-sm:px-4'
-
-function patientHref(appt: TodayAppointment): string {
-  return appt.patientId
-    ? `/pacientes/${appt.patientId}`
-    : `${NEW_PATIENT_PATH}&nome=${encodeURIComponent(appt.bookingName ?? '')}&telefone=${encodeURIComponent(appt.bookingPhone ?? '')}`
-}
-
-function atendimentoHref(appt: TodayAppointment): string {
-  return `/pacientes/${appt.patientId}/atendimento?appointment=${appt.id}`
-}
 
 interface TodayAppointmentsProps {
   appointments: TodayAppointment[]
@@ -74,43 +45,10 @@ interface TodayAppointmentsProps {
 export function TodayAppointments({ appointments, firstAppointment = false, bookingUrl = null, monthAtendimentos = null }: TodayAppointmentsProps) {
   const router = useRouter()
   const { role } = useSubscriptionAccess()
-  const updateStatus = useUpdateAppointmentStatus()
-  const [pendingIds, setPendingIds] = useState<Set<string>>(new Set())
+  const { changeStatus, pendingIds } = useAppointmentStatusChange()
   const [charging, setCharging] = useState<TodayAppointment | null>(null)
 
-  function setPending(id: string, pending: boolean) {
-    setPendingIds((prev) => {
-      const next = new Set(prev)
-      if (pending) next.add(id)
-      else next.delete(id)
-      return next
-    })
-  }
-
-  function changeStatus(appt: TodayAppointment, status: string, then?: () => void) {
-    const previous = appt.status
-    const name = appt.patientName ?? appt.bookingName ?? 'Agendamento'
-    setPending(appt.id, true)
-    updateStatus.mutate(
-      { id: appt.id, status },
-      {
-        onSuccess: () => {
-          toast.success(`${name}: ${STATUS_LABELS[status] ?? status}`, {
-            action: {
-              label: 'Desfazer',
-              onClick: () =>
-                updateStatus.mutate({ id: appt.id, status: previous }, { onError: (err) => toast.error(err.message) }),
-            },
-          })
-          then?.()
-        },
-        onError: (err) => toast.error(err.message),
-        onSettled: () => setPending(appt.id, false),
-      },
-    )
-  }
-
-  const open = appointments.filter((a) => !SETTLED.has(a.status)).length
+  const open = appointments.filter((a) => !SETTLED_STATUSES.has(a.status)).length
   const summary = appointments.length === 0 ? null : open === 0 ? 'Tudo resolvido' : `${open} de ${appointments.length} em aberto`
 
   return (
@@ -158,18 +96,6 @@ export function TodayAppointments({ appointments, firstAppointment = false, book
   )
 }
 
-type ActionKind = 'status' | 'start' | 'open' | 'charge' | 'register'
-
-/** The one thing to do next on a row, if this role may do it. */
-function primaryAction(appt: TodayAppointment, role: Role): { label: string; short?: string; kind: ActionKind } | null {
-  if (!appt.patientId) return ACTIVE.has(appt.status) ? { label: 'Cadastrar', kind: 'register' } : null
-  if (appt.status === 'scheduled' && CAN_SET_STATUS.has(role)) return { label: 'Confirmar', kind: 'status' }
-  if (appt.status === 'confirmed' && canWriteClinical(role)) return { label: 'Iniciar atendimento', short: 'Atender', kind: 'start' }
-  if (appt.status === 'in_progress' && canWriteClinical(role)) return { label: 'Abrir atendimento', short: 'Abrir', kind: 'open' }
-  if (appt.status === 'completed' && !appt.hasCharge && CAN_CHARGE.has(role)) return { label: 'Cobrar', kind: 'charge' }
-  return null
-}
-
 function AppointmentRow({
   appt,
   role,
@@ -187,8 +113,8 @@ function AppointmentRow({
 }) {
   const guard = useWriteGuard()
   const name = appt.patientName ?? appt.bookingName ?? 'Sem paciente'
-  const settled = SETTLED.has(appt.status)
-  const action = primaryAction(appt, role)
+  const settled = SETTLED_STATUSES.has(appt.status)
+  const action = primaryAppointmentAction(appt, role)
   const label = action?.short ? (
     <>
       <span className="sm:hidden">{action.short}</span>
@@ -212,7 +138,7 @@ function AppointmentRow({
       </Link>
     )
   } else if (action) {
-    const handlers: Record<ActionKind, () => void> = { status: () => onStatus('confirmed'), start: onStart, charge: onCharge, open: () => {}, register: () => {} }
+    const handlers: Record<PrimaryActionKind, () => void> = { status: () => onStatus('confirmed'), start: onStart, charge: onCharge, open: () => {}, register: () => {} }
     const onClick = handlers[action.kind]
     control = (
       <Button size="sm" variant={action.kind === 'charge' ? 'outline' : 'default'} className={ROW_ACTION} disabled={pending} onClick={onClick}>
@@ -229,13 +155,13 @@ function AppointmentRow({
       <Link href={patientHref(appt)} className="min-w-0 flex-1 rounded-sm">
         <p className={cn('truncate text-[14px] font-medium', settled ? 'text-mid' : 'text-charcoal')}>{name}</p>
         <p className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-mid">
-          <span className={cn('size-1.5 shrink-0 rounded-full', STATUS_DOT[appt.status] ?? 'bg-slate-300')} aria-hidden />
-          {STATUS_LABELS[appt.status] ?? appt.status}
+          <span className={cn('size-1.5 shrink-0 rounded-full', APPOINTMENT_STATUS_DOT[appt.status] ?? 'bg-slate-300')} aria-hidden />
+          {APPOINTMENT_STATUS_LABELS[appt.status] ?? appt.status}
           {appt.procedureTypeName && <span className="truncate">· {appt.procedureTypeName}</span>}
         </p>
       </Link>
       {control && action && <ReadOnlyGuard label={action.label}>{control}</ReadOnlyGuard>}
-      {ACTIVE.has(appt.status) && CAN_SET_STATUS.has(role) && (
+      {ACTIVE_STATUSES.has(appt.status) && canWriteAppointments(role) && (
         <DropdownMenu>
           <DropdownMenuTrigger
             render={

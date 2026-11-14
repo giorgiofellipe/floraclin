@@ -3,7 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { queryKeys } from '../queries/query-keys'
 
-async function mutateJson(url: string, method: string, data?: unknown) {
+export async function mutateJson(url: string, method: string, data?: unknown) {
   const res = await fetch(url, {
     method,
     headers: data ? { 'Content-Type': 'application/json' } : undefined,
@@ -22,6 +22,7 @@ export function useCreateAppointment() {
     mutationFn: (data: Record<string, unknown>) => mutateJson('/api/appointments', 'POST', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all })
+      queryClient.invalidateQueries({ queryKey: queryKeys.patients.recent })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })
     },
   })
@@ -42,8 +43,8 @@ export function useUpdateAppointment() {
 export function useUpdateAppointmentStatus() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, status }: { id: string; status: string }) =>
-      mutateJson(`/api/appointments/${id}/status`, 'PUT', { status }),
+    mutationFn: ({ id, status, expectedUpdatedAt }: { id: string; status: string; expectedUpdatedAt?: string }) =>
+      mutateJson(`/api/appointments/${id}/status`, 'PUT', { status, expectedUpdatedAt }) as Promise<{ data: { updatedAt: string } }>,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.appointments.all })
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboard })

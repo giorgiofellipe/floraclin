@@ -1,29 +1,14 @@
 'use client'
 
 import { cn } from '@/lib/utils'
-import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
-import { Badge } from '@/components/ui/badge'
+import {
+  APPOINTMENT_STATUS_BORDER,
+  APPOINTMENT_STATUS_DOT,
+  APPOINTMENT_STATUS_ICON,
+  APPOINTMENT_STATUS_LABELS,
+} from '@/lib/appointment-status'
+import { SETTLED_STATUSES } from '@/lib/appointment-actions'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
-
-const STATUS_LABELS: Record<string, string> = {
-  scheduled: 'Agendado',
-  confirmed: 'Confirmado',
-  in_progress: 'Em andamento',
-  completed: 'Concluído',
-  cancelled: 'Cancelado',
-  no_show: 'Não compareceu',
-  pending_reschedule: 'Aguardando Reagendamento',
-}
-
-const STATUS_BORDER_COLORS: Record<string, string> = {
-  scheduled: 'border-l-blue-400',
-  confirmed: 'border-l-emerald-400',
-  in_progress: 'border-l-indigo-400',
-  completed: 'border-l-slate-300',
-  cancelled: 'border-l-red-400',
-  no_show: 'border-l-rose-400',
-  pending_reschedule: 'border-l-amber-400',
-}
 
 const PRACTITIONER_BG_COLORS = [
   'bg-[#4A6B52]/8',  // forest green
@@ -44,38 +29,73 @@ function getPractitionerBg(practitionerId: string): string {
   return PRACTITIONER_BG_COLORS[Math.abs(hash) % PRACTITIONER_BG_COLORS.length]
 }
 
+export function appointmentDisplayName(appointment: Pick<AppointmentWithDetails, 'patientName' | 'bookingName'>): string {
+  return appointment.patientName ?? appointment.bookingName ?? 'Sem paciente'
+}
+
+export function StatusIcon({ status, className }: { status: string; className?: string }) {
+  const entry = APPOINTMENT_STATUS_ICON[status]
+  if (!entry) return null
+  const Icon = entry.icon
+  return <Icon className={cn('size-3.5 shrink-0', entry.className, className)} aria-hidden />
+}
+
+export function StatusChip({ status, className }: { status: string; className?: string }) {
+  return (
+    <span
+      className={cn('inline-flex min-w-0 items-center gap-1 rounded-full bg-white/80 px-1.5 py-0.5 text-[11px] font-medium text-charcoal', className)}
+      data-testid="appointment-status-chip"
+    >
+      <StatusIcon status={status} className="size-3" />
+      <span className="truncate">{APPOINTMENT_STATUS_LABELS[status] ?? status}</span>
+    </span>
+  )
+}
+
 interface AppointmentCardProps {
   appointment: AppointmentWithDetails
   compact?: boolean
-  onClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
+  onClick?: (appointment: AppointmentWithDetails, event: React.MouseEvent<HTMLElement>) => void
 }
 
 export function AppointmentCard({ appointment, compact = false, onClick }: AppointmentCardProps) {
-  const statusBadge = APPOINTMENT_STATUS_COLORS[appointment.status] ?? 'bg-slate-100 text-slate-600'
-  const statusBorder = STATUS_BORDER_COLORS[appointment.status] ?? 'border-l-slate-300'
+  const statusBorder = APPOINTMENT_STATUS_BORDER[appointment.status] ?? 'border-l-slate-300'
   const practitionerBg = getPractitionerBg(appointment.practitionerId)
-  const displayName = appointment.patientName ?? appointment.bookingName ?? 'Sem paciente'
-  const displayText = appointment.procedureTypeName
-    ? `${displayName} · ${appointment.procedureTypeName}`
-    : displayName
-  const timeStr = `${appointment.startTime.slice(0, 5)} - ${appointment.endTime.slice(0, 5)}`
+  const displayName = appointmentDisplayName(appointment)
+  const shortName = appointment.patientName || appointment.bookingName ? displayName.split(' ')[0] : displayName
+  const statusLabel = APPOINTMENT_STATUS_LABELS[appointment.status] ?? appointment.status
+  const start = appointment.startTime.slice(0, 5)
+  const timeStr = `${start} - ${appointment.endTime.slice(0, 5)}`
+  const settled = SETTLED_STATUSES.has(appointment.status)
+  const ariaLabel = [timeStr, displayName, appointment.procedureTypeName, appointment.practitionerName, statusLabel]
+    .filter(Boolean)
+    .join(', ')
 
   if (compact) {
     return (
       <button
         type="button"
         data-testid={`appointment-card-${appointment.id}`}
+        data-status={appointment.status}
         onClick={(e) => onClick?.(appointment, e)}
-        title={`${timeStr} · ${displayText} · ${appointment.practitionerName} · ${STATUS_LABELS[appointment.status] ?? appointment.status}`}
+        aria-label={ariaLabel}
+        title={ariaLabel}
         className={cn(
-          'w-full h-full rounded-[3px] border-l-[3px] px-2 py-1 text-left text-xs leading-snug transition-colors duration-150 overflow-hidden',
+          'flex h-full w-full flex-col justify-start overflow-hidden rounded-[3px] border-l-[3px] px-1.5 py-1 text-left text-xs leading-snug transition-colors duration-150',
           practitionerBg,
-          statusBorder
+          statusBorder,
+          settled && 'opacity-70'
         )}
       >
-        <span className="font-semibold">{appointment.startTime.slice(0, 5)}</span>{' '}
-        <span className="truncate">{displayText}</span>
-        <span className="block truncate text-[11px] opacity-70">{appointment.practitionerName}</span>
+        <span className="flex min-w-0 items-center gap-1">
+          <StatusIcon status={appointment.status} className="size-3" />
+          <span className="font-semibold tabular-nums">{start}</span>
+          <span className="truncate font-medium text-charcoal">{shortName}</span>
+        </span>
+        {appointment.procedureTypeName && (
+          <span className="block truncate text-[11px] text-charcoal/75">{appointment.procedureTypeName}</span>
+        )}
+        <span className="block truncate text-[11px] opacity-60">{appointment.practitionerName}</span>
       </button>
     )
   }
@@ -84,52 +104,27 @@ export function AppointmentCard({ appointment, compact = false, onClick }: Appoi
     <button
       type="button"
       data-testid={`appointment-card-${appointment.id}`}
+      data-status={appointment.status}
       onClick={(e) => onClick?.(appointment, e)}
+      aria-label={ariaLabel}
       className={cn(
-        'w-full h-full rounded-[3px] border-l-[3px] px-3 py-1.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-colors duration-200 overflow-hidden',
+        '@container flex h-full w-full flex-col justify-start overflow-hidden rounded-[3px] border-l-[3px] px-2.5 py-1.5 text-left shadow-[0_1px_4px_rgba(0,0,0,0.06)] transition-colors duration-200',
         practitionerBg,
-        statusBorder
+        statusBorder,
+        settled && 'opacity-75'
       )}
     >
-      <div className="flex items-start justify-between gap-1">
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium text-[#2A2A2A]">{displayName}</p>
-          <p className="text-xs text-[#7A7A7A]">{timeStr}</p>
-          <p className="truncate text-xs font-medium text-[#4A6B52]">
-            {appointment.practitionerName}
-          </p>
-          {appointment.procedureTypeName && (
-            <p className="truncate text-xs text-[#7A7A7A]">
-              {appointment.procedureTypeName}
-            </p>
-          )}
-        </div>
-        <Badge className={cn('hidden shrink-0 rounded-full sm:inline-flex text-[11px] px-2 py-0.5', statusBadge)}>
-          {STATUS_LABELS[appointment.status] ?? appointment.status}
-        </Badge>
+      <div className="flex w-full min-w-0 items-start justify-between gap-1.5">
+        <p className="min-w-0 truncate text-sm font-medium text-charcoal">{displayName}</p>
+        <StatusChip status={appointment.status} className="hidden shrink-0 @[14rem]:inline-flex" />
+        <span className={cn('mt-1 size-2 shrink-0 rounded-full @[14rem]:hidden', APPOINTMENT_STATUS_DOT[appointment.status])} aria-hidden />
       </div>
+      <p className="truncate text-xs text-mid tabular-nums">
+        {timeStr}
+        <span className="@[14rem]:hidden"> · {statusLabel}</span>
+      </p>
+      {appointment.procedureTypeName && <p className="truncate text-xs text-mid">{appointment.procedureTypeName}</p>}
+      <p className="truncate text-xs font-medium text-sage">{appointment.practitionerName}</p>
     </button>
   )
 }
-
-const STATUS_DOT_COLORS: Record<string, string> = {
-  scheduled: 'bg-blue-400',
-  confirmed: 'bg-emerald-400',
-  in_progress: 'bg-indigo-400',
-  completed: 'bg-slate-300',
-  cancelled: 'bg-red-400',
-  no_show: 'bg-rose-400',
-  pending_reschedule: 'bg-amber-400',
-}
-
-const STATUS_SELECT_ITEMS: Record<string, React.ReactNode> = Object.fromEntries(
-  Object.entries(STATUS_LABELS).map(([key, label]) => [
-    key,
-    <span key={key} className="flex items-center gap-2">
-      <span className={`size-2 rounded-full shrink-0 ${STATUS_DOT_COLORS[key] ?? 'bg-slate-300'}`} />
-      {label}
-    </span>,
-  ])
-)
-
-export { STATUS_LABELS, STATUS_DOT_COLORS, STATUS_SELECT_ITEMS }

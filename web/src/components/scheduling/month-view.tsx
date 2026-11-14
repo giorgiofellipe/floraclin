@@ -12,13 +12,12 @@ import {
   isSameDay,
   isToday,
 } from 'date-fns'
-import { ptBR } from 'date-fns/locale'
 import { cn } from '@/lib/utils'
 import { APPOINTMENT_STATUS_COLORS } from '@/lib/constants'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import { toHhMm } from '@/lib/time-options'
-import { STATUS_DOT_COLORS } from './appointment-card'
+import { APPOINTMENT_STATUS_DOT } from '@/lib/appointment-status'
 
 interface MonthViewProps {
   date: Date
@@ -52,13 +51,6 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
 
   return (
     <div className="flex flex-col">
-      {/* Header */}
-      <div className="border-b border-[#E8ECEF] bg-white px-4 py-3 text-center">
-        <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
-          {format(date, "MMMM 'de' yyyy", { locale: ptBR })}
-        </h3>
-      </div>
-
       {/* Weekday headers */}
       <div className="grid grid-cols-7 border-b border-[#E8ECEF] bg-white">
         {WEEKDAYS.map((day) => (
@@ -109,7 +101,7 @@ export function MonthView({ date, appointments, calendarBlocks = [], onDayClick,
                 <div className="mt-1 flex flex-wrap justify-center gap-0.5 md:hidden">
                   {dayBlocks.length > 0 && <span className="size-1.5 rounded-full bg-gray-300" />}
                   {dayAppointments.slice(0, MAX_VISIBLE_APPOINTMENTS).map((appt) => (
-                    <span key={appt.id} className={cn('size-1.5 rounded-full', STATUS_DOT_COLORS[appt.status] ?? 'bg-slate-300')} />
+                    <span key={appt.id} className={cn('size-1.5 rounded-full', APPOINTMENT_STATUS_DOT[appt.status] ?? 'bg-slate-300')} />
                   ))}
                   {dayAppointments.length > MAX_VISIBLE_APPOINTMENTS && (
                     <span className="text-[9px] leading-none text-mid">+{dayAppointments.length - MAX_VISIBLE_APPOINTMENTS}</span>

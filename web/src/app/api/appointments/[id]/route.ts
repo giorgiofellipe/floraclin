@@ -14,6 +14,7 @@ import { handleApiError } from '@/lib/api-error'
 import { toHhMm } from '@/lib/time-options'
 import { reportCalendarFailure } from '@/lib/google-calendar'
 import { sendRescheduleNotification } from '@/lib/whatsapp-reschedule'
+import { STALE_UNDO_MESSAGE } from '@/validations/appointment'
 
 export async function PUT(
   request: Request,
@@ -33,11 +34,15 @@ export async function PUT(
       )
     }
 
-    const { id: appointmentId, notifyPatient, ...data } = parsed.data
+    const { id: appointmentId, notifyPatient, expectedUpdatedAt, restore, ...data } = parsed.data
 
     const current = await getAppointmentById(ctx.tenantId, appointmentId)
     if (!current) {
       return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
+    }
+
+    if (expectedUpdatedAt && new Date(current.updatedAt).getTime() !== new Date(expectedUpdatedAt).getTime()) {
+      return NextResponse.json({ error: STALE_UNDO_MESSAGE }, { status: 409 })
     }
 
     const checkDate = data.date ?? current.date
@@ -77,10 +82,21 @@ export async function PUT(
       }
     }
 
-    const appointment = await updateAppointment(ctx.tenantId, appointmentId, data)
-    if (!appointment) {
+    const updated = await updateAppointment(
+      ctx.tenantId,
+      appointmentId,
+      data,
+      restore && {
+        status: restore.status,
+        confirmedAt: restore.confirmedAt ? new Date(restore.confirmedAt) : null,
+        confirmationSentAt: restore.confirmationSentAt ? new Date(restore.confirmationSentAt) : null,
+        confirmationMessageId: restore.confirmationMessageId,
+      },
+    )
+    if (!updated) {
       return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
     }
+    const { appointment, previous } = updated
 
     await createAuditLog({
       tenantId: ctx.tenantId,
@@ -97,7 +113,7 @@ export async function PUT(
       ? await sendRescheduleNotification(ctx.tenantId, ctx.userId, { ...current, ...appointment })
       : undefined
 
-    return NextResponse.json({ success: true, data: appointment, notification })
+    return NextResponse.json({ success: true, data: appointment, notification, previous })
   } catch (error) {
     const msg = error instanceof Error ? error.message : ''
     if (msg.includes('exclusion')) {
