@@ -103,7 +103,11 @@ describeIntegration('Financeiro overview (integration, requires test DB)', () =>
       { amount: '80.00', dueYmd: '2025-11-18' },
       { amount: '70.00', dueYmd: '2025-11-25' },
     ])
-    await charge(BIA, '2025-11-01', [{ amount: '50.00', dueYmd: '2025-11-10' }])
+    // One part late, one due on the last day A Receber's dueSoon filter covers.
+    await charge(BIA, '2025-11-01', [
+      { amount: '50.00', dueYmd: '2025-11-10' },
+      { amount: '30.00', dueYmd: '2025-11-22' },
+    ])
   })
 
   afterAll(async () => {
@@ -136,8 +140,8 @@ describeIntegration('Financeiro overview (integration, requires test DB)', () =>
     expect(overview.summary).toEqual({ totalReceived: 400, totalExpenses: 200, totalCardFees: 0, netProfit: 200 })
     expect(overview.receivables).toEqual({
       overdue: { total: 150, patientCount: 2 },
-      dueSoon: { total: 80, count: 1 },
-      notYetDue: { total: 150 },
+      dueSoon: { total: 110, count: 2 },
+      notYetDue: { total: 180 },
     })
     expect(overview.byProcedureType).toEqual([{ name: 'Sem procedimento', total: 400 }])
     expect(overview.monthly).toEqual([

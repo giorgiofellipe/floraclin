@@ -24,7 +24,7 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 }
 
 const OVERDUE_HREF = '/financeiro?tab=receivables&isOverdue=true'
-const PENDING_HREF = '/financeiro?tab=receivables&status=pending'
+const DUE_SOON_HREF = '/financeiro?tab=receivables&dueSoon=true'
 const CARD_METHODS = ['credit_card', 'debit_card']
 
 function ledgerHref(type: 'inflow' | 'outflow', dateFrom: string, dateTo: string) {
@@ -259,8 +259,8 @@ export function FinancialOverview() {
             value={receivables.dueSoon.total}
             caption={plural(receivables.dueSoon.count, 'parcela', 'parcelas')}
             detail={`${formatCurrency(receivables.notYetDue.total)} em aberto no total`}
-            href={PENDING_HREF}
-            action="Ver pendentes"
+            href={DUE_SOON_HREF}
+            action="Ver a receber"
           />
         </div>
       </div>

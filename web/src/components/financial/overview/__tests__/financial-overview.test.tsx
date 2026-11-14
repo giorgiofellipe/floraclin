@@ -49,7 +49,7 @@ describe('FinancialOverview', () => {
     expect(link(/Despesas pagas/)).toBe('/financeiro?tab=ledger&type=outflow&dateFrom=2026-11-01&dateTo=2026-11-30')
     expect(link(/Taxas de cartão/)).toBe('/financeiro?tab=card-repasses&dateFrom=2026-11-01&dateTo=2026-11-30')
     expect(link(/Ver vencidos/)).toBe('/financeiro?tab=receivables&isOverdue=true')
-    expect(link(/Ver pendentes/)).toBe('/financeiro?tab=receivables&status=pending')
+    expect(link(/Ver a receber/)).toBe('/financeiro?tab=receivables&dueSoon=true')
     expect(screen.getByTestId('overview-overdue')).toHaveTextContent('3 pacientes em atraso hoje')
     expect(screen.getByTestId('overview-due-soon')).toHaveTextContent(`${brl(6000).replace(/\u00a0/g, ' ')} em aberto no total`)
   })

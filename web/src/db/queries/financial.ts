@@ -2257,7 +2257,7 @@ function shiftMonth(month: string, delta: number): string {
   return `${Math.floor(index / 12)}-${String((index % 12) + 1).padStart(2, '0')}`
 }
 
-/** Days ahead, today included, that "A receber em 7 dias" covers. */
+/** Days after today that "A receber em 7 dias" covers, as the A Receber dueSoon filter does. */
 export const DUE_SOON_DAYS = 7
 
 /**
@@ -2266,7 +2266,7 @@ export const DUE_SOON_DAYS = 7
  * late yet, and the part of that falling due in the next DUE_SOON_DAYS days.
  */
 export async function getReceivablesOutlook(tenantId: string, now: Date) {
-  const lastSoonDay = shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS - 1)
+  const lastSoonDay = shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS)
   const open = await db
     .select({ ...pricedInstallmentColumns, patientId: financialEntries.patientId })
     .from(installments)
