@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { NEW_PATIENT_PATH } from '@/lib/deep-links'
 import type { TodayAppointment } from '@/db/queries/dashboard'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -71,7 +72,7 @@ export function TodayAppointments({ appointments }: TodayAppointmentsProps) {
               STATUS_BORDER_COLORS[appt.status] ?? 'border-l-[#D0D0D0]'
             const href = appt.patientId
               ? `/pacientes/${appt.patientId}`
-              : `/pacientes?novo=1&nome=${encodeURIComponent(appt.bookingName ?? '')}&telefone=${encodeURIComponent(appt.bookingPhone ?? '')}`
+              : `${NEW_PATIENT_PATH}&nome=${encodeURIComponent(appt.bookingName ?? '')}&telefone=${encodeURIComponent(appt.bookingPhone ?? '')}`
 
             const timeStr = appt.startTime.slice(0, 5).replace(':', 'h')
 

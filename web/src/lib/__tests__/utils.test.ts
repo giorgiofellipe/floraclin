@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { formatDate, formatDateTime, formatCurrency, maskCPF, generateSlug, cn } from '../utils'
+import { formatDate, formatDateTime, formatCurrency, redactCPF, generateSlug, cn } from '../utils'
 
 describe('formatDate', () => {
   it('formats a Date object to dd/MM/yyyy', () => {
@@ -58,15 +58,17 @@ describe('formatCurrency', () => {
   })
 })
 
-describe('maskCPF (display masking)', () => {
-  it('partially redacts a valid CPF string', () => {
-    const result = maskCPF('12345678901')
-    expect(result).toBe('***.456.***-**')
+describe('redactCPF', () => {
+  // Regression: stored CPFs carry punctuation, and the list and header showed them in full.
+  it.each([
+    ['12345678901', '***.456.***-**'],
+    ['123.456.789-01', '***.456.***-**'],
+  ])('redacts %s', (input, expected) => {
+    expect(redactCPF(input)).toBe(expected)
   })
 
   it('returns input unchanged if not 11 digits', () => {
-    // The regex won't match, so the input is returned as-is
-    expect(maskCPF('123')).toBe('123')
+    expect(redactCPF('123')).toBe('123')
   })
 })
 

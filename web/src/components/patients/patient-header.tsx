@@ -30,7 +30,7 @@ import {
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { ReadOnlyGuard, useReadOnly, useWriteGuard } from '@/components/layout/subscription-access'
-import { cn, maskCPF } from '@/lib/utils'
+import { cn, redactCPF } from '@/lib/utils'
 import { GENDER_LABELS, canWriteClinical } from '@/lib/constants'
 import { parseLocalDate } from '@/lib/dates'
 import { formatBrPhone, toWaMeUrl, tryNormalizeBrPhoneForWhatsApp } from '@/lib/phone'
@@ -338,7 +338,7 @@ export function PatientHeader({
                   )}
                   {patient.cpf && (
                     <span className="inline-flex items-center gap-1.5 font-mono text-[12px]">
-                      {maskCPF(patient.cpf)}
+                      {redactCPF(patient.cpf)}
                     </span>
                   )}
                 </div>

@@ -6,7 +6,7 @@ import Link from 'next/link'
 import type { Patient } from '@/db/queries/patients'
 import type { PaginatedResult } from '@/types'
 import { useDeletePatient } from '@/hooks/mutations/use-patient-mutations'
-import { cn, formatDate, maskCPF } from '@/lib/utils'
+import { cn, formatDate, redactCPF } from '@/lib/utils'
 import { PatientForm } from './patient-form'
 
 import { Button } from '@/components/ui/button'
@@ -115,8 +115,8 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   return (
     <div className="flex flex-col gap-6">
       {/* Search + actions */}
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-lg">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative w-full sm:w-auto sm:max-w-lg sm:flex-1">
           <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-mid pointer-events-none" />
           <Input
             placeholder="Buscar por nome, telefone ou CPF..."
@@ -196,7 +196,7 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
                     {patient.email || '—'}
                   </TableCell>
                   <TableCell className="hidden md:table-cell text-mid">
-                    {patient.cpf ? maskCPF(patient.cpf) : '—'}
+                    {patient.cpf ? redactCPF(patient.cpf) : '—'}
                   </TableCell>
                   <TableCell className="hidden lg:table-cell text-mid">
                     {formatDate(patient.createdAt)}

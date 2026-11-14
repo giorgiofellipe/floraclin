@@ -1,5 +1,6 @@
 'use client'
 
+import { NEW_PATIENT_PATH } from '@/lib/deep-links'
 import { useState, useEffect, useCallback, useRef, forwardRef, useImperativeHandle } from 'react'
 import Link from 'next/link'
 import { cn } from '@/lib/utils'
@@ -435,7 +436,7 @@ export const ChatPanel = forwardRef<ChatPanelHandle, ChatPanelProps>(
               </Button>
             ) : (
               conversation.prospectId && (
-                <Button variant="outline" size="sm" className={HEADER_ACTION_CLASS} aria-label="Converter" nativeButton={false} render={<Link href={`/pacientes?novo=1&telefone=${encodeURIComponent(formatBrPhone(conversation.phoneNumber))}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
+                <Button variant="outline" size="sm" className={HEADER_ACTION_CLASS} aria-label="Converter" nativeButton={false} render={<Link href={`${NEW_PATIENT_PATH}&telefone=${encodeURIComponent(formatBrPhone(conversation.phoneNumber))}&nome=${encodeURIComponent(conversation.profileName ?? '')}`} />}>
                   <UserPlus className="size-3.5 md:mr-1" />
                   <span className="hidden md:inline">Converter</span>
                 </Button>

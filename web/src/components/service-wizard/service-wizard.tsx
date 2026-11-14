@@ -6,7 +6,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { format } from 'date-fns'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { toast } from 'sonner'
-import { cn, maskCPF } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useServiceWizard, type WizardStep } from '@/hooks/use-service-wizard'
 import {
   Dialog,

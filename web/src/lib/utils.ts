@@ -36,8 +36,11 @@ export function formatCurrency(value: number): string {
   }).format(value)
 }
 
-export function maskCPF(cpf: string): string {
-  return cpf.replace(/(\d{3})(\d{3})(\d{3})(\d{2})/, '***.$2.***-**')
+// CPFs are stored formatted ("123.456.789-01"), so redact from the digits.
+export function redactCPF(cpf: string): string {
+  const digits = cpf.replace(/\D/g, '')
+  if (digits.length !== 11) return cpf
+  return `***.${digits.slice(3, 6)}.***-**`
 }
 
 export function generateSlug(name: string): string {

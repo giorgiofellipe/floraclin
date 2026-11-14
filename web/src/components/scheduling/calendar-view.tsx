@@ -27,7 +27,7 @@ import {
 import { DayView } from '@/components/scheduling/day-view'
 import { WeekView } from '@/components/scheduling/week-view'
 import { MonthView } from '@/components/scheduling/month-view'
-import { AppointmentForm } from '@/components/scheduling/appointment-form'
+import { AppointmentForm, DEFAULT_START_TIME } from '@/components/scheduling/appointment-form'
 import { CalendarBlockForm } from '@/components/scheduling/calendar-block-form'
 import { CalendarBlockMenu } from '@/components/scheduling/calendar-block-menu'
 import { canDeleteBlock } from '@/lib/calendar-blocks'
@@ -149,7 +149,7 @@ export function CalendarView({
   // `?open=new` deep links (checklist, lifecycle email) open nothing in
   // read-only mode; an existing appointment still opens for reading.
   const [formOpen, setFormOpen] = React.useState((!!autoOpenNew && !readOnly) || !!editingAppointment)
-  const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
+  const [defaultFormDate, setDefaultFormDate] = React.useState<string>(autoOpenNew ? initialDate : '')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
 
   // Context menu state
@@ -392,7 +392,7 @@ export function CalendarView({
     }
     setEditingAppointment(null)
     setDefaultFormDate(format(currentDate, 'yyyy-MM-dd'))
-    setDefaultFormTime('08:00')
+    setDefaultFormTime(DEFAULT_START_TIME)
     setFormOpen(true)
   }
 

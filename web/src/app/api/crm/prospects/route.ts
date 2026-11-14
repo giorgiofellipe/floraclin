@@ -20,11 +20,15 @@ export async function GET(request: Request) {
     const tenant = await getTenant(ctx.tenantId)
     const settings = (tenant?.settings ?? {}) as Record<string, unknown>
     if (!isWhatsAppEnabled(settings)) {
-      return NextResponse.json({ error: 'WhatsApp não está habilitado' }, { status: 403 })
+      // The CRM page offers the WhatsApp setup only to whoever can open it.
+      return NextResponse.json(
+        { error: 'WhatsApp não está habilitado', code: 'whatsapp_disabled', canConfigure: ctx.role === 'owner' },
+        { status: 403 },
+      )
     }
     const allowedRoles = (settings.whatsapp_allowed_roles as string[] | undefined) ?? ['owner']
     if (!allowedRoles.includes(ctx.role as Role) && ctx.role !== 'owner') {
-      return NextResponse.json({ error: 'Sem permissão para acessar o CRM' }, { status: 403 })
+      return NextResponse.json({ error: 'Sem permissão para acessar o CRM', code: 'crm_forbidden' }, { status: 403 })
     }
 
     // Parse query filters

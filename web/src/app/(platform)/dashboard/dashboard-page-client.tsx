@@ -1,5 +1,6 @@
 'use client'
 
+import { NEW_APPOINTMENT_PATH, NEW_PATIENT_PATH } from '@/lib/deep-links'
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -106,7 +107,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
           <div className="flex w-full gap-3 sm:w-auto">
             <ReadOnlyGuard label="Novo Paciente" className="flex-1 sm:flex-none">
               <Link
-                href="/pacientes?new=true"
+                href={NEW_PATIENT_PATH}
                 onClick={() => setFirstPatientHighlight(false)}
                 aria-describedby={firstPatientHighlight ? 'first-patient-hint' : undefined}
                 data-highlighted={firstPatientHighlight || undefined}
@@ -123,7 +124,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
             </ReadOnlyGuard>
             <ReadOnlyGuard label="Novo Agendamento" className="flex-1 sm:flex-none">
               <Link
-                href="/agenda?new=true"
+                href={NEW_APPOINTMENT_PATH}
                 data-testid="dashboard-new-appointment"
                 className={`inline-flex flex-1 items-center justify-center whitespace-nowrap rounded-lg px-4 py-2 text-[13px] font-medium transition-colors sm:flex-none ${
                   firstPatientHighlight ? OUTLINE_ACTION : PRIMARY_ACTION

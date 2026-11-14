@@ -66,4 +66,18 @@ describe('CRM prospects WhatsApp gate', () => {
 
     expect(res.status).toBe(403)
   })
+
+  // The CRM page picks its error screen from these codes: only an owner gets the WhatsApp setup link.
+  it.each([
+    ['owner', true],
+    ['receptionist', false],
+  ])('tells the CRM page whether a %s can set WhatsApp up', async (role, canConfigure) => {
+    vi.mocked(getAuthContext).mockResolvedValue({ tenantId: 'tenant-1', userId: 'user-1', role } as never)
+    withSettings({ whatsapp_mode: 'own' })
+
+    const res = await listRoute(new Request(BASE))
+
+    expect(res.status).toBe(403)
+    expect(await res.json()).toMatchObject({ code: 'whatsapp_disabled', canConfigure })
+  })
 })
