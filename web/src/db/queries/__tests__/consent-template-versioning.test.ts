@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { chain, routedTx, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import { chain, routedTx, tableOf, whereParams, type LoggedQuery } from '@/tests/mocks/drizzle-tx'
+import { auditLogs } from '@/db/schema'
 
 const { dbMock } = vi.hoisted(() => ({ dbMock: { transaction: vi.fn(), select: vi.fn() } }))
 vi.mock('@/db/client', () => ({ db: dbMock }))
@@ -124,6 +125,16 @@ describe('seedDefaultConsentTemplates', () => {
     ])
     expect(created.every((t) => t.version === 1)).toBe(true)
     expect(whereParams(log[0].capture)).toEqual([TENANT, true])
+  })
+
+  // A failed audit insert must roll the seed back; written after the commit, a retry
+  // would find the templates and never audit them.
+  it('writes one audit row per template inside the seed transaction', async () => {
+    await seedDefaultConsentTemplates(TENANT, 'user-1')
+
+    const audits = log.filter((q) => q.op === 'insert' && tableOf(q) === auditLogs)
+    expect(audits).toHaveLength(9)
+    expect(audits[0].capture.value).toMatchObject({ tenantId: TENANT, userId: 'user-1', entityType: 'consent_template' })
   })
 
   // "Usar modelos padrão" double click, or an onboarding retry: a second run must not

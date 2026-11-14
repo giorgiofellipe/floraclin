@@ -74,6 +74,18 @@ function CategoryChip({ type }: { type: string }) {
   )
 }
 
+function StatusChip({ active }: { active: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+        active ? 'bg-confirmed-bg text-sage' : 'bg-content-bg text-mid'
+      }`}
+    >
+      {active ? 'Ativo' : 'Inativo'}
+    </span>
+  )
+}
+
 export function ConsentTemplateList({ templates, procedureTypes }: ConsentTemplateListProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -151,6 +163,7 @@ export function ConsentTemplateList({ templates, procedureTypes }: ConsentTempla
                   <TableHead>Categoria</TableHead>
                   <TableHead>Cobertura</TableHead>
                   <TableHead>Versão</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>Atualizado em</TableHead>
                   <TableHead className="text-right">Ações</TableHead>
                 </TableRow>
@@ -168,6 +181,9 @@ export function ConsentTemplateList({ templates, procedureTypes }: ConsentTempla
                       {coverage}
                     </TableCell>
                     <TableCell className="text-sm tabular-nums">v{template.version}</TableCell>
+                    <TableCell>
+                      <StatusChip active={template.isActive} />
+                    </TableCell>
                     <TableCell className="text-sm text-mid tabular-nums">
                       {formatDateTime(template.updatedAt)}
                     </TableCell>
@@ -195,8 +211,12 @@ export function ConsentTemplateList({ templates, procedureTypes }: ConsentTempla
                   <div className="flex flex-wrap items-center gap-2">
                     <CategoryChip type={template.type} />
                     <span className="text-xs text-mid tabular-nums">v{template.version}</span>
+                    <StatusChip active={template.isActive} />
                   </div>
                   <p className="break-words text-xs text-mid">{coverage}</p>
+                  <p className="text-xs text-mid tabular-nums">
+                    Atualizado em {formatDateTime(template.updatedAt)}
+                  </p>
                 </div>
                 <Button
                   variant="ghost"

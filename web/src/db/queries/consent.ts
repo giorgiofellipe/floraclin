@@ -3,6 +3,7 @@ import { consentTemplates, consentAcceptances, patients, procedureRecords, proce
 import { pendingConsentTypes } from '@/lib/consent-requirements'
 import { eq, and, desc, max, sql, inArray, isNotNull, isNull } from 'drizzle-orm'
 import { withTransaction } from '@/lib/tenant'
+import { createAuditLog } from '@/lib/audit'
 import { DEFAULT_CONSENT_TEMPLATES, type ConsentTemplateInput, type ConsentAcceptanceInput } from '@/validations/consent'
 import { verifyTenantOwnership } from './helpers'
 import { sha256, buildEvidencePackage, type DeviceFingerprint, type Geolocation } from '@/lib/signature-evidence'
@@ -125,7 +126,7 @@ export async function createConsentTemplate(tenantId: string, data: ConsentTempl
 
 // Seeds the standard templates only while the tenant has no active template, so a
 // repeat call (onboarding retry, double click) creates nothing.
-export async function seedDefaultConsentTemplates(tenantId: string) {
+export async function seedDefaultConsentTemplates(tenantId: string, auditUserId?: string) {
   return withTransaction(async (tx) => {
     await lockTenantConsentTemplates(tx, tenantId)
 
@@ -138,7 +139,18 @@ export async function seedDefaultConsentTemplates(tenantId: string) {
 
     const created = []
     for (const [type, template] of Object.entries(DEFAULT_CONSENT_TEMPLATES)) {
-      created.push(await insertNextConsentVersion(tx, tenantId, { type, ...template }))
+      const row = await insertNextConsentVersion(tx, tenantId, { type, ...template })
+      if (auditUserId) {
+        await createAuditLog({
+          tenantId,
+          userId: auditUserId,
+          action: 'create',
+          entityType: 'consent_template',
+          entityId: row.id,
+          changes: { template: { old: null, new: { type: row.type, title: row.title } } },
+        }, tx)
+      }
+      created.push(row)
     }
     return created
   })
