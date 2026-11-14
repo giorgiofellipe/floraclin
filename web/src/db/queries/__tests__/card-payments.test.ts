@@ -110,12 +110,12 @@ describe('repasseLedgerDescription', () => {
 })
 
 /** A card payment whose repasses live in `inserted`, emulating only the row filters the queries rely on. */
-function createPaymentTx() {
+function createPaymentTx(terminalRow: Record<string, unknown> = TERMINAL_ROW) {
   const inserted: Record<string, unknown>[] = []
   let movementSeq = 0
   const { tx, log } = routedTx((q) => {
     const table = tableOf(q)
-    if (q.op === 'select' && table === cardTerminals) return [TERMINAL_ROW]
+    if (q.op === 'select' && table === cardTerminals) return [terminalRow]
     if (q.op === 'insert' && table === cardPayments) return [{ id: PAYMENT_ID }]
     if (q.op === 'insert' && table === cardRepasses) {
       inserted.push(...(valuesOf(q) as unknown as Record<string, unknown>[]))
@@ -194,6 +194,18 @@ describe('createCardPaymentTx', () => {
         paidAt: parseBrDate(TODAY, '12:00:00'),
       }),
     ).rejects.toMatchObject({ code: 'CARD_RATE_CHANGED' })
+
+    expect(log.some((q) => q.op === 'insert' || q.op === 'update')).toBe(false)
+  })
+
+  it('refuses with CARD_RATE_UNSET and writes nothing when the terminal does not know this sale\'s rate yet', async () => {
+    const creditRates = [...TERMINAL_ROW.creditRates] as (string | null)[]
+    creditRates[5] = null
+    const { tx, log } = createPaymentTx({ ...TERMINAL_ROW, creditRates })
+
+    await expect(
+      createCardPaymentTx(tx as never, TENANT, USER_ID, { ...baseInput, expectedRate: 0, paidAt: parseBrDate(TODAY, '12:00:00') }),
+    ).rejects.toMatchObject({ code: 'CARD_RATE_UNSET' })
 
     expect(log.some((q) => q.op === 'insert' || q.op === 'update')).toBe(false)
   })

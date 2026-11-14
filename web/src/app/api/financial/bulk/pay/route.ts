@@ -29,7 +29,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, data: results, nfse })
   } catch (error) {
     if (error instanceof BusinessError) {
-      return NextResponse.json({ error: error.message, code: error.code }, { status: 409 })
+      return NextResponse.json(
+        { error: error.message, code: error.code, ...(error.details && { details: error.details }) },
+        { status: 409 },
+      )
     }
     return handleApiError(error, request)
   }

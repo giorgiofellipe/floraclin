@@ -11,9 +11,10 @@ const payoutDays = z.number().int().min(0, 'Prazo inválido').max(60, 'Prazo inv
 export const cardTerminalSchema = z.object({
   name: z.string().trim().min(1, 'Nome é obrigatório').max(100, 'Nome muito longo'),
   isDefault: z.boolean(),
-  debitRate: percent,
+  // Null: not known yet.
+  debitRate: percent.nullable(),
   debitPayoutDays: payoutDays,
-  creditRates: z.array(percent).length(12, 'Informe a taxa de 1x a 12x'),
+  creditRates: z.array(percent.nullable()).length(12, 'Informe a taxa de 1x a 12x'),
   creditPayoutMode: z.enum(['per_installment', 'lump_sum']),
   creditLumpSumDays: payoutDays,
   // Where repasses land; omitted or null means the default bank account.

@@ -1144,6 +1144,8 @@ export async function bulkPayInstallments(
       : await resolveMovementAccountId(tx, tenantId, { accountId: data.accountId, method: data.paymentMethod })
 
     const results = []
+    // Installments whose total moved from what the dialog showed, with the new total.
+    const changedTotals: Record<string, number> = {}
     const purchases: PendingMetaEventRow[] = []
     const cardRecords: { id: string; amountCents: number; paidAt: Date }[] = []
     for (const installmentId of data.installmentIds) {
@@ -1173,12 +1175,10 @@ export async function bulkPayInstallments(
       const totalDue = quoteInstallment(base, livePayments.inputs, paidAt).totalDue
       const expected = data.expectedTotals?.[installmentId]
       if (expected !== undefined && toCents(totalDue) !== toCents(expected)) {
-        throw new BusinessError(
-          'QUOTE_CHANGED',
-          'O total pendente mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
-        )
+        changedTotals[installmentId] = totalDue
+        continue
       }
-      if (totalDue <= 0) continue
+      if (Object.keys(changedTotals).length > 0 || totalDue <= 0) continue
 
       const { allocation: applied, replay } = priceNewPayment({
         base,
@@ -1263,6 +1263,14 @@ export async function bulkPayInstallments(
       }, tx)
 
       results.push({ installmentId, paymentRecord, allocation })
+    }
+
+    if (Object.keys(changedTotals).length > 0) {
+      throw new BusinessError(
+        'QUOTE_CHANGED',
+        'O total pendente mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
+        { totals: changedTotals },
+      )
     }
 
     if (card && cardMethod && cardRecords.length > 0) {
@@ -1895,6 +1903,7 @@ export async function listFinancialEntries(
     data: entries.map((entry) => ({
       ...entry,
       nextAmountDue: entry.nextInstallmentId ? (dueByInstallment.get(entry.nextInstallmentId) ?? null) : null,
+      openBalance: open.get(entry.id)?.due ?? 0,
       isOverdue: open.get(entry.id)?.isOverdue ?? false,
       totalFineAmount: open.get(entry.id)?.fine ?? 0,
       totalInterestAmount: open.get(entry.id)?.interest ?? 0,
@@ -2008,7 +2017,7 @@ export async function getReceivablesTotals(tenantId: string, now: Date = new Dat
 
 /** Fine and interest due at `now` on each entry's open installments, and whether any is late. */
 async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[], now: Date) {
-  const byEntry = new Map<string, { fine: number; interest: number; isOverdue: boolean }>()
+  const byEntry = new Map<string, { fine: number; interest: number; due: number; isOverdue: boolean }>()
   const dueByInstallment = new Map<string, number>()
   if (entryIds.length === 0) return { byEntry, dueByInstallment }
 
@@ -2049,10 +2058,11 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
       now,
     )
     dueByInstallment.set(inst.id, quote.totalDue)
-    const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, isOverdue: false }
+    const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, due: 0, isOverdue: false }
     byEntry.set(inst.financialEntryId, {
       fine: round2(sums.fine + quote.fineAmount),
       interest: round2(sums.interest + quote.interestAmount),
+      due: round2(sums.due + quote.totalDue),
       isOverdue:
         sums.isOverdue || (inst.status === 'pending' && isInstallmentOverdue(base, now)),
     })

@@ -365,7 +365,7 @@ export function PaymentForm({ open, onClose, onSuccess, defaultPatient }: Paymen
             <Button type="button" variant="outline" className="border-sage/30 text-charcoal hover:bg-[#F0F7F1] transition-colors" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0 || (cardMethod !== null && card.terminalId === null)} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
+            <Button type="submit" disabled={isPending || !patientId || parsedAmount <= 0 || (cardMethod !== null && toCardPayload(paymentMethod, card) === undefined)} className="bg-forest text-cream hover:bg-sage transition-colors" data-testid="payment-form-submit">
               {isPending ? 'Salvando...' : 'Criar Cobrança'}
             </Button>
           </DialogFooter>

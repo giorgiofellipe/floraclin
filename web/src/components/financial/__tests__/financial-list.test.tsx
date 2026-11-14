@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { FinancialList } from '../financial-list'
 import { createWrapper } from '@/tests/test-utils'
 import { brToday, shiftBrYmd } from '@/lib/dates'
+import { ApiError } from '@/hooks/mutations/use-financial-mutations'
 
 const nav = vi.hoisted(() => ({ replace: vi.fn(), params: new URLSearchParams() }))
 vi.mock('next/navigation', () => ({
@@ -23,8 +24,8 @@ vi.mock('@/hooks/queries/use-installment-quote', () => ({
 }))
 
 const mockBulkPay = vi.fn().mockResolvedValue({})
-vi.mock('@/hooks/mutations/use-financial-mutations', () => ({
-  ApiError: class extends Error {},
+vi.mock('@/hooks/mutations/use-financial-mutations', async (importOriginal) => ({
+  ApiError: (await importOriginal<typeof import('@/hooks/mutations/use-financial-mutations')>()).ApiError,
   useBulkPay: () => ({ mutateAsync: mockBulkPay, isPending: false }),
   useBulkCancel: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useBulkUncancel: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -57,6 +58,7 @@ function entry(id: string, overrides: Record<string, unknown> = {}) {
     nextDueDate: shiftBrYmd(brToday(), 10),
     lastPaidAt: null,
     nextAmountDue: 400,
+    openBalance: 400,
     ...overrides,
   }
 }
@@ -113,13 +115,23 @@ describe('FinancialList (Recebíveis inbox)', () => {
   })
 
   it('receives the next installment from the row, titled with amount and patient, dated today, in the planned method', async () => {
-    serve([entry('a', { totalAmount: '1200.00', installmentCount: 3, nextInstallmentNumber: 2, nextInstallmentId: 'a-inst-2', nextAmountDue: 412.5 })])
+    serve([
+      entry('a', {
+        totalAmount: '1200.00',
+        installmentCount: 3,
+        nextInstallmentNumber: 2,
+        nextInstallmentId: 'a-inst-2',
+        nextAmountDue: 412.5,
+        openBalance: 812.5,
+        nextDueDate: shiftBrYmd(brToday(), 1),
+      }),
+    ])
     renderList()
 
-    // The row shows what Receber takes now, not the whole charge.
+    // The row answers what the patient still owes; its due line names the installment Receber takes.
     const row = await screen.findByTestId('financial-entry-a')
-    expect(within(row).getAllByText('R$ 412,50').length).toBeGreaterThan(0)
-    expect(within(row).getByText('de R$ 1.200,00')).toBeInTheDocument()
+    expect(within(row).getAllByText('R$ 812,50').length).toBeGreaterThan(0)
+    expect(within(row).getByTestId('financial-entry-due')).toHaveTextContent('Parcela 2/3 · R$ 412,50 · vence amanhã')
 
     await userEvent.click(await screen.findByTestId('financial-entry-receive'))
 
@@ -137,6 +149,25 @@ describe('FinancialList (Recebíveis inbox)', () => {
           expectedTotals: { 'a-inst-2': 412.5 },
         }),
       ),
+    )
+  })
+
+  it('shows the new amount when the balance moved before confirming, and confirms that one next', async () => {
+    serve([entry('a')])
+    mockBulkPay.mockRejectedValueOnce(
+      new ApiError('O total pendente mudou', 'QUOTE_CHANGED', { totals: { 'a-inst': 430 } }),
+    )
+    renderList()
+
+    await userEvent.click(await screen.findByTestId('financial-entry-receive'))
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirmar recebimento' }))
+
+    expect(await screen.findByTestId('pay-quote-changed')).toHaveTextContent('O valor mudou para R$ 430,00')
+    expect(screen.getByTestId('pay-dialog-title')).toHaveTextContent('Receber R$ 430,00 de Paciente a')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }))
+    await waitFor(() =>
+      expect(mockBulkPay).toHaveBeenLastCalledWith(expect.objectContaining({ expectedTotals: { 'a-inst': 430 } })),
     )
   })
 

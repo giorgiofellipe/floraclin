@@ -63,6 +63,7 @@ describeIntegration('Recebíveis list and totals (integration, requires test DB)
     ids.partial = await charge('partial', 'partial', [['200.00', -20, true], ['200.00', 5]])
     ids.paid = await charge('paid', 'paid', [['300.00', -1, true]])
     ids.cancelled = await charge('cancelled', 'cancelled', [['999.00', -5]])
+    ids.two = await charge('two left', 'pending', [['100.00', 40], ['100.00', 70]])
   })
 
   afterAll(async () => {
@@ -82,11 +83,13 @@ describeIntegration('Recebíveis list and totals (integration, requires test DB)
   it('lists open charges by their next due date, pointing at the installment Receber pays', async () => {
     const rows = await list({ status: 'open', page: 1, limit: 20 })
 
-    expect(rows.map((r) => r.description)).toEqual(['overdue', 'soon', 'partial', 'later'])
+    expect(rows.map((r) => r.description)).toEqual(['overdue', 'soon', 'partial', 'later', 'two left'])
     const partial = rows.find((r) => r.id === ids.partial)!
     expect(partial).toMatchObject({ nextInstallmentNumber: 2, nextDueDate: day(5) })
-    expect(rows[0]).toMatchObject({ nextDueDate: day(-10), isOverdue: true, nextAmountDue: 102 })
-    expect(partial.nextAmountDue).toBe(200)
+    expect(rows[0]).toMatchObject({ nextDueDate: day(-10), isOverdue: true, nextAmountDue: 102, openBalance: 102 })
+    expect(partial).toMatchObject({ nextAmountDue: 200, openBalance: 200 })
+    // The row's amount is every open installment; Receber takes the next one.
+    expect(rows.find((r) => r.id === ids.two)).toMatchObject({ nextAmountDue: 100, openBalance: 200, nextInstallmentNumber: 1 })
   })
 
   it('filters the week ahead without the overdue ones, and the month by payments received in it', async () => {

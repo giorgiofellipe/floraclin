@@ -50,9 +50,9 @@ function toForm(row: CardTerminalRow): FormState {
   return {
     name: row.name,
     isDefault: row.isDefault,
-    debitRate: row.debitRate,
+    debitRate: row.debitRate ?? '',
     debitPayoutDays: String(row.debitPayoutDays),
-    creditRates: row.creditRates,
+    creditRates: row.creditRates.map((rate) => rate ?? ''),
     creditPayoutMode: row.creditPayoutMode,
     creditLumpSumDays: String(row.creditLumpSumDays),
     payoutAccountId: row.payoutAccountId,
@@ -60,14 +60,16 @@ function toForm(row: CardTerminalRow): FormState {
 }
 
 const toNumber = (text: string) => (text.trim() === '' ? NaN : Number(text.replace(',', '.')))
+// A blank rate is one the clinic does not know yet; the sale that needs it asks for it.
+const toRate = (text: string) => (text.trim() === '' ? null : toNumber(text))
 
 function toInput(form: FormState): unknown {
   return {
     name: form.name,
     isDefault: form.isDefault,
-    debitRate: toNumber(form.debitRate),
+    debitRate: toRate(form.debitRate),
     debitPayoutDays: toNumber(form.debitPayoutDays),
-    creditRates: form.creditRates.map(toNumber),
+    creditRates: form.creditRates.map(toRate),
     creditPayoutMode: form.creditPayoutMode,
     creditLumpSumDays: toNumber(form.creditLumpSumDays),
     payoutAccountId: form.payoutAccountId,

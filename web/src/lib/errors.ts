@@ -8,7 +8,12 @@
  * a localized, recoverable message to the UI.
  */
 export class BusinessError extends Error {
-  constructor(public readonly code: string, message?: string) {
+  constructor(
+    public readonly code: string,
+    message?: string,
+    /** Data the caller needs to recover, sent to the client next to `code`. */
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message ?? code)
     this.name = 'BusinessError'
   }

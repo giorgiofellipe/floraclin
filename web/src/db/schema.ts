@@ -694,9 +694,10 @@ export const cardTerminals = floraclinSchema.table('card_terminals', {
   tenantId: uuid('tenant_id').notNull().references(() => tenants.id),
   name: varchar('name', { length: 100 }).notNull(),
   isDefault: boolean('is_default').notNull().default(false),
-  debitRate: decimal('debit_rate', { precision: 5, scale: 2 }).notNull(),
+  // Null rates are not known yet; the next sale on that slot asks for them.
+  debitRate: decimal('debit_rate', { precision: 5, scale: 2 }),
   debitPayoutDays: integer('debit_payout_days').notNull().default(1),
-  creditRates: jsonb('credit_rates').$type<string[]>().notNull(), // 12 percent strings, index 0 = 1x
+  creditRates: jsonb('credit_rates').$type<(string | null)[]>().notNull(), // 12 percent strings, index 0 = 1x
   creditPayoutMode: varchar('credit_payout_mode', { length: 20 }).$type<'per_installment' | 'lump_sum'>().notNull(), // CHECK in migration
   creditLumpSumDays: integer('credit_lump_sum_days').notNull().default(1),
   // Where repasses land; null means the default bank account.

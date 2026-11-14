@@ -99,6 +99,8 @@ export function ChargeActionDialogs({
 
   const payOpen = dialog === 'pay'
   const single = entryIds.length === 1
+  // Totals the server answered QUOTE_CHANGED with; they win over the probes until the date changes.
+  const [serverTotals, setServerTotals] = useState<Record<string, number> | null>(null)
 
   // Each opening starts from today and the charge's planned method.
   const [wasOpen, setWasOpen] = useState(payOpen)
@@ -108,15 +110,16 @@ export function ChargeActionDialogs({
       setPaidAt(brToday())
       setPaymentMethod(plannedMethod(payee?.paymentMethod))
       setAccountId(undefined)
+      setServerTotals(null)
     }
   }
 
   const cardMethod =
     isCardMethod(paymentMethod) ? paymentMethod : null
   const paidAtIso = toPaidAtIso(paidAt)
-  // A row pays one installment, so its amount is quoted for the title; a bulk selection only for a card sale.
-  const quoting = payOpen && (payee !== undefined || cardMethod !== null)
-  const quoteStates = installmentIds.map((id) => quotes[id] ?? null)
+  // Every installment is quoted: the dialog shows the amount and the server refuses it if it moved.
+  const quoting = payOpen
+  const quoteStates = installmentIds.map((id) => serverTotals?.[id] ?? quotes[id] ?? null)
   const quoteFailed = quoteStates.includes('error')
   const quotesReady = quoteStates.every((q) => typeof q === 'number')
   const amountDue = quotesReady
@@ -128,7 +131,7 @@ export function ChargeActionDialogs({
     : `Receber ${plural(installmentIds.length, 'parcela', 'parcelas')}`
   const description = payee
     ? payee.detail
-    : `${plural(entryIds.length, 'cobrança selecionada', 'cobranças selecionadas')}.`
+    : `${amountDue !== null ? `${formatCurrency(amountDue)} em ` : ''}${plural(entryIds.length, 'cobrança selecionada', 'cobranças selecionadas')}.`
 
   function handleQuote(id: string, state: number | 'error' | null) {
     setQuotes((prev) => (prev[id] === state ? prev : { ...prev, [id]: state }))
@@ -146,8 +149,8 @@ export function ChargeActionDialogs({
         installmentIds,
         paymentMethod,
         paidAt: paidAtIso,
-        expectedTotals: quoting && quotesReady
-          ? Object.fromEntries(installmentIds.map((id) => [id, quotes[id] as number]))
+        expectedTotals: quotesReady
+          ? Object.fromEntries(installmentIds.map((id, i) => [id, quoteStates[i] as number]))
           : undefined,
         card: toCardPayload(paymentMethod, card),
         accountId: cardMethod ? undefined : accountId,
@@ -157,11 +160,17 @@ export function ChargeActionDialogs({
       onSuccess?.()
       promptAfterPayment(result?.nfse)
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
+      if (err instanceof ApiError && (err.code === 'CARD_RATE_CHANGED' || err.code === 'CARD_RATE_UNSET')) {
         queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
       }
-      if (err instanceof ApiError && err.code === 'QUOTE_CHANGED') {
+      const changedTotals = err instanceof ApiError && err.code === 'QUOTE_CHANGED'
+        ? (err.details?.totals as Record<string, number> | undefined)
+        : undefined
+      if (changedTotals) {
+        // The server's new totals replace the shown ones; the next Confirmar sends them.
+        setServerTotals((prev) => ({ ...prev, ...changedTotals }))
         queryClient.invalidateQueries({ queryKey: ['financial', 'installmentQuote'] })
+        return
       }
       toast.error(err instanceof Error ? err.message : 'Erro ao processar')
     }
@@ -207,6 +216,11 @@ export function ChargeActionDialogs({
             </DialogTitle>
             {description && <DialogDescription className="text-mid">{description}</DialogDescription>}
           </DialogHeader>
+          {serverTotals && amountDue !== null && (
+            <p role="alert" className="rounded-lg border border-pending-border bg-pending-bg px-3 py-2 text-sm text-amber-dark" data-testid="pay-quote-changed">
+              O valor mudou para {formatCurrency(amountDue)}. Confira e confirme novamente.
+            </p>
+          )}
           <div className="space-y-4 py-2">
             {quoting &&
               installmentIds.map((id) => <QuoteProbe key={id} id={id} paidAt={paidAtIso} onTotal={handleQuote} />)}
@@ -223,7 +237,10 @@ export function ChargeActionDialogs({
               <Label className="uppercase tracking-wider text-xs font-medium text-mid">Data do pagamento</Label>
               <DatePicker
                 value={paidAt}
-                onChange={(v) => setPaidAt(v)}
+                onChange={(v) => {
+                  setPaidAt(v)
+                  setServerTotals(null)
+                }}
                 className="w-full"
                 data-testid="bulk-pay-date"
               />
@@ -245,6 +262,9 @@ export function ChargeActionDialogs({
                 )}
               </>
             )}
+            {!cardMethod && quoteFailed && (
+              <p className="text-sm text-mid">Não foi possível calcular o total agora. O valor é conferido ao registrar.</p>
+            )}
             {!cardMethod && payOpen && (
               <AccountSelect value={accountId} onChange={setAccountId} method={paymentMethod} />
             )}
@@ -254,7 +274,12 @@ export function ChargeActionDialogs({
               Cancelar
             </Button>
             <Button className="bg-forest text-cream hover:bg-sage transition-colors" onClick={handleBulkPay}
-              disabled={bulkPay.isPending || (quoting && !quotesReady) || (cardMethod !== null && card.terminalId === null)}
+              disabled={
+                bulkPay.isPending ||
+                // A failed quote only blocks a card sale, which needs the amount to price its fee.
+                (!quotesReady && (cardMethod !== null || !quoteFailed)) ||
+                (cardMethod !== null && toCardPayload(paymentMethod, card) === undefined)
+              }
               data-testid="pay-confirm"
             >
               {bulkPay.isPending ? 'Processando...' : 'Confirmar recebimento'}

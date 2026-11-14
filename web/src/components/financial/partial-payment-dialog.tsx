@@ -97,7 +97,7 @@ export function PartialPaymentDialog({
   const parsedAmount = amountStr ? parseCurrency(amountStr) : 0
   const cardMethod =
     isCardMethod(paymentMethod) ? paymentMethod : null
-  const cardMissingTerminal = cardMethod !== null && card.terminalId === null
+  const cardMissingTerminal = cardMethod !== null && toCardPayload(cardMethod, card) === undefined
 
   useEffect(() => {
     if (!quote || amountTouched) return
@@ -149,7 +149,7 @@ export function PartialPaymentDialog({
         // A prefilled amount follows the fresh quote on its own; an amount
         // the user typed is theirs to keep.
         refetchQuote()
-      } else if (err instanceof ApiError && err.code === 'CARD_RATE_CHANGED') {
+      } else if (err instanceof ApiError && (err.code === 'CARD_RATE_CHANGED' || err.code === 'CARD_RATE_UNSET')) {
         queryClient.invalidateQueries({ queryKey: queryKeys.financial.cardTerminals })
       } else if (err instanceof ApiError && TERMINAL_CODES.has(err.code ?? '')) {
         onOpenChange(false)

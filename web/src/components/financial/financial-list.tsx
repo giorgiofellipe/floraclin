@@ -76,6 +76,7 @@ interface FinancialEntry {
   nextDueDate: string | null
   lastPaidAt: string | null
   nextAmountDue: number | null
+  openBalance: number
 }
 
 const OPEN_STATUSES = ['pending', 'partial', 'overdue']
@@ -129,11 +130,15 @@ function dueLine(entry: FinancialEntry, todayYmd: string): { text: string; class
   if (!OPEN_STATUSES.includes(entry.status) || !entry.nextDueDate) {
     return { text: STATUS_LABELS[entry.status] ?? entry.status, className: STATUS_CONFIG[entry.status]?.text ?? 'text-mid' }
   }
-  const parts = [dueLabel(entry.nextDueDate, todayYmd)]
-  if (entry.installmentCount > 1 && entry.nextInstallmentNumber) {
-    parts.push(`parcela ${entry.nextInstallmentNumber}/${entry.installmentCount}`)
-  }
-  if (!entry.isOverdue) parts.push(entry.isPartial ? 'Parcial' : 'Pendente')
+  const due = dueLabel(entry.nextDueDate, todayYmd)
+  const parts =
+    entry.installmentCount > 1 && entry.nextInstallmentNumber
+      ? [
+          `Parcela ${entry.nextInstallmentNumber}/${entry.installmentCount}`,
+          ...(entry.nextAmountDue !== null ? [formatCurrency(entry.nextAmountDue)] : []),
+          due.charAt(0).toLowerCase() + due.slice(1),
+        ]
+      : [due, ...(entry.isOverdue ? [] : [entry.isPartial ? 'Parcial' : 'Pendente'])]
   return { text: parts.join(' · '), className: DUE_BUCKET_TEXT[dueBucket(entry, todayYmd)] }
 }
 
@@ -597,9 +602,8 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
               const renegLinks = entry.renegotiationLinks ?? []
               const isFromRenegotiation = renegLinks.some((l) => l.newEntryId === entry.id)
               const line = dueLine(entry, todayYmd)
-              const totalAmount = Number(entry.totalAmount ?? 0)
-              // An open row shows what Receber would take now: the next installment with its fine and interest.
-              const amountShown = OPEN_STATUSES.includes(entry.status) && entry.nextAmountDue !== null ? entry.nextAmountDue : totalAmount
+              // An open row shows what the patient still owes, fines and interest included.
+              const amountShown = OPEN_STATUSES.includes(entry.status) ? entry.openBalance : Number(entry.totalAmount ?? 0)
               const receivable = canReceive && OPEN_STATUSES.includes(entry.status) && entry.nextInstallmentId !== null
               const toggleExpanded = () => setExpandedId(isExpanded ? null : entry.id)
 
@@ -652,7 +656,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                             <span className="shrink-0 text-[10px] font-medium text-blue-600">Renegociação</span>
                           )}
                         </span>
-                        <span className={cn('mt-0.5 block truncate text-xs font-medium', line.className)} data-testid="financial-entry-due">
+                        <span className={cn('mt-0.5 block text-xs font-medium sm:truncate', line.className)} data-testid="financial-entry-due">
                           {line.text}
                         </span>
                       </span>
@@ -691,10 +695,7 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
                           entry.isOverdue ? 'text-red-700' : 'text-charcoal',
                         )}
                       >
-                        <span className="block">{formatCurrency(amountShown)}</span>
-                        {amountShown !== totalAmount && (
-                          <span className="block text-[10px] font-normal text-mid">de {formatCurrency(totalAmount)}</span>
-                        )}
+                        {formatCurrency(amountShown)}
                       </span>
                     </button>
 
