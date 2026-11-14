@@ -7,11 +7,15 @@ import { PatientList } from '../patient-list'
 // `?novo=1` is the deep link used by the trial checklist and a lifecycle
 // email. In read-only mode it used to open the create form anyway, whose
 // save could only fail with a 402.
-vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
-  usePathname: () => '/pacientes',
-  useSearchParams: () => new URLSearchParams('novo=1&nome=Ana'),
-}))
+// The query comes from the shared path, so a producer/consumer mismatch fails here.
+vi.mock('next/navigation', async () => {
+  const { NEW_PATIENT_PATH } = await import('@/lib/deep-links')
+  return {
+    useRouter: () => ({ push: vi.fn(), refresh: vi.fn(), back: vi.fn() }),
+    usePathname: () => '/pacientes',
+    useSearchParams: () => new URLSearchParams(`${NEW_PATIENT_PATH.split('?')[1]}&nome=Ana`),
+  }
+})
 vi.mock('@/actions/patients', () => ({ deletePatientAction: vi.fn() }))
 vi.mock('../patient-form', () => ({
   PatientForm: ({ open }: { open: boolean }) => (open ? <div data-testid="patient-form-open" /> : null),
