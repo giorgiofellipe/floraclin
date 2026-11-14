@@ -27,11 +27,21 @@ describe('procedurePlanningFinalSchema (strict)', () => {
     expect(procedurePlanningFinalSchema(false).safeParse({ procedureTypeId: VALID_UUID }).success).toBe(false)
   })
 
+  // Planning used to pass without it, and approval then failed with "Payload inválido".
+  it('rejects a financial plan without a payment method', () => {
+    const result = procedurePlanningFinalSchema(false).safeParse({
+      procedureTypeId: VALID_UUID,
+      financialPlan: { totalAmount: 100, installmentCount: 1 },
+    })
+    expect(result.success).toBe(false)
+    expect(result.error?.issues.map((i) => i.path.join('.'))).toContain('financialPlan.paymentMethod')
+  })
+
   it('accepts when diagramPoints is empty for non-diagram procedures', () => {
     expect(
       procedurePlanningFinalSchema(false).safeParse({
         procedureTypeId: VALID_UUID,
-        financialPlan: { totalAmount: 100, installmentCount: 1 },
+        financialPlan: { totalAmount: 100, installmentCount: 1, paymentMethod: 'pix' },
         diagramPoints: [],
       }).success,
     ).toBe(true)
@@ -41,7 +51,7 @@ describe('procedurePlanningFinalSchema (strict)', () => {
     expect(
       procedurePlanningFinalSchema(true).safeParse({
         procedureTypeId: VALID_UUID,
-        financialPlan: { totalAmount: 100, installmentCount: 1 },
+        financialPlan: { totalAmount: 100, installmentCount: 1, paymentMethod: 'pix' },
         diagramPoints: [],
       }).success,
     ).toBe(false)
@@ -51,7 +61,7 @@ describe('procedurePlanningFinalSchema (strict)', () => {
     expect(
       procedurePlanningFinalSchema(true).safeParse({
         procedureTypeId: VALID_UUID,
-        financialPlan: { totalAmount: 100, installmentCount: 1 },
+        financialPlan: { totalAmount: 100, installmentCount: 1, paymentMethod: 'pix' },
         diagramPoints: [{ x: 50, y: 50, productName: 'Botox', quantity: 10, quantityUnit: 'U' }],
       }).success,
     ).toBe(true)

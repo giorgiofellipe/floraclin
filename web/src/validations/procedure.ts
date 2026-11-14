@@ -105,6 +105,13 @@ export function procedurePlanningFinalSchema(requiresDiagram: boolean) {
         path: ['financialPlan', 'totalAmount'],
         message: 'Plano financeiro obrigatório',
       })
+    } else if (!data.financialPlan.paymentMethod) {
+      // Approval's finalize endpoint requires it; catching it here keeps the user on the field.
+      ctx.addIssue({
+        code: 'custom',
+        path: ['financialPlan', 'paymentMethod'],
+        message: 'Selecione a forma de pagamento',
+      })
     }
     if (requiresDiagram && data.diagramPoints.length === 0) {
       ctx.addIssue({

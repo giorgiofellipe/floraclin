@@ -32,6 +32,8 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   const diagramGroupId = searchParams.get('diagram')
   // Opened from an appointment (Painel): the procedure records which appointment it belongs to.
   const appointmentId = searchParams.get('appointment') ?? undefined
+  // Chosen from "Continuar rascunho": carry the patient's unlinked draft into this visit.
+  const resumeDraft = searchParams.get('resume') === '1'
   const hasDeepLink = !!deepLinkProcedureId && autoStartNext
 
   const { data: patient, isLoading: patientLoading } = usePatient(patientId)
@@ -54,14 +56,17 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   // An appointment id from the URL counts only when it belongs to this patient.
   const { data: urlAppointment, isLoading: urlAppointmentLoading } = useAppointment(appointmentId ?? '')
   const visitAppointmentId = urlAppointment?.patientId === patientId ? appointmentId : undefined
-  // A draft that already belongs to another appointment is not this visit's.
-  const resumedForOtherVisit =
-    !!visitAppointmentId && !!resumedProcedure?.appointmentId && resumedProcedure.appointmentId !== visitAppointmentId
-  const procedure = hasDeepLink
-    ? (deepLinkRecord ?? null)
-    : forceNew || resumedForOtherVisit
-      ? null
-      : resumedProcedure
+  // Opened for an appointment, only that visit's record resumes on its own; an unlinked
+  // draft is offered, never mixed in silently.
+  const unlinkedDraft = resumedProcedure && !resumedProcedure.appointmentId ? resumedProcedure : null
+  let procedure: typeof resumedProcedure | null = resumedProcedure ?? null
+  if (hasDeepLink) procedure = deepLinkRecord ?? null
+  else if (forceNew) procedure = null
+  else if (visitAppointmentId) {
+    const isThisVisit = resumedProcedure?.appointmentId === visitAppointmentId
+    procedure = isThisVisit || (resumeDraft && unlinkedDraft) ? (resumedProcedure ?? null) : null
+  }
+  const offeredDraft = visitAppointmentId && !procedure && !hasDeepLink && !forceNew ? unlinkedDraft : null
 
   // Load full procedure details (with diagrams and applications) if we have one
   const procedureDetailQueryId = hasDeepLink
@@ -87,17 +92,17 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
   // which is how users would land back on step 1 after clicking Next at step
   // 3. Track first successful render with state so the gate fires once;
   // a ref would be read during render and trip the react-hooks/refs rule.
-  const [hasMounted, setHasMounted] = useState(false)
+  // Choosing "Continuar rascunho" is the one change that must remount it.
+  const wizardKey = resumeDraft ? 'resume' : 'visit'
+  const [mountedKey, setMountedKey] = useState<string | null>(null)
   useEffect(() => {
-    // Intentional one-shot cascade: render once with loading=true, then on
-    // the next tick flip hasMounted=true so subsequent loading states no
-    // longer gate the wizard. The react-hooks rule warns about this, but
-    // the cascade is exactly the desired behavior here.
+    // Intentional one-shot cascade per wizardKey: render once with loading=true,
+    // then flip so later loading states no longer gate the wizard.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (!isLoading && !hasMounted) setHasMounted(true)
-  }, [isLoading, hasMounted])
+    if (!isLoading && mountedKey !== wizardKey) setMountedKey(wizardKey)
+  }, [isLoading, mountedKey, wizardKey])
 
-  if (isLoading && !hasMounted) {
+  if (mountedKey !== wizardKey) {
     return <AtendimentoLoading />
   }
 
@@ -135,6 +140,15 @@ export function AtendimentoPageClient({ patientId }: AtendimentoPageClientProps)
 
   return (
     <ServiceWizard
+      key={wizardKey}
+      offeredDraft={
+        offeredDraft && visitAppointmentId
+          ? {
+              createdAt: offeredDraft.createdAt,
+              href: `/pacientes/${patientId}/atendimento?appointment=${visitAppointmentId}&resume=1`,
+            }
+          : null
+      }
       patient={{
         id: patient.id,
         fullName: patient.fullName,

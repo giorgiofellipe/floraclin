@@ -49,7 +49,7 @@ import type { AnamnesisRecord, AnamnesisTemplate } from '@/lib/anamnesis/types'
 import type { EvaluationTemplateForForm, ExistingEvaluationResponse } from '@/components/procedures/procedure-form'
 import type { FormSection, FormResponses } from '@/lib/forms/types'
 import { formatBrPhone } from '@/lib/phone'
-import { brToday, formatBrDate, parseLocalDate } from '@/lib/dates'
+import { brToday, formatBrDate, formatBrDayMonth, parseLocalDate } from '@/lib/dates'
 import { isOpenDiagram } from '@/lib/face-diagram-status'
 import {
   countPendingSessions,
@@ -99,6 +99,8 @@ interface ServiceWizardProps {
   autoStartNext?: boolean
   /** The appointment this atendimento serves: prefills its procedure type and is completed on finalize. */
   appointment?: { id: string; status: string; date: string; procedureTypeId: string | null } | null
+  /** The patient's unlinked draft, offered (never applied) when opening for an appointment. */
+  offeredDraft?: { createdAt: string | Date; href: string } | null
   /** Quotation group from `?diagram=`; its cart is applied automatically at step 2. */
   initialDiagramGroupId?: string | null
 }
@@ -116,12 +118,12 @@ function calculateAge(birthDate: string): number {
   return age
 }
 
-// Only today's visit that is still open is finished with the atendimento. A resumed
-// plan can point at an older appointment, and cancelled or no-show visits keep their status.
+// Records are often finished the day after the visit, so past visits still complete;
+// a future booking or a cancelled / no-show visit keeps its status.
 const COMPLETABLE_APPOINTMENT_STATUSES = new Set(['scheduled', 'confirmed', 'in_progress'])
 
 function shouldCompleteAppointment(appointment: { status: string; date: string }): boolean {
-  return COMPLETABLE_APPOINTMENT_STATUSES.has(appointment.status) && appointment.date === brToday()
+  return COMPLETABLE_APPOINTMENT_STATUSES.has(appointment.status) && appointment.date <= brToday()
 }
 
 // ─── Component ──────────────────────────────────────────────────────
@@ -143,6 +145,7 @@ export function ServiceWizard({
   autoStartNext,
   initialDiagramGroupId,
   appointment,
+  offeredDraft,
 }: ServiceWizardProps) {
   const router = useRouter()
   const queryClient = useQueryClient()
@@ -519,8 +522,9 @@ export function ServiceWizard({
       } | null
     }).financialPlan
 
-    if (!financialPlanRaw) {
-      toast.error('Plano financeiro ausente. Volte ao planejamento.')
+    if (!financialPlanRaw?.paymentMethod) {
+      toast.error('Escolha a forma de pagamento no planejamento.')
+      goToStep(2)
       return
     }
 
@@ -607,6 +611,7 @@ export function ServiceWizard({
     updateProcedureStatus,
     updateStepTimestamp,
     nextStep,
+    goToStep,
     queryClient,
     promptAfterPayment,
   ])
@@ -641,24 +646,31 @@ export function ServiceWizard({
   const updateAppointmentStatus = useUpdateAppointmentStatus()
   const [isFinishing, setIsFinishing] = useState(false)
 
+  const [appointmentUpdateFailed, setAppointmentUpdateFailed] = useState(false)
+
+  const leaveFinished = useCallback(() => {
+    isExitingRef.current = true
+    toast.success('Atendimento finalizado')
+    router.push(`/pacientes/${patient.id}`)
+  }, [router, patient.id])
+
   const finishAtendimento = useCallback(async () => {
     setIsFinishing(true)
+    setAppointmentUpdateFailed(false)
     try {
       if (appointment && shouldCompleteAppointment(appointment)) {
         try {
           await updateAppointmentStatus.mutateAsync({ id: appointment.id, status: 'completed' })
         } catch {
-          setError('Não foi possível marcar o agendamento como concluído. Tente finalizar novamente.', 'server')
+          setAppointmentUpdateFailed(true)
           return
         }
       }
-      isExitingRef.current = true
-      toast.success('Atendimento finalizado')
-      router.push(`/pacientes/${patient.id}`)
+      leaveFinished()
     } finally {
       setIsFinishing(false)
     }
-  }, [appointment, updateAppointmentStatus, setError, router, patient.id])
+  }, [appointment, updateAppointmentStatus, leaveFinished])
 
   // ─── Next handler ──────────────────────────────────────────────
 
@@ -849,9 +861,21 @@ export function ServiceWizard({
 
         {contextMessage && (
           <div className="border-t border-content-bg px-4 py-1.5 sm:px-6">
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
               <span className={cn('inline-block size-1.5 rounded-full', contextMessage.dotColor)} />
-              <span className="text-[12px] text-mid">{contextMessage.text}</span>
+              <span className="text-xs text-mid">{contextMessage.text}</span>
+              {offeredDraft && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    isExitingRef.current = true
+                    router.replace(offeredDraft.href)
+                  }}
+                  className="min-h-11 text-xs font-medium text-forest underline underline-offset-2 sm:min-h-0"
+                >
+                  Continuar rascunho de {formatBrDayMonth(offeredDraft.createdAt)}
+                </button>
+              )}
             </div>
           </div>
         )}
@@ -1043,6 +1067,21 @@ export function ServiceWizard({
         )}
         {isFinalizeBlocked && (
           <p className="border-b border-gray-100 px-4 py-1.5 text-[11px] text-mid md:hidden">{finalizeBlockedText}</p>
+        )}
+        {appointmentUpdateFailed && (
+          <div role="alert" className="flex flex-col gap-2 border-b border-red-100 bg-red-50 px-4 py-2 sm:px-6 md:flex-row md:items-center md:justify-between">
+            <p className="text-sm text-red-800">
+              O atendimento já está salvo. Só não foi possível marcar o agendamento como concluído.
+            </p>
+            <div className="flex gap-2">
+              <button type="button" onClick={() => void finishAtendimento()} disabled={isFinishing} className={cn(secondaryButton, 'min-h-11 bg-white')}>
+                Tentar novamente
+              </button>
+              <button type="button" onClick={leaveFinished} className={cn(secondaryButton, 'min-h-11 bg-white')}>
+                Sair mesmo assim
+              </button>
+            </div>
+          </div>
         )}
 
         {/* Phone: back icon, full-width primary, overflow for the secondary actions */}

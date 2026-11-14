@@ -72,6 +72,7 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
         const totalAmountHasError = hasFieldError(form, 'financialPlan.totalAmount')
         const installmentCountHasError = hasFieldError(form, 'financialPlan.installmentCount')
         const notesHasError = hasFieldError(form, 'financialPlan.notes')
+        const paymentMethodHasError = hasFieldError(form, 'financialPlan.paymentMethod')
 
         return (
           <div className="space-y-5">
@@ -119,7 +120,12 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
               )}
 
               <div className={cn(hideTotalAmount && 'max-w-sm')}>
-                <Label className="uppercase tracking-wider text-xs text-mid mb-2 block">
+                <Label
+                  className={cn(
+                    'uppercase tracking-wider text-xs mb-2 block',
+                    paymentMethodHasError ? 'text-red-600' : 'text-mid',
+                  )}
+                >
                   Forma de pagamento
                 </Label>
                 <Select
@@ -135,11 +141,19 @@ export function FinancialPlanField({ control, form, disabled, hideTotalAmount }:
                   }}
                   disabled={disabled}
                 >
-                  <SelectTrigger className="border-sage/20 focus:border-sage/40">
+                  <SelectTrigger
+                    aria-invalid={paymentMethodHasError || undefined}
+                    className={cn(
+                      paymentMethodHasError
+                        ? 'border-red-200 bg-red-50 focus:border-red-400'
+                        : 'border-sage/20 focus:border-sage/40',
+                    )}
+                  >
                     <SelectValue placeholder="Selecione..." />
                   </SelectTrigger>
                   <SelectContent />
                 </Select>
+                <FormFieldError form={form} name="financialPlan.paymentMethod" />
               </div>
             </div>
 

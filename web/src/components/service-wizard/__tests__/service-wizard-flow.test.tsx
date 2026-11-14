@@ -2,7 +2,7 @@ import React, { useEffect } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, renderWithProviders as render, screen, waitFor } from '@/tests/test-utils'
 import type { WizardOverrides } from '../types'
-import { brToday } from '@/lib/dates'
+import { brToday, toBrYmd } from '@/lib/dates'
 import type { EncounterCart } from '@/validations/encounter-cart'
 
 const push = vi.fn()
@@ -156,43 +156,68 @@ describe('ServiceWizard', () => {
   })
 
   const today = brToday()
+  const yesterday = toBrYmd(new Date(Date.now() - 24 * 60 * 60 * 1000))
+  const tomorrow = toBrYmd(new Date(Date.now() + 24 * 60 * 60 * 1000))
 
-  it('finishing marks the linked appointment as completed, with no confirmation dialog', async () => {
-    render(<ServiceWizard {...approved} appointment={{ id: 'appt-1', status: 'in_progress', date: today, procedureTypeId: 'type-1' }} />)
-
+  async function finish(appointment: { status: string; date: string }) {
+    render(<ServiceWizard {...approved} appointment={{ id: 'appt-1', procedureTypeId: null, ...appointment }} />)
     await waitFor(() => expect(barButton('Finalizar atendimento')).toBeEnabled())
     fireEvent.click(barButton('Finalizar atendimento'))
+  }
+
+  function statusCalls() {
+    return fetchMock.mock.calls.filter(([u]) => String(u) === '/api/appointments/appt-1/status')
+  }
+
+  // Records are often finished the day after the visit; that visit must not stay open.
+  it.each([
+    ['in progress today', 'in_progress', today],
+    ['scheduled today', 'scheduled', today],
+    ['confirmed yesterday', 'confirmed', yesterday],
+  ])('completes an appointment %s, with no confirmation dialog', async (_label, status, date) => {
+    await finish({ status, date })
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/pacientes/pat-1'))
-    const statusCall = fetchMock.mock.calls.find(([u]) => String(u) === '/api/appointments/appt-1/status')
-    expect(statusCall?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ status: 'completed' }) })
+    expect(statusCalls()[0]?.[1]).toMatchObject({ method: 'PUT', body: JSON.stringify({ status: 'completed' }) })
   })
 
-  // A resumed plan can point at an older visit; cancelled or no-show visits keep their status.
   it.each([
     ['already completed', 'completed', today],
     ['cancelled', 'cancelled', today],
-    ['from another day', 'in_progress', '2020-01-10'],
+    ['marked no-show', 'no_show', yesterday],
+    ['booked for tomorrow', 'scheduled', tomorrow],
   ])('leaves an appointment %s untouched', async (_label, status, date) => {
-    render(<ServiceWizard {...approved} appointment={{ id: 'appt-1', status, date, procedureTypeId: null }} />)
-
-    await waitFor(() => expect(barButton('Finalizar atendimento')).toBeEnabled())
-    fireEvent.click(barButton('Finalizar atendimento'))
+    await finish({ status, date })
 
     await waitFor(() => expect(push).toHaveBeenCalledWith('/pacientes/pat-1'))
-    expect(fetchMock.mock.calls.some(([u]) => String(u).includes('/status'))).toBe(false)
+    expect(statusCalls()).toHaveLength(0)
   })
 
-  it('stays open with an error when the appointment cannot be completed', async () => {
+  it('stays on execution when the appointment cannot be completed, with retry and leave', async () => {
+    let failures = 1
+    fetchMock.mockImplementation(async (url: string) => {
+      if (!url.includes('/status')) return new Response('[]')
+      if (failures-- > 0) return new Response(JSON.stringify({ error: 'x' }), { status: 500 })
+      return new Response(JSON.stringify({ success: true }))
+    })
+    await finish({ status: 'in_progress', date: today })
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('O atendimento já está salvo')
+    expect(push).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Tentar novamente' }))
+    await waitFor(() => expect(push).toHaveBeenCalledWith('/pacientes/pat-1'))
+    expect(statusCalls()).toHaveLength(2)
+  })
+
+  it('lets the clinician leave anyway when the appointment update keeps failing', async () => {
     fetchMock.mockImplementation(async (url: string) =>
       url.includes('/status') ? new Response(JSON.stringify({ error: 'x' }), { status: 500 }) : new Response('[]'),
     )
-    render(<ServiceWizard {...approved} appointment={{ id: 'appt-1', status: 'in_progress', date: today, procedureTypeId: null }} />)
+    await finish({ status: 'in_progress', date: today })
 
-    await waitFor(() => expect(barButton('Finalizar atendimento')).toBeEnabled())
-    fireEvent.click(barButton('Finalizar atendimento'))
+    fireEvent.click(await screen.findByRole('button', { name: 'Sair mesmo assim' }))
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('Não foi possível marcar o agendamento como concluído')
-    expect(push).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledWith('/pacientes/pat-1')
   })
 })
