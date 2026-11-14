@@ -4,7 +4,8 @@ export const queryKeys = {
   referral: ['referral'] as const,
   patients: {
     all: ['patients'] as const,
-    list: (search: string, page: number) => ['patients', 'list', search, page] as const,
+    list: (search: string, page: number, sort: string, direction: string) =>
+      ['patients', 'list', search, page, sort, direction] as const,
     detail: (id: string) => ['patients', 'detail', id] as const,
     timeline: (id: string) => ['patients', 'timeline', id] as const,
     search: (search: string) => ['patients', 'search', search] as const,

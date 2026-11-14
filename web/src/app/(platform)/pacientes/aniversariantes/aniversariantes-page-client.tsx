@@ -20,6 +20,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { brToday } from '@/lib/dates'
+import { monthRange } from '@/lib/birthdays'
 import { useBirthdays, type BirthdayItem } from '@/hooks/queries/use-birthdays'
 import { BirthdayRowActions } from '@/components/patients/birthday-row-actions'
 
@@ -46,12 +47,6 @@ const MONTH_ITEMS: Record<string, string> = MONTHS.reduce<Record<string, string>
   {}
 )
 
-/** Number of days in a given month for a given year. Handles leap years. */
-function daysInMonth(year: number, month1based: number): number {
-  // month is 1-based here; Date with day=0 gives the last day of the previous month
-  return new Date(year, month1based, 0).getDate()
-}
-
 /** Format `MM-DD` from a YYYY-MM-DD string to "DD/MM" for display. */
 function formatDayMonth(birthDate: string): string {
   const [, mm, dd] = birthDate.split('-')
@@ -72,15 +67,10 @@ export function AniversariantesPageClient() {
   const [selectedMonth, setSelectedMonth] = useState<string>(String(currentMonth))
   const [search, setSearch] = useState('')
 
-  const { from, to } = useMemo(() => {
-    const monthInt = parseInt(selectedMonth, 10)
-    const lastDay = daysInMonth(currentYear, monthInt)
-    const mm = String(monthInt).padStart(2, '0')
-    return {
-      from: `${currentYear}-${mm}-01`,
-      to: `${currentYear}-${mm}-${String(lastDay).padStart(2, '0')}`,
-    }
-  }, [selectedMonth, currentYear])
+  const { from, to } = useMemo(
+    () => monthRange(currentYear, parseInt(selectedMonth, 10)),
+    [selectedMonth, currentYear]
+  )
 
   const { data, isLoading, isError } = useBirthdays({ from, to })
 

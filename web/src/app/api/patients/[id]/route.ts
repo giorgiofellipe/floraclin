@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAuthContext } from '@/lib/auth'
 import { requireWrite } from '@/lib/write-access'
+import { FRONT_DESK_ROLES } from '@/lib/constants'
 import { createAuditLog } from '@/lib/audit'
 import {
   getPatient,
@@ -76,7 +77,7 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'practitioner', 'receptionist')
+    const { ctx, blocked } = await requireWrite(...FRONT_DESK_ROLES)
     if (blocked) return blocked
 
     const { id } = await params
