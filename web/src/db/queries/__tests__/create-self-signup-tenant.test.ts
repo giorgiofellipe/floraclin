@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, describe, expect, it } from 'vitest'
 import { eq, inArray } from 'drizzle-orm'
 import { db } from '@/db/client'
-import { tenants, tenantUsers, users, whatsappAutomations } from '@/db/schema'
+import { financialAccounts, tenants, tenantUsers, users, whatsappAutomations } from '@/db/schema'
 import { createSelfSignupTenant } from '../admin-tenants'
 
 const RUN_INTEGRATION = Boolean(process.env.DATABASE_URL_TEST || process.env.RUN_DB_TESTS)
@@ -26,6 +26,7 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     await db.delete(tenantUsers).where(inArray(tenantUsers.userId, ids))
     if (tenantIds.length) {
       await db.delete(whatsappAutomations).where(inArray(whatsappAutomations.tenantId, tenantIds))
+      await db.delete(financialAccounts).where(inArray(financialAccounts.tenantId, tenantIds))
       await db.delete(tenants).where(inArray(tenants.id, tenantIds))
     }
     await db.delete(users).where(inArray(users.id, ids))
@@ -47,9 +48,12 @@ describeIntegration('createSelfSignupTenant (integration, requires test DB)', ()
     // No lifecycle notice was shown on this path: onboarding stamps it.
     expect(tenant.lifecycleNoticeAt).toBeNull()
     const automations = await db.select().from(whatsappAutomations).where(eq(whatsappAutomations.tenantId, tenant.id))
-    expect(automations).toEqual([
-      expect.objectContaining({ trigger: 'appointment_confirmation', enabled: true, templateId: null, config: null, firstEnabledAt: expect.any(Date) }),
-    ])
+    // Confirmação de consulta, lembrete de pagamento and cuidados pós-procedimento start on.
+    expect(automations.sort((a, b) => a.trigger.localeCompare(b.trigger))).toEqual(
+      ['appointment_confirmation', 'payment_reminder', 'post_procedure_care'].map((trigger) =>
+        expect.objectContaining({ trigger, enabled: true, templateId: null, config: null, firstEnabledAt: expect.any(Date) }),
+      ),
+    )
   })
 
   it('stores plain settings for a clinic named on the form', async () => {

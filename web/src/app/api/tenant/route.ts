@@ -29,7 +29,7 @@ async function ownNumberClaimError(tenantId: string, settings: Settings, current
     current?.whatsapp_mode !== 'own' || current?.whatsapp_phone_number_id !== id || current?.whatsapp_access_token !== token
   if (isNewClaim && (!token || !(await verifyCredentials(id, token)).valid)) {
     return NextResponse.json(
-      { error: 'Não foi possível confirmar este Phone Number ID com o Access Token informado.' },
+      { error: 'Não foi possível confirmar este ID do número de telefone com o token de acesso informado.' },
       { status: 400 },
     )
   }

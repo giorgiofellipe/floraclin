@@ -1,19 +1,26 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { AlertTriangle, CalendarCheck, CheckCircle2, ChevronDown, ClipboardList, Clock, CreditCard, HeartHandshake, HeartPulse, Loader2, Plus, ReceiptText, Save } from 'lucide-react'
+import { type LucideIcon, AlertTriangle, CalendarCheck, CalendarClock, CheckCircle2, ChevronDown, ClipboardList, Clock, CreditCard, HeartHandshake, HeartPulse, Loader2, Plus, ReceiptText } from 'lucide-react'
 import { toast } from 'sonner'
+import { useProcedureTypes } from '@/hooks/queries/use-procedure-types'
+import { SettingsSectionHeader } from './settings-section-header'
 import { WhatsAppTemplatePreview, WhatsAppTemplatePreviewNote } from './whatsapp-template-preview'
 import {
   ANAMNESIS_STALE_DAYS_MAX,
   AUTOMATION_DAYS_MAX,
   MAX_EVENT_AGE_DAYS,
   automationConfigDefaults,
+  formatRunTime,
+  nextAutomationRun,
+  AUTOMATION_RUN_TIME_BR,
+  type ScheduledAutomationTrigger,
 } from '@/lib/whatsapp-automation-config'
 
 interface Automation {
@@ -32,44 +39,66 @@ interface Template {
   components: unknown
 }
 
-type LocalState = Record<string, {
+type TriggerState = {
   enabled: boolean
   templateId: string | null
   config: Record<string, unknown>
-}>
+}
+
+type LocalState = Record<string, TriggerState>
+
+interface ProcedureTypeTexts {
+  preProcedureInstructions: string | null
+  postProcedureCare: string | null
+}
+
+const PROCEDURES_HREF = '/configuracoes?tab=procedimentos'
 
 const CONFIRMATION_DEFAULTS = automationConfigDefaults('appointment_confirmation')
 
-const TRIGGERS = [
+type Trigger = {
+  key: string
+  label: string
+  description: string
+  icon: LucideIcon
+  purposeKey: string
+  procedureText?: { field: keyof ProcedureTypeTexts; missing: string }
+  configFields: Array<
+    | { key: string; label: string; type: 'toggle'; default: boolean }
+    | { key: string; label: string; type: 'number'; default: number; max: number; dependsOn?: string }
+  >
+}
+
+const TRIGGERS: Trigger[] = [
   {
     key: 'appointment_confirmation',
     label: 'Confirmação de consulta',
-    description: 'Envia confirmação automática diariamente às 6h30 para consultas do dia seguinte. Consultas do próprio dia recebem apenas o link de anamnese, quando essa opção estiver ativada.',
+    description: `Envia confirmação automática diariamente às ${formatRunTime('appointment_confirmation')} para consultas do dia seguinte. Consultas do próprio dia recebem apenas o link de anamnese, quando essa opção estiver ativada.`,
     icon: CalendarCheck,
     purposeKey: 'appointment_confirmation',
     configFields: [
-      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle' as const, default: CONFIRMATION_DEFAULTS.autoAnamnesisEnabled },
-      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number' as const, default: CONFIRMATION_DEFAULTS.anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
+      { key: 'autoAnamnesisEnabled', label: 'Enviar anamnese automaticamente após confirmação', type: 'toggle', default: CONFIRMATION_DEFAULTS.autoAnamnesisEnabled },
+      { key: 'anamnesisStaleDays', label: 'Dias para considerar anamnese desatualizada', type: 'number', default: CONFIRMATION_DEFAULTS.anamnesisStaleDays, max: ANAMNESIS_STALE_DAYS_MAX, dependsOn: 'autoAnamnesisEnabled' },
     ],
   },
   {
     key: 'payment_reminder',
     label: 'Lembrete de pagamento',
-    description: 'Envia diariamente às 9h um lembrete para parcelas que vencem nos próximos dias.',
+    description: `Envia diariamente às ${formatRunTime('payment_reminder')} um lembrete para parcelas que vencem nos próximos dias.`,
     icon: CreditCard,
     purposeKey: 'payment_reminder',
     configFields: [
-      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number' as const, default: automationConfigDefaults('payment_reminder').daysBeforeDue, max: AUTOMATION_DAYS_MAX },
+      { key: 'daysBeforeDue', label: 'Dias antes do vencimento', type: 'number', default: automationConfigDefaults('payment_reminder').daysBeforeDue, max: AUTOMATION_DAYS_MAX },
     ],
   },
   {
     key: 'follow_up',
     label: 'Acompanhamento pós-procedimento',
-    description: 'Envia diariamente às 9h30 uma mensagem de acompanhamento aos pacientes que realizaram um procedimento.',
+    description: `Envia diariamente às ${formatRunTime('follow_up')} uma mensagem de acompanhamento aos pacientes que realizaram um procedimento.`,
     icon: HeartPulse,
     purposeKey: 'follow_up',
     configFields: [
-      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number' as const, default: automationConfigDefaults('follow_up').daysAfterProcedure, max: AUTOMATION_DAYS_MAX },
+      { key: 'daysAfterProcedure', label: 'Dias após o procedimento', type: 'number', default: automationConfigDefaults('follow_up').daysAfterProcedure, max: AUTOMATION_DAYS_MAX },
     ],
   },
   {
@@ -83,11 +112,12 @@ const TRIGGERS = [
   {
     key: 'pre_procedure_instructions',
     label: 'Orientações pré-procedimento',
-    description: 'Envia diariamente às 10h30 as orientações de preparo para consultas dos próximos dias. Só para procedimentos com orientações cadastradas.',
+    description: `Envia diariamente às ${formatRunTime('pre_procedure_instructions')} as orientações de preparo para consultas dos próximos dias. Só para procedimentos com orientações cadastradas.`,
     icon: ClipboardList,
     purposeKey: 'pre_procedure_instructions',
+    procedureText: { field: 'preProcedureInstructions', missing: 'Nenhum procedimento tem orientações pré-procedimento cadastradas, então nada é enviado ainda.' },
     configFields: [
-      { key: 'daysBeforeAppointment', label: 'Dias antes da consulta', type: 'number' as const, default: automationConfigDefaults('pre_procedure_instructions').daysBeforeAppointment, max: AUTOMATION_DAYS_MAX },
+      { key: 'daysBeforeAppointment', label: 'Dias antes da consulta', type: 'number', default: automationConfigDefaults('pre_procedure_instructions').daysBeforeAppointment, max: AUTOMATION_DAYS_MAX },
     ],
   },
   {
@@ -96,6 +126,7 @@ const TRIGGERS = [
     description: `Envia os cuidados ao paciente quando uma sessão é registrada. Só para procedimentos com cuidados cadastrados. Sessões com data de mais de ${MAX_EVENT_AGE_DAYS} dias atrás não geram mensagem.`,
     icon: HeartHandshake,
     purposeKey: 'post_procedure_care',
+    procedureText: { field: 'postProcedureCare', missing: 'Nenhum procedimento tem cuidados pós-procedimento cadastrados, então nada é enviado ainda.' },
     configFields: [],
   },
 ]
@@ -139,23 +170,34 @@ function buildLocalState(automations: Automation[]): LocalState {
   return state
 }
 
-interface WhatsAppAutomationsProps {
-  mode: 'floraclin' | 'own'
+function isScheduled(key: string): key is ScheduledAutomationTrigger {
+  return Object.hasOwn(AUTOMATION_RUN_TIME_BR, key)
 }
 
-export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
-  const [serverAutomations, setServerAutomations] = useState<Automation[]>([])
+interface WhatsAppAutomationsProps {
+  mode: 'floraclin' | 'own'
+  /** No credits left, so nothing goes out until the clinic gets more. */
+  sendsPaused?: boolean
+}
+
+type LoadError = 'own_not_connected' | 'failed'
+
+export function WhatsAppAutomations({ mode, sendsPaused = false }: WhatsAppAutomationsProps) {
   const [templates, setTemplates] = useState<Template[]>([])
   const [clinicName, setClinicName] = useState('')
+  const procedureTypesQuery = useProcedureTypes()
+  const procedureTypes = Array.isArray(procedureTypesQuery.data) ? (procedureTypesQuery.data as ProcedureTypeTexts[]) : null
   const [previewOpen, setPreviewOpen] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<LoadError | null>(null)
+  const [savingKeys, setSavingKeys] = useState<Set<string>>(new Set())
   const [provisioning, setProvisioning] = useState(false)
   const [localState, setLocalState] = useState<LocalState>({})
-  const [dirty, setDirty] = useState<Set<string>>(new Set())
+  // Last state the server confirmed, read at rollback time rather than from a render closure.
+  const savedRef = useRef<LocalState>({})
   const [pendingChecks, setPendingChecks] = useState(0)
 
-  // On the shared FloraClin number the clinic has no templates of its own —
+  // On the shared FloraClin number the clinic has no templates of its own:
   // sends resolve the platform-managed ones, so the panel reads those too.
   const templatesUrl =
     mode === 'floraclin'
@@ -179,11 +221,13 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
       ])
       if (autoRes.ok) {
         const autoData = await autoRes.json()
-        const automations = autoData.data ?? []
-        setServerAutomations(automations)
-        setLocalState(buildLocalState(automations))
+        const state = buildLocalState(autoData.data ?? [])
+        setLocalState(state)
+        savedRef.current = state
+        setLoadError(null)
+      } else {
+        setLoadError(mode === 'own' && autoRes.status === 400 ? 'own_not_connected' : 'failed')
       }
-      setDirty(new Set())
       // A full reload is a fresh start for the poll budget too: provisioning
       // calls this after creating templates, and those arrive PENDING.
       setPendingChecks(0)
@@ -192,7 +236,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     } finally {
       setLoading(false)
     }
-  }, [fetchTemplates])
+  }, [fetchTemplates, mode])
 
   useEffect(() => {
     fetchData()
@@ -206,67 +250,63 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     if (!templates.some((t) => t.status === 'PENDING')) return
     const timer = setTimeout(() => {
       setPendingChecks((n) => n + 1)
-      // Templates only — a reload of the automations would discard edits in
+      // Templates only: a reload of the automations would discard edits in
       // progress.
       fetchTemplates().catch(() => {})
     }, 15_000)
     return () => clearTimeout(timer)
   }, [templates, loading, pendingChecks, fetchTemplates])
 
-  function updateLocal(triggerKey: string, patch: Partial<LocalState[string]>) {
-    setLocalState((prev) => ({
-      ...prev,
-      [triggerKey]: { ...prev[triggerKey], ...patch },
-    }))
-    setDirty((prev) => new Set(prev).add(triggerKey))
-  }
-
-  async function handleSave() {
-    if (dirty.size === 0) return
-    setSaving(true)
-    const errors: string[] = []
-
-    for (const triggerKey of dirty) {
-      const state = localState[triggerKey]
-      if (!state) continue
-      const trigger = TRIGGERS.find((t) => t.key === triggerKey)
-      const matched = trigger ? getMatchingTemplate(trigger.purposeKey) : undefined
-      try {
-        const res = await fetch(`/api/whatsapp/automations/${triggerKey}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            enabled: state.enabled,
-            templateId: mode === 'floraclin' ? null : (matched?.id ?? state.templateId),
-            config: state.config,
-          }),
-        })
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.error || 'Erro ao salvar')
-        }
-        const result = await res.json()
-        setServerAutomations((prev) => {
-          const exists = prev.find((a) => a.trigger === triggerKey)
-          if (exists) return prev.map((a) => (a.trigger === triggerKey ? result.data : a))
-          return [...prev, result.data]
-        })
-      } catch (err) {
-        errors.push(err instanceof Error ? err.message : triggerKey)
-      }
-    }
-
-    setSaving(false)
-    if (errors.length > 0) {
-      toast.error(`Erro ao salvar: ${errors.join(', ')}`)
-    } else {
-      toast.success('Automações salvas com sucesso')
-      setDirty(new Set())
-    }
-  }
-
   function getMatchingTemplate(purposeKey: string): Template | undefined {
     return templates.find((t) => t.purposeKey === purposeKey)
+  }
+
+  function editLocal(triggerKey: string, patch: Partial<TriggerState>) {
+    setLocalState((prev) => ({ ...prev, [triggerKey]: { ...prev[triggerKey], ...patch } }))
+  }
+
+  function setSaving(key: string, saving: boolean) {
+    setSavingKeys((prev) => {
+      const next = new Set(prev)
+      if (saving) next.add(key)
+      else next.delete(key)
+      return next
+    })
+  }
+
+  async function save(trigger: Trigger, next: TriggerState, successMessage: string) {
+    setLocalState((prev) => ({ ...prev, [trigger.key]: next }))
+    setSaving(trigger.key, true)
+    const matched = getMatchingTemplate(trigger.purposeKey)
+    try {
+      const res = await fetch(`/api/whatsapp/automations/${trigger.key}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          enabled: next.enabled,
+          templateId: mode === 'floraclin' ? null : (matched?.id ?? next.templateId),
+          config: next.config,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        throw new Error(err.error || 'Erro ao salvar')
+      }
+      savedRef.current = { ...savedRef.current, [trigger.key]: next }
+      toast.success(successMessage)
+    } catch (err) {
+      setLocalState((prev) => ({ ...prev, [trigger.key]: savedRef.current[trigger.key] }))
+      toast.error(`Não foi possível salvar "${trigger.label}": ${err instanceof Error ? err.message : 'erro desconhecido'}`)
+    } finally {
+      setSaving(trigger.key, false)
+    }
+  }
+
+  function saveConfigIfChanged(trigger: Trigger) {
+    const state = localState[trigger.key]
+    if (!state || savingKeys.has(trigger.key)) return
+    if (JSON.stringify(state.config) === JSON.stringify(savedRef.current[trigger.key]?.config)) return
+    save(trigger, state, 'Configuração salva')
   }
 
   async function handleProvision() {
@@ -289,12 +329,7 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
   if (loading) {
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-2 mb-1">
-          <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-            Mensagens Automáticas
-          </h3>
-          <div className="flex-1 h-px bg-blush/60" />
-        </div>
+        <SettingsSectionHeader>Mensagens automáticas</SettingsSectionHeader>
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
         <Skeleton className="h-24 w-full" />
@@ -302,18 +337,46 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
     )
   }
 
+  if (loadError) {
+    return (
+      <div className="space-y-4">
+        <SettingsSectionHeader>Mensagens automáticas</SettingsSectionHeader>
+        <p className="rounded-[3px] border border-dashed border-topbar-border px-4 py-3 text-xs text-mid">
+          {loadError === 'own_not_connected'
+            ? 'Conecte o número próprio para ativar as mensagens automáticas.'
+            : 'Não foi possível carregar as mensagens automáticas. Recarregue a página para tentar de novo.'}
+        </p>
+      </div>
+    )
+  }
+
+  const needsTemplates = mode === 'own' && templates.length === 0
+  const anyEnabled = Object.values(localState).some((state) => state.enabled)
+  const templatesGuidance = needsTemplates && (
+    <p className="rounded-[3px] border border-dashed border-topbar-border px-4 py-3 text-xs text-mid">
+      Crie os templates padrão em &quot;Templates de mensagem&quot; para ativar as mensagens automáticas.
+    </p>
+  )
+
+  // With no templates the toggles do nothing, except to let the clinic turn off one already on.
+  if (needsTemplates && !anyEnabled) {
+    return (
+      <div className="space-y-4">
+        <SettingsSectionHeader>Mensagens automáticas</SettingsSectionHeader>
+        {templatesGuidance}
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2 mb-1">
-        <h3 className="uppercase tracking-wider text-xs font-medium text-mid">
-          Mensagens Automáticas
-        </h3>
-        <div className="flex-1 h-px bg-blush/60" />
-      </div>
+      <SettingsSectionHeader>Mensagens automáticas</SettingsSectionHeader>
 
       <p className="text-xs text-mid">
-        Configure o envio automático de mensagens via WhatsApp para seus pacientes.
+        Mensagens que o FloraClin envia sozinho aos seus pacientes. Cada mudança é salva na hora.
       </p>
+
+      {templatesGuidance}
 
       <div className="space-y-3">
         {TRIGGERS.map((trigger) => {
@@ -321,36 +384,67 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
           if (!state) return null
           const matchingTemplate = getMatchingTemplate(trigger.purposeKey)
           const templateState = resolveTemplateState(matchingTemplate, mode)
+          const canSend = matchingTemplate?.status === 'APPROVED'
           const Icon = trigger.icon
+          const saving = savingKeys.has(trigger.key)
+          const procedureText = trigger.procedureText
+          const missingProcedureText =
+            procedureText && procedureTypes !== null &&
+            !procedureTypes.some((type) => type[procedureText.field]?.trim())
 
           return (
             <div
               key={trigger.key}
               className="rounded-[3px] border border-topbar-border bg-white p-4 space-y-3"
             >
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <Icon className="h-4 w-4 text-mid" />
+                  <Icon className="h-4 w-4 shrink-0 text-mid" />
                   <div>
-                    <Label className="text-sm font-medium text-charcoal">
+                    <Label htmlFor={`automation-${trigger.key}`} className="text-sm font-medium text-charcoal">
                       {trigger.label}
                     </Label>
                     <p className="text-xs text-mid">{trigger.description}</p>
                   </div>
                 </div>
                 <Switch
+                  id={`automation-${trigger.key}`}
                   checked={state.enabled}
+                  disabled={saving}
                   onCheckedChange={(checked) =>
-                    updateLocal(trigger.key, { enabled: checked })
+                    save(
+                      trigger,
+                      { ...state, enabled: checked },
+                      `Automação ${checked ? 'ativada' : 'desativada'}: ${trigger.label}`,
+                    )
                   }
                 />
               </div>
+
+              {state.enabled && canSend && !sendsPaused && isScheduled(trigger.key) && (
+                <p className="pl-7 flex items-center gap-1.5 text-xs text-forest">
+                  <CalendarClock className="size-3.5" />
+                  Próximo envio: {nextAutomationRun(trigger.key)}
+                </p>
+              )}
+
+              {state.enabled && missingProcedureText && (
+                <p className="pl-7 flex items-start gap-1.5 text-xs text-amber-dark">
+                  <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+                  <span>
+                    {procedureText.missing}{' '}
+                    <Link href={PROCEDURES_HREF} className="font-medium underline underline-offset-2 hover:text-forest">
+                      Cadastrar em Procedimentos
+                    </Link>
+                  </span>
+                </p>
+              )}
 
               {matchingTemplate && (
                 <div className="pl-7">
                   <button
                     type="button"
-                    className="flex items-center gap-1 text-xs text-sage hover:underline"
+                    className="flex min-h-11 items-center gap-1 text-xs text-sage hover:underline sm:min-h-0"
                     aria-expanded={previewOpen.has(trigger.key)}
                     onClick={() =>
                       setPreviewOpen((prev) => {
@@ -425,20 +519,24 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
                   )}
 
                   {trigger.configFields.map((field) => {
-                    if ('dependsOn' in field && field.dependsOn && !state.config[field.dependsOn]) {
+                    if (field.type === 'number' && field.dependsOn && !state.config[field.dependsOn]) {
                       return null
                     }
 
                     if (field.type === 'toggle') {
                       return (
-                        <div key={field.key} className="flex items-center justify-between">
-                          <Label className="text-xs text-mid">{field.label}</Label>
+                        <div key={field.key} className="flex items-center justify-between gap-3">
+                          <Label htmlFor={`${trigger.key}-${field.key}`} className="text-xs text-mid">{field.label}</Label>
                           <Switch
+                            id={`${trigger.key}-${field.key}`}
                             checked={Boolean(state.config[field.key] ?? field.default)}
+                            disabled={saving}
                             onCheckedChange={(checked) =>
-                              updateLocal(trigger.key, {
-                                config: { ...state.config, [field.key]: checked },
-                              })
+                              save(
+                                trigger,
+                                { ...state, config: { ...state.config, [field.key]: checked } },
+                                'Configuração salva',
+                              )
                             }
                           />
                         </div>
@@ -447,21 +545,31 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
 
                     return (
                       <div key={field.key} className="space-y-1.5">
-                        <Label className="text-xs text-mid">{field.label}</Label>
+                        <Label htmlFor={`${trigger.key}-${field.key}`} className="text-xs text-mid">{field.label}</Label>
                         <Input
+                          id={`${trigger.key}-${field.key}`}
                           type="number"
+                          inputMode="numeric"
                           min={1}
                           max={field.max}
                           className="w-32"
+                          disabled={saving}
                           value={(state.config[field.key] as number) ?? field.default}
                           onChange={(e) =>
-                            updateLocal(trigger.key, {
+                            editLocal(trigger.key, {
                               config: {
                                 ...state.config,
                                 [field.key]: Math.min(field.max, Math.max(1, parseInt(e.target.value) || field.default)),
                               },
                             })
                           }
+                          onBlur={() => saveConfigIfChanged(trigger)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault()
+                              saveConfigIfChanged(trigger)
+                            }
+                          }}
                         />
                       </div>
                     )
@@ -471,21 +579,6 @@ export function WhatsAppAutomations({ mode }: WhatsAppAutomationsProps) {
             </div>
           )
         })}
-      </div>
-
-      <div className="flex justify-end">
-        <Button
-          onClick={handleSave}
-          disabled={saving || dirty.size === 0}
-          className="bg-forest text-cream hover:bg-sage"
-        >
-          {saving ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Save className="size-4" />
-          )}
-          Salvar Automações
-        </Button>
       </div>
     </div>
   )

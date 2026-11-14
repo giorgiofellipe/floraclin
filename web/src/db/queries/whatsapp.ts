@@ -850,6 +850,23 @@ export async function upsertAutomation(
   return created
 }
 
+/** On for every new clinic; existing clinics keep what they chose. */
+const DEFAULT_ON_AUTOMATIONS = [
+  'appointment_confirmation',
+  'payment_reminder',
+  'post_procedure_care',
+] as const
+
+export async function provisionDefaultAutomations(
+  tx: Pick<typeof db, 'insert'>,
+  tenantId: string,
+): Promise<void> {
+  const now = new Date()
+  await tx.insert(whatsappAutomations).values(
+    DEFAULT_ON_AUTOMATIONS.map((trigger) => ({ tenantId, trigger, enabled: true, firstEnabledAt: now })),
+  )
+}
+
 export async function getAutomationUsingTemplate(
   tenantId: string,
   templateId: string,

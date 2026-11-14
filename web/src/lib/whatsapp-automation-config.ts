@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { formatBrTime } from '@/lib/dates'
 
 export const AUTOMATION_DAYS_MAX = 30
 
@@ -45,4 +46,26 @@ export function parseAutomationConfig<T extends AutomationTrigger>(
 
 export function automationConfigDefaults<T extends AutomationTrigger>(trigger: T): AutomationConfig<T> {
   return parseAutomationConfig(trigger, {})
+}
+
+/** São Paulo clock time each cron automation runs; the vercel.json schedules are the same times in UTC. */
+export const AUTOMATION_RUN_TIME_BR = {
+  appointment_confirmation: '06:30',
+  payment_reminder: '09:00',
+  follow_up: '09:30',
+  pre_procedure_instructions: '10:30',
+} as const satisfies Partial<Record<AutomationTrigger, string>>
+
+export type ScheduledAutomationTrigger = keyof typeof AUTOMATION_RUN_TIME_BR
+
+/** "06:30" -> "6h30", "09:00" -> "9h". */
+export function formatRunTime(trigger: ScheduledAutomationTrigger): string {
+  const [hours, minutes] = AUTOMATION_RUN_TIME_BR[trigger].split(':')
+  return `${Number(hours)}h${minutes === '00' ? '' : minutes}`
+}
+
+/** When the next daily run happens, e.g. "hoje às 9h" or "amanhã às 6h30". */
+export function nextAutomationRun(trigger: ScheduledAutomationTrigger, now: Date = new Date()): string {
+  const day = formatBrTime(now) < AUTOMATION_RUN_TIME_BR[trigger] ? 'hoje' : 'amanhã'
+  return `${day} às ${formatRunTime(trigger)}`
 }
