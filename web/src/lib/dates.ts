@@ -12,6 +12,7 @@
 
 import { format } from 'date-fns'
 import { formatInTimeZone, fromZonedTime } from 'date-fns-tz'
+import { ptBR } from 'date-fns/locale'
 
 export const BR_TZ = 'America/Sao_Paulo'
 
@@ -90,6 +91,12 @@ export function formatBrDayMonth(date: Date | string): string {
 /** `dd/MM/yyyy` of an instant in São Paulo, e.g. "03/11/2026". */
 export function formatBrDate(date: Date | string): string {
   return formatInTimeZone(new Date(date), BR_TZ, 'dd/MM/yyyy')
+}
+
+/** Long BR date of an instant, e.g. "Sábado, 14 de novembro de 2026". */
+export function formatBrLongDate(date: Date): string {
+  const text = formatInTimeZone(date, BR_TZ, "EEEE, d 'de' MMMM 'de' yyyy", { locale: ptBR })
+  return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
 export function brToday(): string {

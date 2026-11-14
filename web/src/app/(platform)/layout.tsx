@@ -5,6 +5,7 @@ import { CookiePreferencesLink } from '@/components/marketing/cookie-consent-ban
 import { AccountBanners } from '@/components/layout/account-banners'
 import { InstallBanner } from '@/components/layout/install-banner'
 import { PlatformFooter } from '@/components/layout/platform-chrome'
+import { QuickCreateBoundary } from '@/components/layout/quick-create'
 import Link from 'next/link'
 import { getAuthContext, getUserTenants } from '@/lib/auth'
 import { getSubscription, listPlans } from '@/db/queries/subscriptions'
@@ -134,7 +135,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         impersonatingTenantName={impersonatingTenantName}
         whatsappEnabled={isWhatsAppEnabled(settings)}
       />
-      <div className="flex min-h-screen flex-col md:pl-[200px]">
+      <div className="flex min-h-screen flex-col pb-(--bottom-nav-h) md:pl-[200px]">
         <Header
           userName={auth.fullName}
           userEmail={auth.email}
@@ -154,7 +155,9 @@ export default async function PlatformLayout({ children }: { children: React.Rea
           unconfirmedEmail={auth.emailVerified === false ? auth.email : null}
         />
         <InstallBanner />
-        <main className="flex-1 p-4 md:p-6">{children}</main>
+        <main className="flex-1 p-4 md:p-6">
+          <QuickCreateBoundary>{children}</QuickCreateBoundary>
+        </main>
         <PlatformFooter>
           <Link href="https://floraclin.com.br/privacidade" className="hover:text-sage">
             Privacidade

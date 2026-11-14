@@ -30,7 +30,7 @@ import {
   RefreshCwIcon,
   CircleDotIcon,
 } from 'lucide-react'
-import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useReadOnly } from '@/components/layout/subscription-access'
 
 interface Patient {
   id: string
@@ -112,7 +112,10 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   const page = parseInt(searchParams.get('page') ?? '1', 10)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const readOnly = useReadOnly()
+  const [showPaymentForm, setShowPaymentForm] = useState(
+    () => !defaultPatientId && !readOnly && searchParams.get('novo') === '1',
+  )
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [renegDialogOpen, setRenegDialogOpen] = useState(false)
   // Set when Renegociar comes from one row's menu instead of the selection.

@@ -13,50 +13,10 @@ import { UserMenu } from './user-menu'
 import { HelpMenu } from './help-menu'
 import { MobileSidebarContent, type TenantOption } from './sidebar'
 import { ReadOnlyBadge } from '@/components/layout/expired-paywall'
-
-// ─── Page Title Mapping ───────────────────────────────────────────
-
-function getPageTitle(pathname: string): { title: string; subtitle?: string } {
-  const now = new Date()
-  const weekdays = ['Domingo', 'Segunda-feira', 'Ter\u00e7a-feira', 'Quarta-feira', 'Quinta-feira', 'Sexta-feira', 'S\u00e1bado']
-  const months = ['janeiro', 'fevereiro', 'mar\u00e7o', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
-  const dateStr = `${weekdays[now.getDay()]}, ${now.getDate()} de ${months[now.getMonth()]} de ${now.getFullYear()}`
-
-  if (pathname === '/dashboard' || pathname === '/') {
-    return { title: 'Painel', subtitle: dateStr }
-  }
-  if (pathname === '/agenda') {
-    return { title: 'Agenda', subtitle: dateStr }
-  }
-  if (pathname === '/pacientes') {
-    return { title: 'Pacientes' }
-  }
-  if (pathname.startsWith('/pacientes/')) {
-    return { title: 'Pacientes', subtitle: 'Detalhes do paciente' }
-  }
-  if (pathname === '/financeiro') {
-    return { title: 'Financeiro' }
-  }
-  if (pathname === '/whatsapp') {
-    return { title: 'WhatsApp' }
-  }
-  if (pathname === '/crm') {
-    return { title: 'CRM' }
-  }
-  if (pathname === '/configuracoes') {
-    return { title: 'Configura\u00e7\u00f5es' }
-  }
-  if (pathname === '/admin/clinicas') {
-    return { title: 'Cl\u00ednicas' }
-  }
-  if (pathname === '/admin/usuarios') {
-    return { title: 'Usu\u00e1rios' }
-  }
-  if (pathname === '/admin/assinaturas') {
-    return { title: 'Assinaturas' }
-  }
-  return { title: '' }
-}
+import { getPageTitle } from './page-title'
+import { PatientSearch } from './patient-search'
+import { QuickCreateMenu } from './quick-create'
+import { BottomNav } from './bottom-nav'
 
 interface HeaderProps {
   userName: string
@@ -74,7 +34,7 @@ interface HeaderProps {
 export function Header({ userName, userEmail, userId, userRole, clinicName, tenants, activeTenantId, isPlatformAdmin, impersonatingTenantName, whatsappEnabled }: HeaderProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
-  const { title, subtitle } = getPageTitle(pathname)
+  const { title, subtitle } = getPageTitle(pathname, new Date())
 
   // Close mobile menu on route change
   useEffect(() => {
@@ -103,15 +63,15 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
       <header
         // Bar height comes from --app-header-h (globals.css), shared with
         // full-height pages; the top padding keeps it clear of the notch.
-        className="sticky top-0 z-10 flex h-[calc(var(--app-header-h)+env(safe-area-inset-top))] items-center justify-between border-b border-[#E8ECEF] bg-white px-4 pt-[env(safe-area-inset-top)] md:px-6"
+        className="sticky top-0 z-10 flex h-[calc(var(--app-header-h)+env(safe-area-inset-top))] items-center justify-between border-b border-topbar-border bg-white px-4 pt-[env(safe-area-inset-top)] md:px-6"
         data-testid="header"
       >
         {/* Left: hamburger (mobile) + page title */}
         <div className="flex min-w-0 flex-1 items-center gap-1 md:gap-3">
           <Button
             variant="ghost"
-            size="icon-sm"
-            className="md:hidden"
+            size="icon"
+            className="-ml-2 size-11 md:hidden"
             onClick={() => setMobileMenuOpen(true)}
             aria-label="Abrir menu"
             data-testid="header-mobile-menu"
@@ -119,21 +79,23 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
             <Menu className="size-5" />
           </Button>
           <div className="hidden min-w-0 md:block">
-            <h2 className="text-[16px] font-medium leading-tight text-[#2A2A2A]" style={{ fontFamily: 'var(--font-sans)' }}>
+            <h2 className="font-sans text-base font-medium leading-tight text-charcoal">
               {title}
             </h2>
             {subtitle && (
-              <p className="text-[12px] leading-tight text-[#7A7A7A]">{subtitle}</p>
+              <p className="text-xs leading-tight text-mid-dark">{subtitle}</p>
             )}
           </div>
-          {/* Mobile: centered title */}
-          <div className="min-w-0 [overflow-wrap:anywhere] md:hidden">
-            <h2 className="text-[15px] font-medium text-[#2A2A2A]">{title}</h2>
+          <div className="min-w-0 md:hidden">
+            <h2 className="truncate text-[15px] font-medium text-charcoal" data-testid="header-title-mobile">{title}</h2>
           </div>
         </div>
 
-        {/* Right: help menu + user avatar */}
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1 md:gap-2">
+          <PatientSearch />
+          <div className="hidden md:block">
+            <QuickCreateMenu />
+          </div>
           <ReadOnlyBadge />
           <HelpMenu />
           <UserMenu userName={userName} userEmail={userEmail} />
@@ -157,6 +119,8 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
           />
         </SheetContent>
       </Sheet>
+
+      <BottomNav onOpenMenu={() => setMobileMenuOpen(true)} menuOpen={mobileMenuOpen} />
     </>
   )
 }
