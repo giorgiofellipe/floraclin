@@ -31,7 +31,7 @@ import {
   CircleDotIcon,
 } from 'lucide-react'
 import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
-import { useClearCreateParams } from '@/hooks/use-clear-create-params'
+import { useCreateParam } from '@/hooks/use-create-param'
 import { CHARGE_CREATE_ROLES } from '@/lib/create-roles'
 
 interface Patient {
@@ -116,13 +116,13 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const { readOnly, role } = useSubscriptionAccess()
   const canCreateCharge = CHARGE_CREATE_ROLES.includes(role)
-  const clearCreateParams = useClearCreateParams()
-  const [showPaymentForm, setShowPaymentForm] = useState(
-    () => canCreateCharge && !defaultPatientId && !readOnly && searchParams.get('novo') === '1',
-  )
+  const createParam = useCreateParam('novo', '1')
+  const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const paymentFormOpen =
+    showPaymentForm || (createParam.active && canCreateCharge && !defaultPatientId && !readOnly)
   const closePaymentForm = () => {
     setShowPaymentForm(false)
-    clearCreateParams()
+    createParam.clear()
   }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [renegDialogOpen, setRenegDialogOpen] = useState(false)
@@ -656,9 +656,9 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
       )}
 
       {/* New charge form */}
-      {showPaymentForm && (
+      {paymentFormOpen && (
         <PaymentForm
-          open={showPaymentForm}
+          open={paymentFormOpen}
           onClose={closePaymentForm}
           defaultPatient={defaultPatient}
           onSuccess={() => {

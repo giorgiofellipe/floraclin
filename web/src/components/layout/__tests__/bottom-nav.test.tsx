@@ -49,13 +49,6 @@ describe('BottomNav', () => {
     expect(screen.queryByRole('navigation', { name: 'Navegação principal' })).not.toBeInTheDocument()
   })
 
-  it('stays out of the way of the sticky photo bar on the patient Fotos section only', () => {
-    route.pathname = '/pacientes/p1'
-    route.search = 'tab=fotos'
-    renderNav()
-    expect(screen.queryByRole('navigation', { name: 'Navegação principal' })).not.toBeInTheDocument()
-  })
-
   it('marks the section the user is in, including its sub-routes', () => {
     route.pathname = '/pacientes/p1'
     renderNav()
@@ -98,7 +91,7 @@ describe('BottomNav', () => {
     await openCreateMenu()
     await userEvent.click(screen.getByRole('menuitem', { name: 'Novo paciente' }))
     const [url] = route.push.mock.calls[0]
-    expect(url).toMatch(/^\/pacientes\?novo=1&qc=\d+$/)
+    expect(url).toBe('/pacientes?novo=1')
   })
 
   it('opens the paywall instead of a create form in read-only mode', async () => {

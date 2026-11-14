@@ -31,7 +31,7 @@ import {
 } from '@/components/ui/dialog'
 import { PlusIcon, SearchIcon, PencilIcon, TrashIcon, ChevronLeftIcon, ChevronRightIcon, UsersIcon } from 'lucide-react'
 import { ReadOnlyGuard, useSubscriptionAccess, useWriteGuard } from '@/components/layout/subscription-access'
-import { useClearCreateParams } from '@/hooks/use-clear-create-params'
+import { useCreateParam } from '@/hooks/use-create-param'
 
 interface PatientListProps {
   result: PaginatedResult<Patient>
@@ -44,19 +44,17 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
   const searchParams = useSearchParams()
   const deletePatientMutation = useDeletePatient()
   const [searchValue, setSearchValue] = useState(initialSearch)
-  const novoParam = searchParams.get('novo')
-  const nomeParam = searchParams.get('nome')
-  const telefoneParam = searchParams.get('telefone')
-  // `?novo=1` comes from the trial checklist and a lifecycle email; in
-  // read-only mode it must not open a form whose save would 402.
+  // `?novo=1` comes from quick create, the trial checklist and a lifecycle
+  // email; in read-only mode it must not open a form whose save would 402.
   const { readOnly } = useSubscriptionAccess()
   const guardWrite = useWriteGuard()
-  const clearCreateParams = useClearCreateParams()
-  const [formOpen, setFormOpen] = useState(novoParam === '1' && !readOnly)
+  const createParam = useCreateParam('novo', '1', ['nome', 'telefone'])
+  const [formOpen, setFormOpen] = useState(false)
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null)
-  const [prefillData] = useState(
-    novoParam === '1' ? { fullName: nomeParam ?? '', phone: telefoneParam ?? '' } : null
-  )
+  const createFromUrl = createParam.active && !readOnly && !formOpen
+  const prefillData = createFromUrl
+    ? { fullName: searchParams.get('nome') ?? '', phone: searchParams.get('telefone') ?? '' }
+    : null
   const [deletePatient, setDeletePatient] = useState<Patient | null>(null)
   const isPending = deletePatientMutation.isPending
 
@@ -265,15 +263,15 @@ export function PatientList({ result, search: initialSearch = '', isFetching = f
 
       {/* Patient Form Sheet */}
       <PatientForm
-        open={formOpen}
+        open={formOpen || createFromUrl}
         onOpenChange={(open) => {
           setFormOpen(open)
           if (!open) {
             setEditingPatient(null)
-            clearCreateParams()
+            createParam.clear()
           }
         }}
-        patient={editingPatient}
+        patient={createFromUrl ? null : editingPatient}
         prefill={prefillData ?? undefined}
       />
 

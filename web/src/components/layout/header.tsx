@@ -105,7 +105,7 @@ export function Header({ userName, userEmail, userId, userRole, clinicName, tena
 
       {/* Mobile sidebar sheet */}
       <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-        <SheetContent side="left" showCloseButton={false} className="w-[200px] p-0">
+        <SheetContent side="left" showCloseButton={false} className="w-(--app-sidebar-w) p-0">
           <SheetTitle className="sr-only">Menu de navega\u00e7\u00e3o</SheetTitle>
           <MobileSidebarContent
             onNavigate={() => setMobileMenuOpen(false)}

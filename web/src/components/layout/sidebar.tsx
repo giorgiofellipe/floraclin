@@ -454,7 +454,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     <aside
       // Left edge follows the body's notch padding (static position); top and
       // bottom pad for the notch / home indicator (viewport-fit=cover).
-      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 md:pt-[env(safe-area-inset-top)] md:pb-[env(safe-area-inset-bottom)] bg-white border-r border-[#E8ECEF]"
+      className="hidden md:flex md:w-(--app-sidebar-w) md:flex-col md:fixed md:inset-y-0 md:pt-[env(safe-area-inset-top)] md:pb-[env(safe-area-inset-bottom)] bg-white border-r border-[#E8ECEF]"
       data-testid="sidebar"
     >
       <div className="relative flex flex-1 flex-col min-h-0">

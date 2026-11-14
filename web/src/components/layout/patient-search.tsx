@@ -24,12 +24,11 @@ export function PatientSearch() {
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState('')
   const debounced = useDebounced(query, 250)
-  const { data: results, isFetching, isError } = usePatientSearch(debounced, { enabled: open })
+  const { data: results, isFetching, isError, refetch } = usePatientSearch(debounced, { enabled: open })
   const shortcut = useSyncExternalStore(subscribeNoop, () => (isMac() ? '⌘K' : 'Ctrl K'), () => 'Ctrl K')
   const ready = debounced.trim().length >= 2
   let hint: string | null = null
   if (!ready) hint = 'Digite pelo menos 2 caracteres.'
-  else if (isError) hint = 'Não foi possível buscar. Tente novamente.'
   else if (isFetching && !results) hint = 'Buscando...'
 
   useEffect(() => {
@@ -93,9 +92,16 @@ export function PatientSearch() {
             data-testid="patient-search-input"
           />
           <CommandList>
-            {hint ? (
-              <p role="status" className="py-6 text-center text-sm text-mid-dark">{hint}</p>
-            ) : (
+            {hint && <p role="status" className="py-6 text-center text-sm text-mid-dark">{hint}</p>}
+            {!hint && isError && (
+              <div role="alert" className="flex flex-col items-center gap-2 py-5 text-sm text-mid-dark">
+                Não foi possível buscar. Tente novamente.
+                <Button variant="outline" size="sm" className="min-h-11 md:min-h-0" onClick={() => refetch()}>
+                  Buscar de novo
+                </Button>
+              </div>
+            )}
+            {!hint && !isError && (
               <>
                 <CommandEmpty>Nenhum paciente encontrado.</CommandEmpty>
                 {results?.map((p) => (

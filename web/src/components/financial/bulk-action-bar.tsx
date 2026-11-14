@@ -48,7 +48,7 @@ export function BulkActionBar({
         data-testid="bulk-action-bar"
         className={cn(
           // Sits on the phone bottom nav, or pads the home indicator itself (viewport-fit=cover).
-          'fixed bottom-(--bottom-nav-offset) left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] z-40 md:left-[calc(200px+env(safe-area-inset-left))]',
+          'fixed bottom-(--bottom-nav-offset) left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)] z-40 md:left-[calc(var(--app-sidebar-w)+env(safe-area-inset-left))]',
           'border-t border-sage/20 bg-white shadow-[0_-4px_12px_rgba(0,0,0,0.08)]',
           // Phones stack the count over the actions so they never overflow at 375px.
           'flex flex-col gap-2 px-4 pt-3 pb-[max(0.75rem,calc(0.75rem+env(safe-area-inset-bottom)-var(--bottom-nav-offset)))]',

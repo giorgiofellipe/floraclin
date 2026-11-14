@@ -75,6 +75,8 @@
      inset it pads itself with. Full-height screens such as the WhatsApp inbox
      subtract it. */
   --app-header-h: 52px;
+  /* Desktop sidebar (components/layout/sidebar.tsx). */
+  --app-sidebar-w: 200px;
   /* Phone bottom nav (components/layout/bottom-nav.tsx), excluding the
      home-indicator inset; 0 on routes and widths without it. */
   --bottom-nav-bar-h: 56px;

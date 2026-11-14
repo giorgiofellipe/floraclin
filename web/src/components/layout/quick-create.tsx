@@ -1,6 +1,5 @@
 'use client'
 
-import { Fragment, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Banknote, CalendarPlus, Plus, UserPlus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -22,12 +21,6 @@ const QUICK_CREATE_ITEMS = [
 
 type QuickCreateItem = (typeof QUICK_CREATE_ITEMS)[number]
 
-// The target pages open their form from the URL only on mount. A fresh `qc`
-// on every pick remounts the page (QuickCreateBoundary), so the form also
-// opens when the user is already on that page; the page clears it on close
-// (useClearCreateParams).
-const NONCE_PARAM = 'qc'
-
 export function useQuickCreate() {
   const router = useRouter()
   const pathname = usePathname()
@@ -41,18 +34,9 @@ export function useQuickCreate() {
       // On the target page already: keep its date, view and filters.
       const params = new URLSearchParams(targetPath === pathname ? searchParams.toString() : '')
       new URLSearchParams(targetQuery).forEach((value, key) => params.set(key, value))
-      params.set(NONCE_PARAM, String(Date.now()))
       router.push(`${targetPath}?${params}`)
     })()
   return { items, open }
-}
-
-export function QuickCreateBoundary({ children }: { children: React.ReactNode }) {
-  const nonce = useSearchParams().get(NONCE_PARAM)
-  // Latched: pages that later rewrite their URL without `qc` must not remount.
-  const [key, setKey] = useState(nonce ?? '')
-  if (nonce && nonce !== key) setKey(nonce)
-  return <Fragment key={key}>{children}</Fragment>
 }
 
 export function QuickCreateMenuItems({ items, onPick }: { items: QuickCreateItem[]; onPick: (item: QuickCreateItem) => void }) {

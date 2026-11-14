@@ -49,7 +49,7 @@ import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
 import type { Role } from '@/types'
 import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
-import { useClearCreateParams } from '@/hooks/use-clear-create-params'
+import { useCreateParam } from '@/hooks/use-create-param'
 
 type ViewType = 'day' | 'week' | 'month'
 
@@ -82,7 +82,6 @@ interface CalendarViewProps {
   procedureTypes: ProcedureType[]
   initialAppointments: AppointmentWithDetails[]
   calendarBlocks?: CalendarBlockRow[]
-  autoOpenNew?: boolean
   autoOpenAppointmentId?: string
   defaultPatient?: { id: string; fullName: string }
   role: Role
@@ -126,7 +125,6 @@ export function CalendarView({
   procedureTypes,
   initialAppointments,
   calendarBlocks = [],
-  autoOpenNew,
   autoOpenAppointmentId,
   defaultPatient,
   role,
@@ -147,11 +145,13 @@ export function CalendarView({
   const [editingAppointment, setEditingAppointment] = React.useState<AppointmentWithDetails | null>(
     () => initialAppointments.find((a) => a.id === autoOpenAppointmentId) ?? null
   )
-  // `?open=new` deep links (checklist, lifecycle email) open nothing in
-  // read-only mode; an existing appointment still opens for reading.
-  const [formOpen, setFormOpen] = React.useState((!!autoOpenNew && !readOnly) || !!editingAppointment)
-  const [defaultFormDate, setDefaultFormDate] = React.useState<string>(autoOpenNew ? initialDate : '')
+  const [formOpen, setFormOpen] = React.useState(!!editingAppointment)
+  const [defaultFormDate, setDefaultFormDate] = React.useState<string>('')
   const [defaultFormTime, setDefaultFormTime] = React.useState<string>('')
+  // `?open=new` (deep links, quick create) opens nothing in read-only mode;
+  // an existing appointment still opens for reading.
+  const createParam = useCreateParam('open', 'new', ['patient', 'patientName'])
+  const createFromUrl = createParam.active && !readOnly && !formOpen
 
   // Context menu state
   const [contextMenu, setContextMenu] = React.useState<{
@@ -374,14 +374,14 @@ export function CalendarView({
     updateUrl(newDate, 'day', practitionerId)
   }
 
-  const clearCreateParams = useClearCreateParams()
+  const clearCreateParam = createParam.clear
   const handleFormOpenChange = React.useCallback((open: boolean) => {
     setFormOpen(open)
     if (!open) {
       setEditingAppointment(null)
-      clearCreateParams()
+      clearCreateParam()
     }
-  }, [clearCreateParams])
+  }, [clearCreateParam])
 
   // After mutations, React Query invalidation handles refetch automatically
   const handleFormSaved = React.useCallback(() => {
@@ -636,14 +636,14 @@ export function CalendarView({
 
       {/* Appointment form dialog */}
       <AppointmentForm
-        open={formOpen}
+        open={formOpen || createFromUrl}
         onOpenChange={handleFormOpenChange}
         onSaved={handleFormSaved}
-        appointment={editingAppointment}
+        appointment={createFromUrl ? null : editingAppointment}
         practitioners={practitioners}
         procedureTypes={procedureTypes}
-        defaultDate={defaultFormDate}
-        defaultStartTime={defaultFormTime}
+        defaultDate={createFromUrl ? format(currentDate, 'yyyy-MM-dd') : defaultFormDate}
+        defaultStartTime={createFromUrl ? DEFAULT_START_TIME : defaultFormTime}
         defaultPractitionerId={practitionerId !== 'all' ? practitionerId : undefined}
         defaultPatient={defaultPatient}
       />

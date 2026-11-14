@@ -1,7 +1,8 @@
 /**
- * The dashboard, the trial checklist and a lifecycle email link to
- * NEW_APPOINTMENT_PATH. The agenda must read that URL as "open the
- * new-appointment form"; the dashboard once linked a param the agenda ignored.
+ * The dashboard, quick create, the trial checklist and a lifecycle email link
+ * to NEW_APPOINTMENT_PATH. CalendarView opens the form from that param
+ * (calendar-view-deep-link.test.tsx); the page must not also read its value
+ * as an appointment id to open.
  */
 import { describe, expect, it, vi } from 'vitest'
 import { render } from '@testing-library/react'
@@ -28,9 +29,9 @@ vi.mock('@/components/scheduling/calendar-view', () => ({
 import { AgendaPageClient } from '../agenda-page-client'
 
 describe('agenda new-appointment deep link', () => {
-  it('opens the new-appointment form for NEW_APPOINTMENT_PATH', () => {
+  it('does not treat NEW_APPOINTMENT_PATH as an appointment to open', () => {
     render(<AgendaPageClient role="owner" userId="u1" />)
 
-    expect(calendarProps.current).toMatchObject({ autoOpenNew: true, autoOpenAppointmentId: undefined })
+    expect(calendarProps.current).toMatchObject({ autoOpenAppointmentId: undefined })
   })
 })

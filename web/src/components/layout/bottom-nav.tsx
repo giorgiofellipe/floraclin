@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname, useSearchParams } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { Banknote, Calendar, Menu, Plus, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import {
@@ -11,19 +11,18 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { QuickCreateMenuItems, useQuickCreate } from './quick-create'
 
-// Screens with their own bottom bar or a full-height layout: the atendimento
-// wizard, the procedure form, the face diagram editor, the WhatsApp inbox
-// (composer) and the patient photos section (sticky compare/upload bar).
-const HIDDEN_ON: Array<{ path: RegExp; tab?: string }> = [
-  { path: /^\/pacientes\/[^/]+\/atendimento(\/|$)/ },
-  { path: /^\/pacientes\/[^/]+\/procedimentos\// },
-  { path: /^\/pacientes\/[^/]+\/diagramas\// },
-  { path: /^\/whatsapp(\/|$)/ },
-  { path: /^\/pacientes\/[^/]+$/, tab: 'fotos' },
+// Routes with their own fixed bottom bar or a full-height layout: the
+// atendimento wizard, the procedure form, the face diagram editor and the
+// WhatsApp inbox (composer at the bottom).
+const HIDDEN_ON = [
+  /^\/pacientes\/[^/]+\/atendimento(\/|$)/,
+  /^\/pacientes\/[^/]+\/procedimentos\//,
+  /^\/pacientes\/[^/]+\/diagramas\//,
+  /^\/whatsapp(\/|$)/,
 ]
 
-function hasBottomNav(pathname: string, tab: string | null) {
-  return !HIDDEN_ON.some((rule) => rule.path.test(pathname) && (!rule.tab || rule.tab === tab))
+function hasBottomNav(pathname: string) {
+  return !HIDDEN_ON.some((re) => re.test(pathname))
 }
 
 const TABS = [
@@ -37,9 +36,8 @@ const ITEM_CLASS =
 
 export function BottomNav({ onOpenMenu, menuOpen }: { onOpenMenu: () => void; menuOpen: boolean }) {
   const pathname = usePathname()
-  const tab = useSearchParams().get('tab')
   const { items, open } = useQuickCreate()
-  if (!hasBottomNav(pathname, tab)) return null
+  if (!hasBottomNav(pathname)) return null
 
   const activeHref = TABS.find((t) => pathname === t.href || pathname.startsWith(`${t.href}/`))?.href
   const moreActive = !activeHref || menuOpen
