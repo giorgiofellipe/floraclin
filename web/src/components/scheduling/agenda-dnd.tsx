@@ -41,6 +41,9 @@ const CLICK_AFTER_DRAG_MS = 250
 const MOUSE_DRAG_DISTANCE_PX = 6
 const TOUCH_DRAG_DELAY_MS = 300
 const TOUCH_DRAG_TOLERANCE_PX = 8
+// dnd-kit's default edge band (20% of the grid) and speed ran a phone grid to its end in half a
+// second when a finger drifted toward the bottom; a thinner band and slower scroll stay controllable.
+const AUTO_SCROLL = { threshold: { x: 0.08, y: 0.08 }, acceleration: 2 }
 
 /** Drag to move appointments on the grid, snapping to day columns and half hours. */
 export function AgendaDnd({
@@ -94,6 +97,7 @@ export function AgendaDnd({
       <DndContext
         sensors={sensors}
         modifiers={[snapModifier]}
+        autoScroll={AUTO_SCROLL}
         onDragStart={() => setDragging(true)}
         onDragCancel={() => setDragging(false)}
         onDragEnd={handleDragEnd}
