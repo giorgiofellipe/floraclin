@@ -324,7 +324,7 @@ export function WhatsAppSettingsForm({ initialSettings }: WhatsAppSettingsFormPr
           <DialogHeader>
             <DialogTitle>Voltar para o número do FloraClin?</DialogTitle>
             <DialogDescription>
-              As mensagens passam a sair pelo número compartilhado do FloraClin e usam os créditos do plano. Os dados do número próprio ficam salvos para você reconectar depois.
+              Todas as mensagens, inclusive as automáticas, passam a sair pelo número compartilhado do FloraClin, com os textos padrão do FloraClin, e usam os créditos do plano. As automações ativas continuam ativas. Seus templates e os dados do número próprio ficam salvos para você reconectar depois.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

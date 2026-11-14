@@ -82,33 +82,33 @@ export async function PUT(request: Request) {
         )
       }
 
-      // own_whatsapp_number was enforced only by a `disabled` prop on the
-      // radio in whatsapp-settings-form. This route took whatsapp_mode
-      // straight from the body, so one request moved a free tenant onto its
-      // own Meta credentials: getTemplateForTenant branches on this value, so
-      // the tenant leaves the shared FloraClin number entirely. The paid
-      // feature was a greyed-out button.
-      if (parsed.data.whatsapp_mode === 'own') {
-        const allowed = await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number')
-        if (!allowed) {
+      // Only the keys sent are written, so a role change cannot overwrite a
+      // connection saved from another tab (updateTenantSettings merges keys).
+      const settingsUpdate: Settings = Object.fromEntries(
+        Object.entries(parsed.data).filter(([key, value]) => value !== undefined && (key !== 'whatsapp_access_token' || value)),
+      )
+
+      const credentialKeys = ['whatsapp_phone_number_id', 'whatsapp_business_account_id', 'whatsapp_access_token']
+      const changesCredentials = credentialKeys.some((key) => key in settingsUpdate!)
+      if (changesCredentials || 'whatsapp_mode' in settingsUpdate!) {
+        const current = await getTenant(ctx.tenantId)
+        const currentSettings = current?.settings as Settings
+        const next = { ...currentSettings, ...settingsUpdate }
+
+        // The plan is checked only when the clinic moves onto its own number or
+        // changes its credentials, never on the way back to FloraClin or on a
+        // role change: a downgraded own-number clinic must still be able to leave.
+        // getTemplateForTenant branches on whatsapp_mode, so this gate is what
+        // keeps a free tenant off its own Meta credentials.
+        const entersOwnNumber = next.whatsapp_mode === 'own' && (currentSettings?.whatsapp_mode !== 'own' || changesCredentials)
+        if (entersOwnNumber && !(await checkPlanFeature(ctx.tenantId, 'own_whatsapp_number'))) {
           return NextResponse.json(
             { error: 'Seu plano não inclui número próprio de WhatsApp. Faça upgrade para ativar.' },
             { status: 402 },
           )
         }
-      }
 
-      // Only the keys sent are written, so a role change cannot overwrite a
-      // connection saved from another tab (updateTenantSettings merges keys).
-      const settingsUpdate = Object.fromEntries(
-        Object.entries(parsed.data).filter(([key, value]) => value !== undefined && (key !== 'whatsapp_access_token' || value)),
-      )
-
-      const touchesConnection = ['whatsapp_mode', 'whatsapp_phone_number_id', 'whatsapp_access_token'].some((key) => key in settingsUpdate)
-      if (touchesConnection) {
-        const current = await getTenant(ctx.tenantId)
-        const currentSettings = current?.settings as Settings
-        const claimError = await ownNumberClaimError(ctx.tenantId, { ...currentSettings, ...settingsUpdate }, currentSettings)
+        const claimError = await ownNumberClaimError(ctx.tenantId, next, currentSettings)
         if (claimError) return claimError
       }
 

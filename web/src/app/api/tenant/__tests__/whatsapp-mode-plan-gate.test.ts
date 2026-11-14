@@ -34,6 +34,7 @@ vi.mock('@/db/client', () => ({ db: {} }))
 vi.mock('@/db/schema', () => ({ tenants: {} }))
 
 import { PUT } from '../route'
+import { getTenant } from '@/db/queries/tenants'
 
 const CTX = { tenantId: 'tenant-1', userId: 'user-1', role: 'owner' }
 
@@ -54,6 +55,7 @@ function settingsRequest(mode: 'own' | 'floraclin') {
 beforeEach(() => {
   vi.clearAllMocks()
   requireWriteMock.mockResolvedValue({ ctx: CTX, blocked: null })
+  vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: {} } as never)
   // The route 500s on a falsy tenant, so return one.
   updateTenantSettingsMock.mockResolvedValue({ id: 'tenant-1' })
   updateTenantMock.mockResolvedValue({ id: 'tenant-1' })
@@ -110,21 +112,50 @@ describe('whatsapp_mode is gated on the plan, not on the UI', () => {
     expect(updateTenantMock).not.toHaveBeenCalled()
   })
 
-  it('saves a roles-only change for an own-number clinic whose plan lost the feature, writing nothing else', async () => {
-    checkPlanFeatureMock.mockResolvedValue(false)
+  describe('an own-number clinic whose plan lost the feature', () => {
+    const OWN = {
+      whatsapp_mode: 'own',
+      whatsapp_enabled: true,
+      whatsapp_phone_number_id: '111',
+      whatsapp_business_account_id: '222',
+      whatsapp_access_token: 'stored',
+      whatsapp_allowed_roles: ['owner'],
+    }
 
-    const res = await PUT(
-      new Request('http://localhost/api/tenant', {
+    function patch(settings: Record<string, unknown>) {
+      return PUT(new Request('http://localhost/api/tenant', {
         method: 'PUT',
-        body: JSON.stringify({
-          _action: 'whatsapp_settings',
-          settings: { whatsapp_allowed_roles: ['owner', 'financial'] },
-        }),
-      }),
-    )
+        body: JSON.stringify({ _action: 'whatsapp_settings', settings }),
+      }))
+    }
 
-    expect(res.status).toBe(200)
-    expect(updateTenantSettingsMock).toHaveBeenCalledWith('tenant-1', { whatsapp_allowed_roles: ['owner', 'financial'] })
+    beforeEach(() => {
+      checkPlanFeatureMock.mockResolvedValue(false)
+      vi.mocked(getTenant).mockResolvedValue({ id: 'tenant-1', settings: OWN } as never)
+    })
+
+    it('saves a roles-only change and writes nothing else, leaving mode and credentials as they are', async () => {
+      const res = await patch({ whatsapp_allowed_roles: ['owner', 'financial'] })
+
+      expect(res.status).toBe(200)
+      expect(checkPlanFeatureMock).not.toHaveBeenCalled()
+      expect(updateTenantSettingsMock).toHaveBeenCalledWith('tenant-1', { whatsapp_allowed_roles: ['owner', 'financial'] })
+    })
+
+    it('can switch back to the FloraClin number', async () => {
+      const res = await patch({ whatsapp_mode: 'floraclin' })
+
+      expect(res.status).toBe(200)
+      expect(checkPlanFeatureMock).not.toHaveBeenCalled()
+      expect(updateTenantSettingsMock).toHaveBeenCalledWith('tenant-1', { whatsapp_mode: 'floraclin' })
+    })
+
+    it('cannot change its own-number credentials', async () => {
+      const res = await patch({ whatsapp_mode: 'own', whatsapp_phone_number_id: '999' })
+
+      expect(res.status).toBe(402)
+      expect(updateTenantSettingsMock).not.toHaveBeenCalled()
+    })
   })
 
   it('checks the feature for the caller tenant', async () => {
