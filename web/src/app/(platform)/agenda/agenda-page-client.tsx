@@ -41,7 +41,7 @@ function getDateRange(date: Date, view: ViewType) {
   }
 }
 
-export function AgendaPageClient({ role, userId }: { role: Role; userId: string }) {
+export function AgendaPageClient({ role, userId, hasAnyAppointment = true }: { role: Role; userId: string; hasAnyAppointment?: boolean }) {
   const searchParams = useSearchParams()
   const isMobile = useIsMobile()
 
@@ -95,6 +95,7 @@ export function AgendaPageClient({ role, userId }: { role: Role; userId: string 
         autoOpenAppointmentId={openParam && !autoOpenNew ? openParam : undefined}
         role={role}
         userId={userId}
+        hasAnyAppointment={hasAnyAppointment}
         defaultPatient={patientId ? { id: patientId, fullName: patientName ?? '' } : undefined}
       />
     </div>

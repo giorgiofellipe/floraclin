@@ -4,7 +4,7 @@ import { eq, and, isNull, gte, lte, sql, or, ne, asc, desc, inArray } from 'driz
 import { CLINICAL_ROLES } from '@/lib/constants'
 import { toHhMm } from '@/lib/time-options'
 import type { AppointmentStatus, AppointmentSource } from '@/types'
-import { DEFAULT_WORKING_HOURS } from '@/lib/constants'
+import { minutesToTime, openingWindow, type WorkingHours } from '@/lib/free-slots'
 import { brToday, parseBrDate, endOfBrDay, shiftBrYmd } from '@/lib/dates'
 import { verifyTenantOwnership, verifyUserBelongsToTenant } from './helpers'
 import { getPatient } from './patients'
@@ -288,6 +288,14 @@ async function emitScheduleEvent(
 
 const RECONFIRM_ON_MOVE = ['confirmed', 'pending_reschedule']
 
+/** What a move resets, so undoing it can put the appointment back exactly as it was. */
+export interface ConfirmationState {
+  status: string
+  confirmedAt: Date | null
+  confirmationSentAt: Date | null
+  confirmationMessageId: string | null
+}
+
 export async function updateAppointment(
   tenantId: string,
   appointmentId: string,
@@ -299,13 +307,17 @@ export async function updateAppointment(
     startTime: string
     endTime: string
     notes: string
-  }>
+  }>,
+  restore?: ConfirmationState
 ) {
   const [current] = await db
     .select({
       date: appointments.date,
       startTime: appointments.startTime,
       status: appointments.status,
+      confirmedAt: appointments.confirmedAt,
+      confirmationSentAt: appointments.confirmationSentAt,
+      confirmationMessageId: appointments.confirmationMessageId,
     })
     .from(appointments)
     .where(
@@ -344,14 +356,18 @@ export async function updateAppointment(
     .update(appointments)
     .set({
       ...data,
-      ...(reschedules
-        ? { confirmationSentAt: null, confirmationMessageId: null }
-        : {}),
-      // The confirmation cron and the Confirmar/Reagendar reply handler only
-      // act on 'scheduled' rows, so a moved slot has to be confirmed again.
-      ...(reschedules && RECONFIRM_ON_MOVE.includes(current.status)
-        ? { status: 'scheduled', confirmedAt: null }
-        : {}),
+      ...(restore
+        ? restore
+        : {
+            ...(reschedules
+              ? { confirmationSentAt: null, confirmationMessageId: null }
+              : {}),
+            // The confirmation cron and the Confirmar/Reagendar reply handler only
+            // act on 'scheduled' rows, so a moved slot has to be confirmed again.
+            ...(reschedules && RECONFIRM_ON_MOVE.includes(current.status)
+              ? { status: 'scheduled', confirmedAt: null }
+              : {}),
+          }),
       updatedAt: new Date(),
     })
     .where(
@@ -363,7 +379,14 @@ export async function updateAppointment(
     )
     .returning()
 
-  return result
+  if (!result) return undefined
+  const previous: ConfirmationState = {
+    status: current.status,
+    confirmedAt: current.confirmedAt,
+    confirmationSentAt: current.confirmationSentAt,
+    confirmationMessageId: current.confirmationMessageId,
+  }
+  return { appointment: result, previous }
 }
 
 export async function updateAppointmentStatus(
@@ -411,51 +434,44 @@ export async function deleteAppointment(
   return result
 }
 
-interface WorkingHoursDay {
-  start: string
-  end: string
-  enabled: boolean
-}
-
-type WorkingHours = Record<string, WorkingHoursDay>
-
-const DAY_MAP: Record<number, string> = {
-  0: 'sun',
-  1: 'mon',
-  2: 'tue',
-  3: 'wed',
-  4: 'thu',
-  5: 'fri',
-  6: 'sat',
-}
-
 export async function getAvailableSlots(
   tenantId: string,
   practitionerId: string,
   date: string,
-  durationMin: number = 30
+  durationMin: number = 30,
+  excludeAppointmentId?: string
 ): Promise<TimeSlot[]> {
-  // Get tenant working hours
+  const byDay = await getAvailableSlotsByDay(tenantId, practitionerId, date, date, durationMin, excludeAppointmentId)
+  return byDay.get(date) ?? []
+}
+
+/** Free slots of `durationMin` on the half-hour grid for each open day from `dateFrom` to `dateTo`, in three queries. */
+export async function getAvailableSlotsByDay(
+  tenantId: string,
+  practitionerId: string,
+  dateFrom: string,
+  dateTo: string,
+  durationMin: number = 30,
+  excludeAppointmentId?: string
+): Promise<Map<string, TimeSlot[]>> {
   const tenant = await db
     .select({ workingHours: tenants.workingHours })
     .from(tenants)
     .where(eq(tenants.id, tenantId))
     .limit(1)
+  const workingHours = tenant[0]?.workingHours as WorkingHours | null
 
-  const workingHours = (tenant[0]?.workingHours as WorkingHours | null) ?? (DEFAULT_WORKING_HOURS as unknown as WorkingHours)
-
-  // Determine the day of week for the given date
-  const dateObj = new Date(`${date}T12:00:00-03:00`)
-  const dayKey = DAY_MAP[dateObj.getDay()]
-  const dayHours = dayKey ? workingHours[dayKey] : undefined
-
-  if (!dayHours || !dayHours.enabled) {
-    return []
+  const openDays: { date: string; opening: { start: number; end: number } }[] = []
+  for (let date = dateFrom; date <= dateTo; date = shiftBrYmd(date, 1)) {
+    const opening = openingWindow(date, workingHours)
+    if (opening) openDays.push({ date, opening })
   }
+  const result = new Map<string, TimeSlot[]>()
+  if (openDays.length === 0) return result
 
-  // Get existing appointments for that day
   const existing = await db
     .select({
+      date: appointments.date,
       startTime: appointments.startTime,
       endTime: appointments.endTime,
     })
@@ -464,16 +480,21 @@ export async function getAvailableSlots(
       and(
         eq(appointments.tenantId, tenantId),
         eq(appointments.practitionerId, practitionerId),
-        eq(appointments.date, date),
+        gte(appointments.date, dateFrom),
+        lte(appointments.date, dateTo),
         isNull(appointments.deletedAt),
         ne(appointments.status, 'cancelled'),
-        ne(appointments.status, 'no_show')
+        ne(appointments.status, 'no_show'),
+        // Same as checkTimeConflict: the patient asked to move, so the slot is up for grabs.
+        ne(appointments.status, 'pending_reschedule'),
+        excludeAppointmentId ? ne(appointments.id, excludeAppointmentId) : undefined
       )
     )
     .orderBy(appointments.startTime)
 
   const blocks = await db
     .select({
+      date: calendarBlocks.date,
       startTime: calendarBlocks.startTime,
       endTime: calendarBlocks.endTime,
       allDay: calendarBlocks.allDay,
@@ -483,39 +504,38 @@ export async function getAvailableSlots(
       and(
         eq(calendarBlocks.tenantId, tenantId),
         or(eq(calendarBlocks.practitionerId, practitionerId), isNull(calendarBlocks.practitionerId)),
-        eq(calendarBlocks.date, date),
+        gte(calendarBlocks.date, dateFrom),
+        lte(calendarBlocks.date, dateTo),
         ne(calendarBlocks.status, 'cancelled')
       )
     )
 
-  // Generate all possible slots within working hours
-  const slots: TimeSlot[] = []
-  const [startH, startM] = dayHours.start.split(':').map(Number)
-  const [endH, endM] = dayHours.end.split(':').map(Number)
-  const startMinutes = startH * 60 + startM
-  const endMinutes = endH * 60 + endM
+  for (const { date, opening } of openDays) {
+    const dayAppointments = existing.filter((appt) => appt.date === date)
+    const dayBlocks = blocks.filter((block) => block.date === date)
+    const slots: TimeSlot[] = []
+    for (let m = opening.start; m + durationMin <= opening.end; m += 30) {
+      const slotStart = minutesToTime(m)
+      const slotEnd = minutesToTime(m + durationMin)
 
-  for (let m = startMinutes; m + durationMin <= endMinutes; m += 30) {
-    const slotStart = `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
-    const slotEndMin = m + durationMin
-    const slotEnd = `${String(Math.floor(slotEndMin / 60)).padStart(2, '0')}:${String(slotEndMin % 60).padStart(2, '0')}`
+      const hasAppointmentConflict = dayAppointments.some((appt) => {
+        return toHhMm(appt.startTime) < slotEnd && toHhMm(appt.endTime) > slotStart
+      })
 
-    const hasAppointmentConflict = existing.some((appt) => {
-      return toHhMm(appt.startTime) < slotEnd && toHhMm(appt.endTime) > slotStart
-    })
+      const hasBlockConflict = dayBlocks.some((block) => {
+        if (block.allDay) return true
+        if (!block.startTime || !block.endTime) return false
+        return toHhMm(block.startTime) < slotEnd && toHhMm(block.endTime) > slotStart
+      })
 
-    const hasBlockConflict = blocks.some((block) => {
-      if (block.allDay) return true
-      if (!block.startTime || !block.endTime) return false
-      return toHhMm(block.startTime) < slotEnd && toHhMm(block.endTime) > slotStart
-    })
-
-    if (!hasAppointmentConflict && !hasBlockConflict) {
-      slots.push({ start: slotStart, end: slotEnd })
+      if (!hasAppointmentConflict && !hasBlockConflict) {
+        slots.push({ start: slotStart, end: slotEnd })
+      }
     }
+    result.set(date, slots)
   }
 
-  return slots
+  return result
 }
 
 export async function getAppointmentsPendingConfirmation(

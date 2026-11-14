@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server'
 import { createAuditLog } from '@/lib/audit'
 import { requireWrite } from '@/lib/write-access'
 import { syncAppointmentToGoogle } from '@/lib/google-calendar-sync'
-import { updateAppointmentStatus } from '@/db/queries/appointments'
-import { updateStatusSchema } from '@/validations/appointment'
+import { getAppointmentById, updateAppointmentStatus } from '@/db/queries/appointments'
+import { STALE_UNDO_MESSAGE, updateStatusSchema } from '@/validations/appointment'
 import type { AppointmentStatus } from '@/types'
 import { handleApiError } from '@/lib/api-error'
 import { reportCalendarFailure } from '@/lib/google-calendar'
@@ -18,12 +18,22 @@ export async function PUT(
 
     const { id } = await params
     const body = await request.json()
-    const parsed = updateStatusSchema.safeParse({ id, status: body.status })
+    const parsed = updateStatusSchema.safeParse({ id, status: body.status, expectedUpdatedAt: body.expectedUpdatedAt })
     if (!parsed.success) {
       return NextResponse.json(
         { error: 'Dados inválidos', fieldErrors: parsed.error.flatten().fieldErrors },
         { status: 400 }
       )
+    }
+
+    if (parsed.data.expectedUpdatedAt) {
+      const current = await getAppointmentById(ctx.tenantId, parsed.data.id)
+      if (!current) {
+        return NextResponse.json({ error: 'Agendamento não encontrado.' }, { status: 404 })
+      }
+      if (new Date(current.updatedAt).getTime() !== new Date(parsed.data.expectedUpdatedAt).getTime()) {
+        return NextResponse.json({ error: STALE_UNDO_MESSAGE }, { status: 409 })
+      }
     }
 
     const appointment = await updateAppointmentStatus(

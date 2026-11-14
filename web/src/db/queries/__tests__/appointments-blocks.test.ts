@@ -58,7 +58,7 @@ describe('getAvailableSlots', () => {
 
   it('treats an appointment ending at 10:00 as free for the 10:00 slot even with seconds from the database', async () => {
     // Regression: the same string comparison hid the slot after an appointment, which public booking showed as taken.
-    queue([], [{ startTime: '09:00:00', endTime: '10:00:00' }])
+    queue([], [{ date: '2026-10-12', startTime: '09:00:00', endTime: '10:00:00' }])
     const result = await getAvailableSlots('t1', 'p1', '2026-10-12', 30)
     expect(result.map((s) => s.start)).toEqual(['08:00', '08:30', '10:00', '10:30', '11:00', '11:30'])
   })
@@ -66,7 +66,7 @@ describe('getAvailableSlots', () => {
   it('returns no slots on a clinic-wide all-day block', async () => {
     // Regression: clinic-wide blocks were filtered out by an equality on the practitioner. The mock returns the
     // block either way, so the isNull spy is the proof here.
-    queue([{ startTime: null, endTime: null, allDay: true }])
+    queue([{ date: '2026-10-12', startTime: null, endTime: null, allDay: true }])
     const result = await getAvailableSlots('t1', 'p1', '2026-10-12', 30)
     expect(result).toEqual([])
     expect(isNullSpy).toHaveBeenCalledWith(calendarBlocks.practitionerId)
@@ -74,7 +74,7 @@ describe('getAvailableSlots', () => {
 
   it('treats a block ending at 10:00 as free for the 10:00 slot even with seconds from the database', async () => {
     // Regression: '10:00:00' > '10:00' is true as strings, so the adjacent slot was suppressed.
-    queue([{ startTime: '09:00:00', endTime: '10:00:00', allDay: false }])
+    queue([{ date: '2026-10-12', startTime: '09:00:00', endTime: '10:00:00', allDay: false }])
     const result = await getAvailableSlots('t1', 'p1', '2026-10-12', 30)
     expect(result.map((s) => s.start)).toEqual(['08:00', '08:30', '10:00', '10:30', '11:00', '11:30'])
   })

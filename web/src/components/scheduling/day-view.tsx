@@ -3,254 +3,61 @@
 import * as React from 'react'
 import { format } from 'date-fns'
 import { ptBR } from 'date-fns/locale'
-import { AppointmentCard } from '@/components/scheduling/appointment-card'
+import { AgendaDnd } from '@/components/scheduling/agenda-dnd'
+import { DAY_SLOT_HEIGHT } from '@/components/scheduling/grid'
+import {
+  TimeGridColumn,
+  TimeLabels,
+  type AppointmentClickHandler,
+  type BlockClickHandler,
+  type SlotClickHandler,
+} from '@/components/scheduling/time-grid-column'
 import type { AppointmentWithDetails } from '@/db/queries/appointments'
 import type { CalendarBlockRow } from '@/db/queries/calendar'
-
-const START_HOUR = 7
-const END_HOUR = 20
-const SLOT_HEIGHT_PX = 48 // height of each 30-min slot
-const HOURS = Array.from({ length: END_HOUR - START_HOUR + 1 }, (_, i) => START_HOUR + i)
+import type { Slot } from '@/hooks/mutations/use-move-appointment'
+import { openingWindow, type WorkingHours } from '@/lib/free-slots'
+import { toLocalYmd } from '@/lib/dates'
 
 interface DayViewProps {
   date: Date
   appointments: AppointmentWithDetails[]
   calendarBlocks?: CalendarBlockRow[]
-  onSlotClick?: (date: string, time: string) => void
-  onAppointmentClick?: (appointment: AppointmentWithDetails, event?: React.MouseEvent) => void
-  onBlockClick?: (block: CalendarBlockRow, event: React.MouseEvent) => void
+  workingHours: WorkingHours | null | undefined
+  canDrag: (appointment: AppointmentWithDetails) => boolean
+  onMove: (appointment: AppointmentWithDetails, slot: Slot) => void
+  onSlotClick?: SlotClickHandler
+  onAppointmentClick?: AppointmentClickHandler
+  onBlockClick?: BlockClickHandler
 }
 
-function timeToMinutes(time: string): number {
-  const [h, m] = time.split(':').map(Number)
-  return h * 60 + m
-}
-
-interface LayoutSlot {
-  appointment: AppointmentWithDetails
-  top: number
-  height: number
-  column: number
-  totalColumns: number
-}
-
-/**
- * Compute overlap layout: assign each appointment a column index and total columns
- * so overlapping appointments split horizontally (like Google Calendar).
- */
-function computeOverlapLayout(appointments: AppointmentWithDetails[]): LayoutSlot[] {
-  if (appointments.length === 0) return []
-
-  // Sort by start time, then by end time (longer first)
-  const sorted = [...appointments].sort((a, b) => {
-    const aStart = timeToMinutes(a.startTime)
-    const bStart = timeToMinutes(b.startTime)
-    if (aStart !== bStart) return aStart - bStart
-    return timeToMinutes(b.endTime) - timeToMinutes(a.endTime)
-  })
-
-  // Group overlapping appointments into clusters
-  const clusters: AppointmentWithDetails[][] = []
-  let currentCluster: AppointmentWithDetails[] = []
-  let clusterEnd = 0
-
-  for (const appt of sorted) {
-    const start = timeToMinutes(appt.startTime)
-    const end = timeToMinutes(appt.endTime)
-
-    if (currentCluster.length === 0 || start < clusterEnd) {
-      // Overlaps with current cluster
-      currentCluster.push(appt)
-      clusterEnd = Math.max(clusterEnd, end)
-    } else {
-      // New cluster
-      clusters.push(currentCluster)
-      currentCluster = [appt]
-      clusterEnd = end
-    }
-  }
-  if (currentCluster.length > 0) {
-    clusters.push(currentCluster)
-  }
-
-  // Assign columns within each cluster
-  const result: LayoutSlot[] = []
-
-  for (const cluster of clusters) {
-    const columns: number[][] = [] // columns[col] = list of end times
-
-    for (const appt of cluster) {
-      const startMin = timeToMinutes(appt.startTime)
-      const endMin = timeToMinutes(appt.endTime)
-      const gridStartMin = START_HOUR * 60
-
-      const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
-      const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
-
-      // Find first column where this appointment fits (no overlap)
-      let col = 0
-      while (col < columns.length) {
-        const lastEnd = columns[col][columns[col].length - 1]
-        if (startMin >= lastEnd) break
-        col++
-      }
-
-      if (col >= columns.length) {
-        columns.push([])
-      }
-      columns[col].push(endMin)
-
-      result.push({ appointment: appt, top, height, column: col, totalColumns: 0 })
-    }
-
-    // Set totalColumns for all items in this cluster
-    const totalCols = columns.length
-    for (const slot of result) {
-      if (cluster.includes(slot.appointment)) {
-        slot.totalColumns = totalCols
-      }
-    }
-  }
-
-  return result
-}
-
-export function DayView({ date, appointments, calendarBlocks = [], onSlotClick, onAppointmentClick, onBlockClick }: DayViewProps) {
+export function DayView({ date, appointments, calendarBlocks = [], workingHours, canDrag, onMove, onSlotClick, onAppointmentClick, onBlockClick }: DayViewProps) {
   const dateStr = format(date, 'yyyy-MM-dd')
-  const dayAppointments = appointments.filter((a) => a.date === dateStr)
-
-  const layoutSlots = React.useMemo(
-    () => computeOverlapLayout(dayAppointments),
-    [dayAppointments]
-  )
-
-  const dayBlocks = calendarBlocks.filter((b) => b.date === dateStr)
-
-  const blockSlots = React.useMemo(() => {
-    return dayBlocks.map((block) => {
-      if (block.allDay) {
-        const top = 0
-        const height = (END_HOUR - START_HOUR + 1) * 2 * SLOT_HEIGHT_PX
-        return { block, top, height }
-      }
-      if (!block.startTime || !block.endTime) return null
-      const gridStartMin = START_HOUR * 60
-      const gridEndMin = (END_HOUR + 1) * 60
-      const startMin = Math.max(timeToMinutes(block.startTime), gridStartMin)
-      const endMin = Math.min(timeToMinutes(block.endTime), gridEndMin)
-      if (startMin >= endMin) return null
-      const top = ((startMin - gridStartMin) / 30) * SLOT_HEIGHT_PX
-      const height = Math.max(((endMin - startMin) / 30) * SLOT_HEIGHT_PX, SLOT_HEIGHT_PX / 2)
-      return { block, top, height }
-    }).filter(Boolean) as { block: CalendarBlockRow; top: number; height: number }[]
-  }, [dayBlocks])
-
-  // Current time indicator
-  const now = new Date()
-  const isToday = format(now, 'yyyy-MM-dd') === dateStr
-  const currentMinutes = now.getHours() * 60 + now.getMinutes()
-  const currentTimeTop = ((currentMinutes - START_HOUR * 60) / 30) * SLOT_HEIGHT_PX
+  const dayAppointments = React.useMemo(() => appointments.filter((a) => a.date === dateStr), [appointments, dateStr])
+  const geometry = React.useMemo(() => ({ slotHeight: DAY_SLOT_HEIGHT, days: [dateStr], columnWidth: null }), [dateStr])
 
   return (
-    <div className="flex flex-col">
-      <div className="border-b border-[#E8ECEF] bg-white px-4 py-3 text-center">
-        <h3 className="text-[14px] font-medium capitalize text-[#2A2A2A] tracking-tight">
+    <AgendaDnd geometry={geometry} onMove={onMove}>
+      <div className="border-b border-topbar-border bg-white px-4 py-3 text-center">
+        <h3 className="text-[14px] font-medium tracking-tight text-charcoal first-letter:uppercase">
           {format(date, "EEEE, d 'de' MMMM", { locale: ptBR })}
         </h3>
       </div>
-
-      <div className="relative flex flex-1 overflow-auto">
-        {/* Time labels */}
-        <div className="sticky left-0 z-10 w-12 flex-shrink-0 bg-white md:w-16">
-          {HOURS.map((hour) => (
-            <div
-              key={hour}
-              className="flex items-start"
-              style={{ height: SLOT_HEIGHT_PX * 2 }}
-            >
-              <span className="pr-2 text-right md:pr-3 text-[11px] font-medium text-mid w-full -mt-2 select-none">
-                {String(hour).padStart(2, '0')}:00
-              </span>
-            </div>
-          ))}
-        </div>
-
-        {/* Grid + appointments */}
-        <div className="relative flex-1 border-l border-sage/10">
-          {/* Grid lines */}
-          {HOURS.map((hour) => (
-            <React.Fragment key={hour}>
-              <div
-                className="cursor-pointer border-b border-sage/8 transition-colors hover:bg-[#F0F7F1]/30"
-                style={{ height: SLOT_HEIGHT_PX }}
-                onClick={() =>
-                  onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:00`)
-                }
-              />
-              <div
-                className="cursor-pointer border-b border-dashed border-sage/5 transition-colors hover:bg-[#F0F7F1]/30"
-                style={{ height: SLOT_HEIGHT_PX }}
-                onClick={() =>
-                  onSlotClick?.(dateStr, `${String(hour).padStart(2, '0')}:30`)
-                }
-              />
-            </React.Fragment>
-          ))}
-
-          {/* Current time indicator */}
-          {isToday && currentMinutes >= START_HOUR * 60 && currentMinutes <= END_HOUR * 60 && (
-            <div
-              className="absolute left-0 right-0 z-30 pointer-events-none"
-              style={{ top: currentTimeTop }}
-            >
-              <div className="flex items-center">
-                <div className="size-2 rounded-full bg-sage" />
-                <div className="h-[2px] flex-1 bg-sage/60" />
-              </div>
-            </div>
-          )}
-
-          {/* Calendar blocks */}
-          {blockSlots.map(({ block, top, height }) => (
-            <div
-              key={block.id}
-              className="absolute left-0 right-0 z-10 mx-1 rounded border border-dashed border-gray-300 bg-gray-100/60 px-2 py-1 cursor-pointer hover:bg-gray-200/60 transition-colors"
-              style={{ top, height }}
-              onClick={(e) => { e.stopPropagation(); onBlockClick?.(block, e) }}
-            >
-              <span className="text-[11px] font-medium text-gray-500 truncate block">
-                Indisponível
-              </span>
-              <span className="text-[10px] text-gray-400 truncate block">
-                {block.practitionerName ?? 'Toda a clínica'}
-              </span>
-            </div>
-          ))}
-
-          {/* Appointments — split horizontally when overlapping */}
-          {layoutSlots.map(({ appointment: appt, top, height, column, totalColumns }) => {
-            const widthPercent = 100 / totalColumns
-            const leftPercent = column * widthPercent
-            return (
-              <div
-                key={appt.id}
-                className="absolute z-20"
-                style={{
-                  top,
-                  height,
-                  left: `calc(${leftPercent}% + 2px)`,
-                  width: `calc(${widthPercent}% - 4px)`,
-                }}
-              >
-                <AppointmentCard
-                  appointment={appt}
-                  onClick={onAppointmentClick}
-                />
-              </div>
-            )
-          })}
-        </div>
+      <div className="relative flex pt-2">
+        <TimeLabels slotHeight={DAY_SLOT_HEIGHT} className="z-10" />
+        <TimeGridColumn
+          date={dateStr}
+          opening={openingWindow(dateStr, workingHours)}
+          appointments={dayAppointments}
+          blocks={calendarBlocks.filter((b) => b.date === dateStr)}
+          slotHeight={DAY_SLOT_HEIGHT}
+          compact={false}
+          isToday={toLocalYmd(new Date()) === dateStr}
+          canDrag={canDrag}
+          onSlotClick={onSlotClick}
+          onAppointmentClick={onAppointmentClick}
+          onBlockClick={onBlockClick}
+        />
       </div>
-    </div>
+    </AgendaDnd>
   )
 }

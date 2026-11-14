@@ -8,14 +8,17 @@ export const queryKeys = {
     detail: (id: string) => ['patients', 'detail', id] as const,
     timeline: (id: string) => ['patients', 'timeline', id] as const,
     search: (search: string) => ['patients', 'search', search] as const,
+    recent: ['patients', 'recent'] as const,
   },
   appointments: {
     all: ['appointments'] as const,
+    lists: ['appointments', 'list'] as const,
     list: (practitionerId: string | undefined, dateFrom: string, dateTo: string) =>
       ['appointments', 'list', practitionerId, dateFrom, dateTo] as const,
     practitioners: ['appointments', 'practitioners'] as const,
     procedureTypes: ['appointments', 'procedureTypes'] as const,
     byPatient: (patientId: string) => ['appointments', 'patient', patientId] as const,
+    freeSlots: (appointmentId: string) => ['appointments', 'free-slots', appointmentId] as const,
   },
   nfse: {
     all: ['nfse'] as const,

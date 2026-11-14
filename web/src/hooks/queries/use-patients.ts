@@ -93,3 +93,22 @@ export function usePatientTimeline(patientId: string | undefined) {
     enabled: !!patientId,
   })
 }
+
+export interface RecentPatient {
+  id: string
+  fullName: string
+  phone: string
+}
+
+export function useRecentPatients({ enabled = true }: { enabled?: boolean } = {}) {
+  return useQuery({
+    queryKey: queryKeys.patients.recent,
+    enabled,
+    queryFn: async (): Promise<RecentPatient[]> => {
+      const res = await fetch('/api/patients/recent')
+      if (!res.ok) return []
+      const json = await res.json()
+      return json.data ?? []
+    },
+  })
+}

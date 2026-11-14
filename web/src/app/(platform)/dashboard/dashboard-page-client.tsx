@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation'
 import { UserPlus, CalendarPlus, X } from 'lucide-react'
 import { useDashboard } from '@/hooks/queries/use-dashboard'
 import { useTenant } from '@/hooks/queries/use-tenant'
+import { useBookingUrl } from '@/hooks/use-booking-url'
 import { brToday } from '@/lib/dates'
 import { TodayAppointments } from '@/components/dashboard/today-appointments'
 import { MoneyStrip } from '@/components/dashboard/money-strip'
@@ -57,6 +58,7 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
     selectedMonth === currentMonth ? undefined : selectedMonth
   )
   const { data: tenant } = useTenant()
+  const bookingUrl = useBookingUrl()
   const settings = tenant?.settings as Record<string, unknown> | undefined
 
   if (isLoading || !data) {
@@ -65,10 +67,6 @@ export function DashboardPageClient({ highlightFirstPatient = false, canRequestI
 
   const greeting = getGreeting()
   const todayCount = data.todayAppointments.length
-  const bookingUrl =
-    tenant?.slug && settings?.online_booking_enabled === true && typeof window !== 'undefined'
-      ? `${window.location.origin}/c/${tenant.slug}`
-      : null
 
   return (
     <div className="space-y-6">

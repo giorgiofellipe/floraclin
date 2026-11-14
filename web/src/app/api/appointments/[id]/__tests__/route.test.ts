@@ -42,7 +42,10 @@ const current = {
   date: '2026-10-12',
   startTime: '09:00:00',
   endTime: '09:30:00',
+  updatedAt: new Date('2026-10-10T12:00:00.000Z'),
 }
+
+const PREVIOUS = { status: 'confirmed', confirmedAt: null, confirmationSentAt: null, confirmationMessageId: null }
 
 function put(body: Record<string, unknown>) {
   return PUT(
@@ -67,7 +70,7 @@ beforeEach(() => {
     blocked: null,
   } as never)
   vi.mocked(getAppointmentById).mockResolvedValue(current as never)
-  vi.mocked(updateAppointment).mockResolvedValue({ ...current, notes: 'x' } as never)
+  vi.mocked(updateAppointment).mockResolvedValue({ appointment: { ...current, notes: 'x' }, previous: PREVIOUS } as never)
   vi.mocked(checkTimeConflict).mockResolvedValue(true)
   vi.mocked(sendRescheduleNotification).mockResolvedValue('sent')
 })
@@ -107,7 +110,7 @@ describe('PUT /api/appointments/[id]', () => {
 
   it('tells the patient the new slot when staff asked for it', async () => {
     vi.mocked(checkTimeConflict).mockResolvedValue(false)
-    vi.mocked(updateAppointment).mockResolvedValue({ ...current, date: '2026-10-14', startTime: '15:00:00' } as never)
+    vi.mocked(updateAppointment).mockResolvedValue({ appointment: { ...current, date: '2026-10-14', startTime: '15:00:00' }, previous: PREVIOUS } as never)
 
     const res = await put({ ...sameSlot, date: '2026-10-14', startTime: '15:00', endTime: '15:30', notifyPatient: true })
 
@@ -118,7 +121,7 @@ describe('PUT /api/appointments/[id]', () => {
       'user-1',
       expect.objectContaining({ id: APPOINTMENT_ID, date: '2026-10-14', startTime: '15:00:00' }),
     )
-    expect(updateAppointment).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID, expect.not.objectContaining({ notifyPatient: true }))
+    expect(updateAppointment).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID, expect.not.objectContaining({ notifyPatient: true }), undefined)
   })
 
   it('sends no reschedule notice when only the end time changed', async () => {
@@ -138,11 +141,46 @@ describe('PUT /api/appointments/[id]', () => {
   ])('sends no reschedule notice when %s', async (_label, override, newDate) => {
     vi.mocked(getAppointmentById).mockResolvedValue({ ...current, ...override } as never)
     vi.mocked(checkTimeConflict).mockResolvedValue(false)
-    vi.mocked(updateAppointment).mockResolvedValue({ ...current, ...override, date: newDate } as never)
+    vi.mocked(updateAppointment).mockResolvedValue({ appointment: { ...current, ...override, date: newDate }, previous: PREVIOUS } as never)
 
     const res = await put({ ...sameSlot, date: newDate, notifyPatient: true })
 
     expect(res.status).toBe(200)
     expect(sendRescheduleNotification).not.toHaveBeenCalled()
+  })
+
+  describe('undo of a move', () => {
+    const undo = {
+      ...sameSlot,
+      date: '2026-10-14',
+      expectedUpdatedAt: '2026-10-10T12:00:00.000Z',
+      restore: { status: 'confirmed', confirmedAt: '2026-10-09T10:00:00.000Z', confirmationSentAt: '2026-10-09T09:00:00.000Z', confirmationMessageId: 'wamid.1' },
+    }
+
+    it('puts back the confirmation state the move reset', async () => {
+      // Regression: undo restored the slot but left a confirmed appointment "scheduled" with its
+      // confirmation message unlinked, so the cron asked the patient to confirm again.
+      vi.mocked(checkTimeConflict).mockResolvedValue(false)
+
+      const res = await put(undo)
+
+      expect(res.status).toBe(200)
+      expect(updateAppointment).toHaveBeenCalledWith('tenant-1', APPOINTMENT_ID, expect.anything(), {
+        status: 'confirmed',
+        confirmedAt: new Date('2026-10-09T10:00:00.000Z'),
+        confirmationSentAt: new Date('2026-10-09T09:00:00.000Z'),
+        confirmationMessageId: 'wamid.1',
+      })
+    })
+
+    it('refuses when the appointment changed after the move', async () => {
+      // A colleague moved or edited it in the meantime; a blind undo would overwrite their change.
+      vi.mocked(getAppointmentById).mockResolvedValue({ ...current, updatedAt: new Date('2026-10-10T12:05:00.000Z') } as never)
+
+      const res = await put(undo)
+
+      expect(res.status).toBe(409)
+      expect(updateAppointment).not.toHaveBeenCalled()
+    })
   })
 })
