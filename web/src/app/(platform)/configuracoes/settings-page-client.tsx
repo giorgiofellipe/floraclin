@@ -460,7 +460,7 @@ export function SettingsPageClient({
               )}
 
               {effectiveTab === 'termos' && (
-                <ConsentTemplateList templates={consentTemplates} />
+                <ConsentTemplateList templates={consentTemplates} procedureTypes={procedureTypes} />
               )}
 
               {effectiveTab === 'pacotes' && <PacotesTabContent />}

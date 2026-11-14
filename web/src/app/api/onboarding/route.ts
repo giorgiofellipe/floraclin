@@ -23,8 +23,7 @@ import { notifyOnboardingCompleted } from '@/lib/signup-notifications'
 import { reportSideEffectFailure } from '@/lib/observability'
 import { trackServerEvent } from '@/lib/analytics/server'
 import { CLINIC_PHONE_REQUIRED_MESSAGE, hasClinicPhone } from '@/lib/clinic-phone'
-import { createConsentTemplate } from '@/db/queries/consent'
-import { DEFAULT_CONSENT_TEMPLATES } from '@/validations/consent'
+import { seedDefaultConsentTemplates } from '@/db/queries/consent'
 import { createProduct, listProducts } from '@/db/queries/products'
 import { createTemplate } from '@/db/queries/evaluation-templates'
 // defaultTemplates is dynamically imported below to avoid loading 42KB on startup
@@ -194,31 +193,8 @@ export async function POST(request: Request) {
         }
       }
 
-      // 5. Create default consent templates (idempotent: skip if any exist)
-      const { listConsentTemplates } = await import('@/db/queries/consent')
-      const existingTemplates = await listConsentTemplates(auth.tenantId)
-      const hasTemplates = Object.values(existingTemplates).some((arr) => Array.isArray(arr) && arr.length > 0)
-      if (!hasTemplates) {
-        const consentTypes = [
-          'general',
-          'botox',
-          'filler',
-          'biostimulator',
-          'limpeza_pele',
-          'enzima',
-          'skinbooster',
-          'microagulhamento',
-          'service_contract',
-        ] as const
-        for (const type of consentTypes) {
-          const template = DEFAULT_CONSENT_TEMPLATES[type]
-          await createConsentTemplate(auth.tenantId, {
-            type,
-            title: template.title,
-            content: template.content,
-          })
-        }
-      }
+      // 5. Create default consent templates
+      await seedDefaultConsentTemplates(auth.tenantId)
 
       // 6. Seed default clinical document templates (atestado de comparecimento)
       const { listClinicalDocumentTemplates, createClinicalDocumentTemplate } = await import('@/db/queries/clinical-documents')

@@ -23,3 +23,32 @@ export function requiredConsentTypes(input: {
 export function pendingConsentTypes(required: string[], signed: string[]): string[] {
   return required.filter((type) => !signed.includes(type))
 }
+
+export type ConsentCoverage =
+  | { kind: 'all' }
+  | { kind: 'approval' }
+  | { kind: 'procedures'; names: string[] }
+  | { kind: 'manual' }
+
+export interface CoverageProcedureType {
+  name: string
+  category: string
+  isActive: boolean
+}
+
+// Mirrors requiredConsentTypes: which procedures make the approval ask for this template.
+export function consentCoverage(
+  type: string,
+  procedureTypes: CoverageProcedureType[],
+): ConsentCoverage {
+  if (type === 'general') return { kind: 'all' }
+  if (type === 'service_contract') return { kind: 'approval' }
+  const categories = Object.keys(CATEGORY_TO_CONSENT).filter((c) => CATEGORY_TO_CONSENT[c] === type)
+  if (categories.length === 0) return { kind: 'manual' }
+  return {
+    kind: 'procedures',
+    names: procedureTypes
+      .filter((pt) => pt.isActive && categories.includes(pt.category))
+      .map((pt) => pt.name),
+  }
+}
