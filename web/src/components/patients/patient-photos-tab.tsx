@@ -93,9 +93,9 @@ export function PatientPhotosTab({ patientId }: PatientPhotosTabProps) {
         }}
       />
 
-      {/* Floating action bar; env() padding keeps it clear of the home
-          indicator (viewport-fit=cover). */}
-      <div className="sticky bottom-0 z-30 !mt-0 -mx-6 -mb-6 border-t bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.08)]">
+      {/* Floating action bar: sits on the phone bottom nav, or pads the home
+          indicator itself (viewport-fit=cover). */}
+      <div className="sticky bottom-(--bottom-nav-offset) z-30 !mt-0 -mx-6 -mb-6 border-t bg-white/95 pb-[max(0px,calc(env(safe-area-inset-bottom)-var(--bottom-nav-offset)))] backdrop-blur-sm shadow-[0_-2px_8px_rgba(0,0,0,0.08)]">
         {comparisonMode && (
           <div className="flex items-center justify-center gap-2 border-b px-4 py-2 text-sm text-[#4A6B52]">
             <GitCompareArrows className="size-3.5 shrink-0" />

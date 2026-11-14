@@ -101,7 +101,7 @@ export function CookieConsentBanner() {
           // 0.75rem (1rem from sm) from the edges, plus the notch /
           // home-indicator insets (viewport-fit=cover).
           className={cn(
-            'fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:right-[calc(1rem+env(safe-area-inset-right))] sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-[calc(1rem+env(safe-area-inset-left))] sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5',
+            'fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+var(--bottom-nav-h)+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-50 mx-auto max-w-4xl rounded-xl border border-sage/20 bg-cream/95 p-3 shadow-2xl backdrop-blur sm:right-[calc(1rem+env(safe-area-inset-right))] sm:bottom-[calc(1rem+env(safe-area-inset-bottom))] sm:left-[calc(1rem+env(safe-area-inset-left))] sm:rounded-2xl sm:p-4 md:flex md:items-center md:gap-5',
             // Compact: edge to edge, one row, the home indicator inside it.
             compact &&
               'right-0 bottom-0 left-0 flex items-center gap-2 rounded-none border-x-0 border-b-0 pt-2 pr-[calc(0.75rem+env(safe-area-inset-right))] pb-[calc(0.5rem+env(safe-area-inset-bottom))] pl-[calc(0.75rem+env(safe-area-inset-left))] shadow-[0_-2px_8px_rgba(0,0,0,0.06)] sm:block sm:border-x sm:border-b sm:shadow-2xl md:flex',

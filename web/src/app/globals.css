@@ -13,6 +13,8 @@
   --color-cream: #FAF7F3;
   --color-charcoal: #2A2A2A;
   --color-mid: #7A7A7A;
+  /* AA contrast (6:1 on white) for small secondary text; mid is 4.3:1. */
+  --color-mid-dark: #626262;
   --color-gold: #C4A882;
   --color-amber: #D4845A;
   --color-amber-light: #F5E6DE;
@@ -73,6 +75,14 @@
      inset it pads itself with. Full-height screens such as the WhatsApp inbox
      subtract it. */
   --app-header-h: 52px;
+  /* Desktop sidebar (components/layout/sidebar.tsx). */
+  --app-sidebar-w: 200px;
+  /* Phone bottom nav (components/layout/bottom-nav.tsx), excluding the
+     home-indicator inset; 0 on routes and widths without it. */
+  --bottom-nav-bar-h: 56px;
+  --bottom-nav-h: 0px;
+  /* Full height including the home-indicator inset, for fixed bars that sit on top of it. */
+  --bottom-nav-offset: 0px;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -360,4 +370,11 @@
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
+}
+
+@media (max-width: 767.98px) {
+  :root:has([data-bottom-nav]) {
+    --bottom-nav-h: var(--bottom-nav-bar-h);
+    --bottom-nav-offset: calc(var(--bottom-nav-bar-h) + env(safe-area-inset-bottom));
+  }
 }

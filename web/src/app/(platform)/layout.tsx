@@ -134,7 +134,7 @@ export default async function PlatformLayout({ children }: { children: React.Rea
         impersonatingTenantName={impersonatingTenantName}
         whatsappEnabled={isWhatsAppEnabled(settings)}
       />
-      <div className="flex min-h-screen flex-col md:pl-[200px]">
+      <div className="flex min-h-screen flex-col pb-(--bottom-nav-h) md:pl-(--app-sidebar-w)">
         <Header
           userName={auth.fullName}
           userEmail={auth.email}

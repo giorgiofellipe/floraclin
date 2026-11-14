@@ -45,7 +45,7 @@ export function HelpMenu() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={cn(
-          'flex items-center gap-1.5 p-2 rounded-lg transition-colors duration-200',
+          'flex min-h-11 min-w-11 items-center justify-center gap-1.5 p-2 rounded-lg transition-colors duration-200 md:min-h-0 md:min-w-0',
           isOpen
             ? 'bg-sage/10 text-forest'
             : 'text-mid hover:text-charcoal hover:bg-sage/5',

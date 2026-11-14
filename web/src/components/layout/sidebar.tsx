@@ -84,7 +84,7 @@ function SidebarLogo() {
 
 function SectionLabel({ label }: { label: string }) {
   return (
-    <p className="px-5 pb-1.5 pt-4 text-[10px] uppercase tracking-[0.15em] text-mid">
+    <p className="px-5 pb-1.5 pt-4 text-[10px] uppercase tracking-[0.15em] text-mid-dark">
       {label}
     </p>
   )
@@ -118,7 +118,7 @@ function NavItem({
       <Icon
         className={cn(
           'size-[18px] transition-colors duration-150',
-          isActive ? 'text-sage' : 'text-mid'
+          isActive ? 'text-sage' : 'text-mid-dark'
         )}
       />
       <span className="flex-1">{label}</span>
@@ -149,7 +149,7 @@ function NavItem({
         'relative flex items-center gap-3 rounded-md px-3 py-2 text-[13px] font-medium transition-all duration-150',
         isActive
           ? 'bg-sage/10 text-forest'
-          : 'text-mid hover:bg-sage/5 hover:text-charcoal'
+          : 'text-mid-dark hover:bg-sage/5 hover:text-charcoal'
       )}
     >
       {content}
@@ -454,7 +454,7 @@ export function Sidebar({ clinicName, userName, userRole, tenants, activeTenantI
     <aside
       // Left edge follows the body's notch padding (static position); top and
       // bottom pad for the notch / home indicator (viewport-fit=cover).
-      className="hidden md:flex md:w-[200px] md:flex-col md:fixed md:inset-y-0 md:pt-[env(safe-area-inset-top)] md:pb-[env(safe-area-inset-bottom)] bg-white border-r border-[#E8ECEF]"
+      className="hidden md:flex md:w-(--app-sidebar-w) md:flex-col md:fixed md:inset-y-0 md:pt-[env(safe-area-inset-top)] md:pb-[env(safe-area-inset-bottom)] bg-white border-r border-[#E8ECEF]"
       data-testid="sidebar"
     >
       <div className="relative flex flex-1 flex-col min-h-0">

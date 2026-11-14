@@ -347,13 +347,6 @@ export function SettingsPageClient({
         </div>
       )}
 
-      <div className={cn('mb-6', hasSection && 'hidden md:block')}>
-        <h1 className="text-2xl font-semibold text-[#2A2A2A]">Configurações</h1>
-        <p className="text-sm text-mid mt-0.5">
-          Gerencie as configurações da sua clínica.
-        </p>
-      </div>
-
       {!hasSection && (
         <nav className="md:hidden space-y-6">
           {visibleGroups.map((group) => (

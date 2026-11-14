@@ -115,7 +115,7 @@ export function InstallBanner() {
     <div
       data-testid="install-banner"
       // 0.75rem from each edge, plus the notch / home-indicator insets.
-      className="fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-30 rounded-xl bg-forest p-4 text-white shadow-lg md:hidden"
+      className="fixed right-[calc(0.75rem+env(safe-area-inset-right))] bottom-[calc(0.75rem+var(--bottom-nav-h)+env(safe-area-inset-bottom))] left-[calc(0.75rem+env(safe-area-inset-left))] z-30 rounded-xl bg-forest p-4 text-white shadow-lg md:hidden"
     >
       <div className="flex items-center gap-3">
         <Image src="/apple-icon.png" alt="" width={56} height={56} className="size-14 shrink-0 rounded-[22%] shadow-md ring-1 ring-white/25" />

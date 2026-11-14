@@ -30,7 +30,9 @@ import {
   RefreshCwIcon,
   CircleDotIcon,
 } from 'lucide-react'
-import { ReadOnlyGuard } from '@/components/layout/subscription-access'
+import { ReadOnlyGuard, useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { useCreateParam } from '@/hooks/use-create-param'
+import { CHARGE_CREATE_ROLES } from '@/lib/create-roles'
 
 interface Patient {
   id: string
@@ -112,7 +114,16 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
   const page = parseInt(searchParams.get('page') ?? '1', 10)
 
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const { readOnly, role } = useSubscriptionAccess()
+  const canCreateCharge = CHARGE_CREATE_ROLES.includes(role)
+  const createParam = useCreateParam('novo', '1')
   const [showPaymentForm, setShowPaymentForm] = useState(false)
+  const paymentFormOpen =
+    showPaymentForm || (createParam.active && canCreateCharge && !defaultPatientId && !readOnly)
+  const closePaymentForm = () => {
+    setShowPaymentForm(false)
+    createParam.clear()
+  }
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [renegDialogOpen, setRenegDialogOpen] = useState(false)
   // Set when Renegociar comes from one row's menu instead of the selection.
@@ -291,16 +302,18 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
           </span>
         </div>
 
-        <ReadOnlyGuard label="Nova Cobrança">
-          <Button
-            className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
-            onClick={() => setShowPaymentForm(true)}
-            data-testid="financial-new-charge"
-          >
-            <PlusIcon className="h-4 w-4" />
-            Nova Cobrança
-          </Button>
-        </ReadOnlyGuard>
+        {canCreateCharge && (
+          <ReadOnlyGuard label="Nova Cobrança">
+            <Button
+              className="bg-forest text-cream hover:bg-sage transition-colors shadow-sm"
+              onClick={() => setShowPaymentForm(true)}
+              data-testid="financial-new-charge"
+            >
+              <PlusIcon className="h-4 w-4" />
+              Nova Cobrança
+            </Button>
+          </ReadOnlyGuard>
+        )}
       </div>
 
       {/* Collapsible filters */}
@@ -643,13 +656,13 @@ export function FinancialList({ patients, defaultPatientId, defaultPatient }: { 
       )}
 
       {/* New charge form */}
-      {showPaymentForm && (
+      {paymentFormOpen && (
         <PaymentForm
-          open={showPaymentForm}
-          onClose={() => setShowPaymentForm(false)}
+          open={paymentFormOpen}
+          onClose={closePaymentForm}
           defaultPatient={defaultPatient}
           onSuccess={() => {
-            setShowPaymentForm(false)
+            closePaymentForm()
             fetchEntries()
           }}
         />
