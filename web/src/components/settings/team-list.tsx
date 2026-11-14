@@ -1,5 +1,6 @@
 'use client'
 
+import { ASSIGNABLE_ROLES } from '@/validations/user'
 import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -181,7 +182,7 @@ export function TeamList({ members, currentUserId, embedded = false }: TeamListP
                       </span>
                     ) : (
                       <Select
-                        items={{ practitioner: ROLE_LABELS.practitioner, receptionist: ROLE_LABELS.receptionist, financial: ROLE_LABELS.financial }}
+                        items={Object.fromEntries(ASSIGNABLE_ROLES.map((r) => [r, ROLE_LABELS[r]]))}
                         value={member.role}
                         onValueChange={(value) => value && handleRoleChange(member.userId, value)}
                         disabled={isPending}

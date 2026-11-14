@@ -13,6 +13,7 @@ import {
 import { useInviteUser } from '@/hooks/mutations/use-user-mutations'
 import { toast } from 'sonner'
 import type { Role } from '@/types'
+import { ASSIGNABLE_ROLES } from '@/validations/user'
 
 const ROLE_LABELS: Record<Role, string> = {
   owner: 'Proprietário',
@@ -21,7 +22,7 @@ const ROLE_LABELS: Record<Role, string> = {
   financial: 'Financeiro',
 }
 
-const INVITABLE_ROLES: Role[] = ['practitioner', 'receptionist', 'financial']
+const ASSIGNABLE_ROLE_LABELS = Object.fromEntries(ASSIGNABLE_ROLES.map((r) => [r, ROLE_LABELS[r]]))
 
 interface InviteUserFormProps {
   onSuccess?: () => void
@@ -77,7 +78,7 @@ export function InviteUserForm({ onSuccess, onCancel }: InviteUserFormProps) {
 
       <div className="space-y-2">
         <Label htmlFor="invite-role">Papel *</Label>
-        <Select items={ROLE_LABELS} value={role} onValueChange={(v) => setRole(v ?? '')}>
+        <Select items={ASSIGNABLE_ROLE_LABELS} value={role} onValueChange={(v) => setRole(v ?? '')}>
           <SelectTrigger className="w-full">
             <SelectValue placeholder="Selecione o papel" />
           </SelectTrigger>

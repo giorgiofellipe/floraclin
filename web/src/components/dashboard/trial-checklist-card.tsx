@@ -1,5 +1,6 @@
 'use client'
 
+import { NEW_APPOINTMENT_PATH, NEW_PATIENT_PATH } from '@/lib/deep-links'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { CheckCircle2, Circle } from 'lucide-react'
@@ -9,8 +10,8 @@ import type { ActivationState } from '@/lib/activation'
 
 const STEPS: { label: string; href: string; isDone: (a: ActivationState) => boolean }[] = [
   { label: 'Concluir a configuração', href: '/onboarding', isDone: (a) => a.onboardingDone },
-  { label: 'Cadastrar o primeiro paciente', href: '/pacientes?novo=1', isDone: (a) => a.hasPatient },
-  { label: 'Agendar o primeiro atendimento', href: '/agenda?open=new', isDone: (a) => a.hasAppointment },
+  { label: 'Cadastrar o primeiro paciente', href: NEW_PATIENT_PATH, isDone: (a) => a.hasPatient },
+  { label: 'Agendar o primeiro atendimento', href: NEW_APPOINTMENT_PATH, isDone: (a) => a.hasAppointment },
   {
     label: 'Registrar o primeiro procedimento no diagrama facial',
     href: '/pacientes',

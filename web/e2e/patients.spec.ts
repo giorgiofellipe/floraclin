@@ -110,3 +110,20 @@ test.describe('Patient CRUD', () => {
     }
   })
 })
+
+test.describe('Patient list on a phone', () => {
+  test.use({ viewport: { width: 390, height: 844 } })
+
+  // Regression: the search row kept a flex spacer on phones and squeezed the input to 64px.
+  test('search input spans the row', async ({ page }) => {
+    await loginAndGoToDashboard(page)
+    if (page.url().includes('/onboarding')) {
+      test.skip()
+      return
+    }
+
+    await page.goto('/pacientes')
+    const box = await page.getByTestId('patient-search').boundingBox()
+    expect(box?.width ?? 0).toBeGreaterThan(300)
+  })
+})

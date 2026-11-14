@@ -83,6 +83,8 @@ const NOTIFICATION_TOASTS: Record<Exclude<RescheduleNotification, 'sent'>, strin
   failed: 'Reagendado, mas o aviso por WhatsApp não foi enviado.',
 }
 
+export const DEFAULT_START_TIME = '08:00'
+
 function getDefaultEndTime(startTime: string, durationMin: number = 30): string {
   const [h, m] = startTime.split(':').map(Number)
   const totalMin = h * 60 + m + durationMin
@@ -136,10 +138,10 @@ export function AppointmentForm({
   )
   const [date, setDate] = React.useState(appointment?.date ?? defaultDate ?? '')
   const [startTime, setStartTime] = React.useState(
-    appointment?.startTime?.slice(0, 5) ?? defaultStartTime ?? '08:00'
+    appointment?.startTime?.slice(0, 5) ?? (defaultStartTime || DEFAULT_START_TIME)
   )
   const [endTime, setEndTime] = React.useState(
-    appointment?.endTime?.slice(0, 5) ?? getDefaultEndTime(defaultStartTime ?? '08:00')
+    appointment?.endTime?.slice(0, 5) ?? getDefaultEndTime(defaultStartTime || DEFAULT_START_TIME)
   )
 
   const { data: tenant } = useTenant()
@@ -182,8 +184,8 @@ export function AppointmentForm({
         setPractitionerId(defaultPractitionerId ?? practitioners[0]?.id ?? '')
         setProcedureTypeId('')
         setDate(defaultDate ?? '')
-        setStartTime(defaultStartTime ?? '08:00')
-        setEndTime(getDefaultEndTime(defaultStartTime ?? '08:00'))
+        setStartTime(defaultStartTime || DEFAULT_START_TIME)
+        setEndTime(getDefaultEndTime(defaultStartTime || DEFAULT_START_TIME))
       }
       setPatientSearch('')
       setPatientOptions([])

@@ -68,6 +68,13 @@ afterEach(() => {
 })
 
 describe('dashboard first-patient highlight', () => {
+  it('links the header actions to the URLs that open the patient and appointment forms', () => {
+    render(<DashboardPageClient />)
+
+    expect(screen.getByTestId('dashboard-new-patient')).toHaveAttribute('href', '/pacientes?novo=1')
+    expect(screen.getByTestId('dashboard-new-appointment')).toHaveAttribute('href', '/agenda?open=new')
+  })
+
   it('highlights "Novo Paciente" with a described hint and drops the parameter from the URL', () => {
     render(<DashboardPageClient highlightFirstPatient />)
 

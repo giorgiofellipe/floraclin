@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
+import { toast } from 'sonner'
 import { Search, Loader2, RefreshCw, Plus } from 'lucide-react'
 
 import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
+import { Button, buttonVariants } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { KanbanBoard } from '@/components/crm/kanban-board'
 import { AddProspectModal } from '@/components/crm/add-prospect-modal'
@@ -17,6 +19,10 @@ import type {
   TeamMember,
   ProcedureTypeOption,
 } from '@/components/crm/types'
+
+const LOAD_FAILED = 'Não foi possível carregar os leads.'
+
+type LoadError = { message: string; kind: 'whatsapp_disabled' | 'forbidden' | 'failed'; canConfigure: boolean }
 
 export default function CrmPage() {
   const [prospects, setProspects] = useState<Prospect[]>([])
@@ -34,22 +40,43 @@ export default function CrmPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
+  const [loadError, setLoadError] = useState<LoadError | null>(null)
+  const hasLoadedRef = useRef(false)
+  const requestIdRef = useRef(0)
 
   const fetchProspects = useCallback(async (searchQuery = '') => {
+    // Mount, search and refresh can overlap; only the newest request may update the page.
+    const requestId = ++requestIdRef.current
+    const fail = (error: LoadError) => {
+      if (requestId !== requestIdRef.current) return
+      if (hasLoadedRef.current) toast.error(error.message)
+      else setLoadError(error)
+    }
     try {
       const params = new URLSearchParams()
       if (searchQuery) params.set('search', searchQuery)
 
       const res = await fetch(`/api/crm/prospects?${params}`)
-      if (!res.ok) throw new Error('Erro ao carregar leads')
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; canConfigure?: boolean }
+        fail({
+          message: body.error || LOAD_FAILED,
+          kind: body.code === 'whatsapp_disabled' ? 'whatsapp_disabled' : res.status === 403 ? 'forbidden' : 'failed',
+          canConfigure: body.canConfigure === true,
+        })
+        return
+      }
 
       const data = await res.json()
+      if (requestId !== requestIdRef.current) return
+      hasLoadedRef.current = true
+      setLoadError(null)
       setProspects(data.data)
       setStats(data.stats)
       if (data.members) setTeamMembers(data.members)
       if (data.procedures) setProcedureTypes(data.procedures)
     } catch {
-      // Silently handle — the board will show empty columns
+      fail({ message: LOAD_FAILED, kind: 'failed', canConfigure: false })
     }
   }, [])
 
@@ -146,6 +173,7 @@ export default function CrmPage() {
 
   const totalProspects = Object.values(stats).reduce((a, b) => a + b, 0)
 
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -159,6 +187,25 @@ export default function CrmPage() {
             <Skeleton key={i} className="h-[400px] w-[280px] shrink-0" />
           ))}
         </div>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="mx-auto mt-16 flex max-w-md flex-col items-center gap-3 text-center">
+        <p role="alert" className="text-[15px] font-medium text-charcoal">{loadError.message}</p>
+        {loadError.kind === 'whatsapp_disabled' && loadError.canConfigure && (
+          <Link href="/configuracoes?tab=whatsapp" className={buttonVariants()}>Configurar WhatsApp</Link>
+        )}
+        {loadError.kind === 'whatsapp_disabled' && !loadError.canConfigure && (
+          <p className="text-[13px] text-mid">Peça ao proprietário da clínica para configurar o WhatsApp.</p>
+        )}
+        {loadError.kind === 'failed' && (
+          <Button variant="outline" onClick={handleRefresh} disabled={refreshing}>
+            Tentar novamente
+          </Button>
+        )}
       </div>
     )
   }

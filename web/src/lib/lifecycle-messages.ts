@@ -1,4 +1,5 @@
 import type { ActivationState } from '@/lib/activation'
+import { NEW_APPOINTMENT_PATH, NEW_PATIENT_PATH } from '@/lib/deep-links'
 import { brCalendarDaysBetween, brEndPhrase, formatBrDayMonth } from '@/lib/dates'
 import type { EmailContent } from '@/lib/email-layout'
 import { SUPPORT_EMAIL, SUPPORT_WHATSAPP_URL } from '@/lib/support'
@@ -344,7 +345,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       ],
       closing: 'Dúvidas? Responda a este e-mail. Lemos cada mensagem.',
     },
-    button: { label: 'Cadastrar paciente', path: '/pacientes?novo=1' },
+    button: { label: 'Cadastrar paciente', path: NEW_PATIENT_PATH },
     isDue: (state) => isOnboardingWindow(state) && state.trialDay >= 2 && !state.hasPatient,
   },
   {
@@ -384,7 +385,7 @@ export const LIFECYCLE_MESSAGES: readonly LifecycleMessage[] = [
       ],
       closing: 'Menos faltas e menos mensagens manuais para a sua equipe.',
     },
-    button: { label: 'Abrir agenda', path: '/agenda?open=new' },
+    button: { label: 'Abrir agenda', path: NEW_APPOINTMENT_PATH },
     isDue: (state) =>
       isOnboardingWindow(state) &&
       state.trialDay >= 7 &&
