@@ -12,12 +12,12 @@ import { handleApiError } from '@/lib/api-error'
 import { processDocuments } from '@/lib/nfse/emission'
 import { cardPaymentErrorMessage } from '@/lib/financial/card-payment-error'
 import type { NfseIntake } from '@/types'
+import { CHARGE_PAYER_ROLES, hasRole, RECEIVABLES_VIEWER_ROLES } from '@/lib/financial/charge-roles'
 
 export async function GET(request: Request) {
   try {
     const ctx = await getAuthContext()
-    // Financial list: owner + financial + receptionist + practitioner (read)
-    if (!['owner', 'financial', 'receptionist', 'practitioner'].includes(ctx.role)) {
+    if (!hasRole(RECEIVABLES_VIEWER_ROLES, ctx.role)) {
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
@@ -27,6 +27,8 @@ export async function GET(request: Request) {
       status: searchParams.get('status') ?? undefined,
       isOverdue: searchParams.get('isOverdue') === 'true' ? true : undefined,
       isPartial: searchParams.get('isPartial') === 'true' ? true : undefined,
+      dueSoon: searchParams.get('dueSoon') === 'true' ? true : undefined,
+      receivedThisMonth: searchParams.get('receivedThisMonth') === 'true' ? true : undefined,
       paymentMethod: searchParams.get('paymentMethod') ?? undefined,
       dateFrom: searchParams.get('dateFrom') ?? undefined,
       dateTo: searchParams.get('dateTo') ?? undefined,
@@ -48,7 +50,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'receptionist', 'financial')
+    const { ctx, blocked } = await requireWrite(...CHARGE_PAYER_ROLES)
     if (blocked) return blocked
 
     const body = await request.json()

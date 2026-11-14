@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { CHARGE_MANAGER_ROLES, hasRole } from '@/lib/financial/charge-roles'
 import { ChargeActionDialogs, type ChargeDialog } from './charge-action-dialogs'
 import { CheckCircleIcon, XCircleIcon, RefreshCwIcon, Undo2Icon, ChevronUpIcon } from 'lucide-react'
 
@@ -37,6 +39,7 @@ export function BulkActionBar({
   onSuccess,
 }: BulkActionBarProps) {
   const [dialog, setDialog] = useState<ChargeDialog | null>(null)
+  const canManage = hasRole(CHARGE_MANAGER_ROLES, useSubscriptionAccess().role)
 
   if (selectedCount === 0) return null
 
@@ -78,83 +81,89 @@ export function BulkActionBar({
             disabled={selectedInstallmentIds.length === 0}
           >
             <CheckCircleIcon data-icon="inline-start" />
-            Marcar como pago ({selectedInstallmentIds.length})
+            Receber ({selectedInstallmentIds.length})
           </Button>
 
           {/* Phones: the other actions sit behind "Mais". */}
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
-                <Button
-                  variant="outline"
-                  className="h-11 border-sage/30 px-4 text-charcoal sm:hidden"
-                  data-testid="bulk-more"
+          {canManage && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    className="h-11 border-sage/30 px-4 text-charcoal sm:hidden"
+                    data-testid="bulk-more"
+                  >
+                    Mais
+                    <ChevronUpIcon data-icon="inline-end" />
+                  </Button>
+                }
+              />
+              <DropdownMenuContent side="top" align="end" className="w-64">
+                <DropdownMenuItem
+                  variant="destructive"
+                  className="min-h-11"
+                  disabled={selectedEntryIds.length === 0}
+                  onClick={() => setDialog('cancel')}
                 >
-                  Mais
-                  <ChevronUpIcon data-icon="inline-end" />
-                </Button>
-              }
-            />
-            <DropdownMenuContent side="top" align="end" className="w-64">
-              <DropdownMenuItem
-                variant="destructive"
-                className="min-h-11"
-                disabled={selectedEntryIds.length === 0}
-                onClick={() => setDialog('cancel')}
-              >
-                <XCircleIcon />
-                Cancelar ({selectedEntryIds.length})
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                className="min-h-11 flex-wrap"
-                disabled={!canRenegotiate}
-                onClick={onRenegotiate}
-              >
-                <RefreshCwIcon />
-                Renegociar ({selectedEntryIds.length})
-                {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
-              </DropdownMenuItem>
-              {canUncancel && (
-                <DropdownMenuItem className="min-h-11" onClick={() => setDialog('uncancel')}>
-                  <Undo2Icon />
-                  Reativar ({selectedEntryIds.length})
+                  <XCircleIcon />
+                  Cancelar ({selectedEntryIds.length})
                 </DropdownMenuItem>
-              )}
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <DropdownMenuItem
+                  className="min-h-11 flex-wrap"
+                  disabled={!canRenegotiate}
+                  onClick={onRenegotiate}
+                >
+                  <RefreshCwIcon />
+                  Renegociar ({selectedEntryIds.length})
+                  {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
+                </DropdownMenuItem>
+                {canUncancel && (
+                  <DropdownMenuItem className="min-h-11" onClick={() => setDialog('uncancel')}>
+                    <Undo2Icon />
+                    Reativar ({selectedEntryIds.length})
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
-          <Button
-            size="sm"
-            variant="destructive"
-            className="hidden sm:inline-flex"
-            onClick={() => setDialog('cancel')}
-            disabled={selectedEntryIds.length === 0}
-          >
-            <XCircleIcon data-icon="inline-start" />
-            Cancelar ({selectedEntryIds.length})
-          </Button>
-          <InfoPopover content={renegotiateReason} className="hidden sm:inline-flex">
-            <Button
-              size="sm"
-              variant="outline"
-              className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
-              onClick={onRenegotiate}
-              disabled={!canRenegotiate}
-            >
-              <RefreshCwIcon data-icon="inline-start" />
-              Renegociar ({selectedEntryIds.length})
-            </Button>
-          </InfoPopover>
-          {canUncancel && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
-              onClick={() => setDialog('uncancel')}
-            >
-              <Undo2Icon data-icon="inline-start" />
-              Reativar ({selectedEntryIds.length})
-            </Button>
+          {canManage && (
+            <>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="hidden sm:inline-flex"
+                onClick={() => setDialog('cancel')}
+                disabled={selectedEntryIds.length === 0}
+              >
+                <XCircleIcon data-icon="inline-start" />
+                Cancelar ({selectedEntryIds.length})
+              </Button>
+              <InfoPopover content={renegotiateReason} className="hidden sm:inline-flex">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
+                  onClick={onRenegotiate}
+                  disabled={!canRenegotiate}
+                >
+                  <RefreshCwIcon data-icon="inline-start" />
+                  Renegociar ({selectedEntryIds.length})
+                </Button>
+              </InfoPopover>
+              {canUncancel && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="hidden border-sage/30 text-charcoal hover:bg-confirmed-bg transition-colors sm:inline-flex"
+                  onClick={() => setDialog('uncancel')}
+                >
+                  <Undo2Icon data-icon="inline-start" />
+                  Reativar ({selectedEntryIds.length})
+                </Button>
+              )}
+            </>
           )}
         </div>
       </div>

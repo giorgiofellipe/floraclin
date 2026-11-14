@@ -47,6 +47,7 @@ export const queryKeys = {
     installmentQuote: (id: string, paidAt?: string) =>
       ['financial', 'installmentQuote', id, paidAt ?? 'now'] as const,
     patientSummary: (patientId: string) => ['financial', 'patient-summary', patientId] as const,
+    receivablesTotals: ['financial', 'receivables-totals'] as const,
   },
   settings: {
     all: ['settings'] as const,

@@ -31,6 +31,7 @@ import {
 } from '@/lib/financial/penalties'
 import { BusinessError } from '@/lib/errors'
 import { PATIENT_FINANCIAL_ENTRIES_LIMIT, summarizePatientEntries } from '@/lib/financial/patient-summary'
+import { DUE_SOON_DAYS } from '@/lib/financial/receivables'
 import type { CreateFinancialEntryInput, FinancialFilterInput, RecordPaymentInput } from '@/validations/financial'
 import type { PaymentMethod, FinancialStatus, NfseIntake } from '@/types'
 import { verifyTenantOwnership } from './helpers'
@@ -1067,6 +1068,7 @@ export async function bulkPayInstallments(
     installmentIds: string[]
     paymentMethod: string
     paidAt?: string
+    expectedTotals?: Record<string, number>
     card?: RecordPaymentInput['card']
     accountId?: string
   }
@@ -1142,6 +1144,8 @@ export async function bulkPayInstallments(
       : await resolveMovementAccountId(tx, tenantId, { accountId: data.accountId, method: data.paymentMethod })
 
     const results = []
+    // Installments whose total moved from what the dialog showed, with the new total.
+    const changedTotals: Record<string, number> = {}
     const purchases: PendingMetaEventRow[] = []
     const cardRecords: { id: string; amountCents: number; paidAt: Date }[] = []
     for (const installmentId of data.installmentIds) {
@@ -1169,7 +1173,12 @@ export async function bulkPayInstallments(
 
       const base = toInstallmentBase(row)
       const totalDue = quoteInstallment(base, livePayments.inputs, paidAt).totalDue
-      if (totalDue <= 0) continue
+      const expected = data.expectedTotals?.[installmentId]
+      if (expected !== undefined && toCents(totalDue) !== toCents(expected)) {
+        changedTotals[installmentId] = totalDue
+        continue
+      }
+      if (Object.keys(changedTotals).length > 0 || totalDue <= 0) continue
 
       const { allocation: applied, replay } = priceNewPayment({
         base,
@@ -1254,6 +1263,14 @@ export async function bulkPayInstallments(
       }, tx)
 
       results.push({ installmentId, paymentRecord, allocation })
+    }
+
+    if (Object.keys(changedTotals).length > 0) {
+      throw new BusinessError(
+        'QUOTE_CHANGED',
+        'O total pendente mudou desde que a tela foi aberta. Confira o novo valor e confirme novamente.',
+        { totals: changedTotals },
+      )
     }
 
     if (card && cardMethod && cardRecords.length > 0) {
@@ -1719,7 +1736,9 @@ export async function listFinancialEntries(
     conditions.push(eq(financialEntries.patientId, filters.patientId))
   }
 
-  if (filters.status) {
+  if (filters.status === 'open') {
+    conditions.push(inArray(financialEntries.status, [...OPEN_CHARGE_STATUSES]))
+  } else if (filters.status) {
     conditions.push(eq(financialEntries.status, filters.status))
   }
 
@@ -1755,6 +1774,24 @@ export async function listFinancialEntries(
     conditions.push(overdueEntryIds.length > 0 ? inArray(financialEntries.id, overdueEntryIds) : sql`false`)
   }
 
+  if (filters.dueSoon) {
+    const { dueSoon } = await loadUpcomingInstallments(tenantId, now)
+    const dueSoonEntryIds = [...new Set(dueSoon.map((i) => i.financialEntryId))]
+    conditions.push(dueSoonEntryIds.length > 0 ? inArray(financialEntries.id, dueSoonEntryIds) : sql`false`)
+  }
+
+  if (filters.receivedThisMonth) {
+    conditions.push(
+      sql`EXISTS (
+        SELECT 1 FROM floraclin.payment_records pr
+        JOIN floraclin.installments i ON i.id = pr.installment_id
+        WHERE i.financial_entry_id = ${financialEntries.id}
+        AND pr.reversed_at IS NULL
+        AND pr.paid_at >= ${startOfBrMonth(now).toISOString()}::timestamptz
+      )`
+    )
+  }
+
   if (filters.isPartial) {
     // Has at least one paid installment but entry is not fully paid
     conditions.push(
@@ -1766,6 +1803,26 @@ export async function listFinancialEntries(
       )`
     )
   }
+
+  const nextPending = (column: 'id' | 'installment_number' | 'due_date') => sql`(
+    SELECT ${sql.raw(`i.${column}`)} FROM floraclin.installments i
+    WHERE i.financial_entry_id = ${financialEntries.id}
+    AND i.status = 'pending'
+    ORDER BY i.due_date, i.installment_number
+    LIMIT 1
+  )`
+  const lastPaidAt = sql<string | null>`(
+    SELECT MAX(pr.paid_at) FROM floraclin.payment_records pr
+    JOIN floraclin.installments i ON i.id = pr.installment_id
+    WHERE i.financial_entry_id = ${financialEntries.id}
+    AND pr.reversed_at IS NULL
+  )`
+  const orderBy =
+    filters.status === 'open'
+      ? [sql`${nextPending('due_date')} ASC NULLS LAST`, desc(financialEntries.createdAt), financialEntries.id]
+      : filters.status === 'paid'
+        ? [sql`${lastPaidAt} DESC NULLS LAST`, desc(financialEntries.createdAt), financialEntries.id]
+        : [desc(financialEntries.createdAt), financialEntries.id]
 
   const [totalResult, entries] = await Promise.all([
     db
@@ -1781,8 +1838,13 @@ export async function listFinancialEntries(
         totalAmount: financialEntries.totalAmount,
         installmentCount: financialEntries.installmentCount,
         status: financialEntries.status,
+        paymentMethod: financialEntries.paymentMethod,
         notes: financialEntries.notes,
         renegotiatedAt: financialEntries.renegotiatedAt,
+        nextInstallmentId: sql<string | null>`${nextPending('id')}`,
+        nextInstallmentNumber: sql<number | null>`${nextPending('installment_number')}`,
+        nextDueDate: sql<string | null>`${nextPending('due_date')}::text`,
+        lastPaidAt,
         createdAt: financialEntries.createdAt,
         paidInstallments: sql<number>`(
           SELECT COUNT(*)::int FROM floraclin.installments i
@@ -1828,18 +1890,20 @@ export async function listFinancialEntries(
       .from(financialEntries)
       .innerJoin(patients, eq(patients.id, financialEntries.patientId))
       .where(and(...conditions))
-      .orderBy(desc(financialEntries.createdAt))
+      .orderBy(...orderBy)
       .limit(filters.limit ?? 20)
       .offset(offset),
   ])
 
   const total = totalResult[0]?.count ?? 0
   const limit = filters.limit ?? 20
-  const open = await priceOpenInstallmentsByEntry(tenantId, entries.map((e) => e.id), now)
+  const { byEntry: open, dueByInstallment } = await priceOpenInstallmentsByEntry(tenantId, entries.map((e) => e.id), now)
 
   return {
     data: entries.map((entry) => ({
       ...entry,
+      nextAmountDue: entry.nextInstallmentId ? (dueByInstallment.get(entry.nextInstallmentId) ?? null) : null,
+      openBalance: open.get(entry.id)?.due ?? 0,
       isOverdue: open.get(entry.id)?.isOverdue ?? false,
       totalFineAmount: open.get(entry.id)?.fine ?? 0,
       totalInterestAmount: open.get(entry.id)?.interest ?? 0,
@@ -1870,10 +1934,92 @@ export async function loadOverdueInstallments(tenantId: string, now: Date) {
   return rows.filter((row) => isInstallmentOverdue(toInstallmentBase(row), now))
 }
 
+const OPEN_CHARGE_STATUSES = ['pending', 'partial', 'overdue'] as const
+
+function startOfBrMonth(now: Date): Date {
+  return startOfBrDay(`${toBrYmd(now).slice(0, 8)}01`)
+}
+
+/**
+ * Pending installments of live open charges due within DUE_SOON_DAYS, split
+ * into the ones the engine calls overdue at `now` and the rest. An
+ * installment past its due date but inside its grace is due soon, not overdue.
+ */
+async function loadUpcomingInstallments(tenantId: string, now: Date) {
+  const rows = await db
+    .select({
+      id: installments.id,
+      financialEntryId: installments.financialEntryId,
+      amount: installments.amount,
+      dueDate: installments.dueDate,
+      appliedFineType: installments.appliedFineType,
+      appliedFineValue: installments.appliedFineValue,
+      appliedInterestRate: installments.appliedInterestRate,
+      appliedGracePeriodDays: installments.appliedGracePeriodDays,
+      penaltyPauses: installments.penaltyPauses,
+      cancelledAt: installments.cancelledAt,
+    })
+    .from(installments)
+    .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+    .where(
+      and(
+        eq(installments.tenantId, tenantId),
+        eq(financialEntries.tenantId, tenantId),
+        isNull(financialEntries.deletedAt),
+        inArray(financialEntries.status, [...OPEN_CHARGE_STATUSES]),
+        eq(installments.status, 'pending'),
+        lte(installments.dueDate, shiftBrYmd(toBrYmd(now), DUE_SOON_DAYS)),
+      )
+    )
+  const overdue: typeof rows = []
+  const dueSoon: typeof rows = []
+  for (const row of rows) {
+    if (isInstallmentOverdue(toInstallmentBase(row), now)) overdue.push(row)
+    else dueSoon.push(row)
+  }
+  return { overdue, dueSoon }
+}
+
+/** The Recebíveis totals: owed today on overdue charges, due in the next week, and cash received this BR month. */
+export async function getReceivablesTotals(tenantId: string, now: Date = new Date()) {
+  const [{ overdue, dueSoon }, [received]] = await Promise.all([
+    loadUpcomingInstallments(tenantId, now),
+    db
+      .select({ total: sql<string>`COALESCE(SUM(${paymentRecords.amount}::numeric), 0)` })
+      .from(paymentRecords)
+      .innerJoin(installments, eq(installments.id, paymentRecords.installmentId))
+      .innerJoin(financialEntries, eq(financialEntries.id, installments.financialEntryId))
+      .where(
+        and(
+          eq(installments.tenantId, tenantId),
+          eq(financialEntries.tenantId, tenantId),
+          isNull(financialEntries.deletedAt),
+          isNull(paymentRecords.reversedAt),
+          gte(paymentRecords.paidAt, startOfBrMonth(now)),
+        )
+      ),
+  ])
+
+  const payments = await loadLivePaymentsByInstallment(db, [...overdue, ...dueSoon].map((i) => i.id))
+  const totalDue = (rows: typeof overdue) =>
+    rows.reduce(
+      (sum, row) =>
+        round2(sum + quoteInstallment(toInstallmentBase(row), toPaymentInputs(payments.get(row.id) ?? []), now).totalDue),
+      0,
+    )
+
+  return {
+    overdue: totalDue(overdue),
+    dueSoon: totalDue(dueSoon),
+    receivedThisMonth: Number(received?.total ?? 0),
+  }
+}
+
 /** Fine and interest due at `now` on each entry's open installments, and whether any is late. */
 async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[], now: Date) {
-  const byEntry = new Map<string, { fine: number; interest: number; isOverdue: boolean }>()
-  if (entryIds.length === 0) return byEntry
+  const byEntry = new Map<string, { fine: number; interest: number; due: number; isOverdue: boolean }>()
+  const dueByInstallment = new Map<string, number>()
+  if (entryIds.length === 0) return { byEntry, dueByInstallment }
 
   const openInstallments = await db
     .select({
@@ -1897,7 +2043,7 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
         notInArray(installments.status, ['paid', 'cancelled'])
       )
     )
-  if (openInstallments.length === 0) return byEntry
+  if (openInstallments.length === 0) return { byEntry, dueByInstallment }
 
   const paymentsByInstallment = await loadLivePaymentsByInstallment(
     db,
@@ -1911,15 +2057,17 @@ async function priceOpenInstallmentsByEntry(tenantId: string, entryIds: string[]
       toPaymentInputs(paymentsByInstallment.get(inst.id) ?? []),
       now,
     )
-    const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, isOverdue: false }
+    dueByInstallment.set(inst.id, quote.totalDue)
+    const sums = byEntry.get(inst.financialEntryId) ?? { fine: 0, interest: 0, due: 0, isOverdue: false }
     byEntry.set(inst.financialEntryId, {
       fine: round2(sums.fine + quote.fineAmount),
       interest: round2(sums.interest + quote.interestAmount),
+      due: round2(sums.due + quote.totalDue),
       isOverdue:
         sums.isOverdue || (inst.status === 'pending' && isInstallmentOverdue(base, now)),
     })
   }
-  return byEntry
+  return { byEntry, dueByInstallment }
 }
 
 // ─── GET FINANCIAL ENTRY (enhanced) ─────────────────────────────────

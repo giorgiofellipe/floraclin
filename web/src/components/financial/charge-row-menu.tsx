@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { toBrYmd } from '@/lib/dates'
+import { useSubscriptionAccess } from '@/components/layout/subscription-access'
+import { CHARGE_MANAGER_ROLES, CHARGE_PAYER_ROLES, hasRole, LEDGER_VIEWER_ROLES } from '@/lib/financial/charge-roles'
 import {
   BanknoteIcon,
   BookOpenIcon,
@@ -50,22 +52,32 @@ export function ledgerHrefFor(entry: Pick<ChargeRowMenuEntry, 'patientId' | 'cre
 }
 
 /**
- * The "⋯" on a charge row: every action of the bulk bar for this one charge,
- * plus a jump to its payments in the Extrato. Off items say why in the menu
- * itself, so the reason is readable on touch too.
+ * The "⋯" on a charge row: settle every open installment at once,
+ * renegotiate, cancel or reactivate this one charge, plus a jump to its
+ * payments in the Extrato. Receber (the next installment) is the row's own
+ * button. Off items say why in the menu itself, so the reason is readable on
+ * touch too.
  */
 export function ChargeRowMenu({
   entry,
   onDialog,
   onRenegotiate,
+  onPayAll,
 }: {
   entry: ChargeRowMenuEntry
   onDialog: (dialog: ChargeDialog) => void
   onRenegotiate: () => void
+  onPayAll: () => void
 }) {
-  const canPay = OPEN_STATUSES.includes(entry.status) && (entry.pendingInstallmentIds?.length ?? 0) > 0
+  const { role } = useSubscriptionAccess()
+  const canManage = hasRole(CHARGE_MANAGER_ROLES, role)
+  const canSeeLedger = hasRole(LEDGER_VIEWER_ROLES, role)
+  const pendingCount = entry.pendingInstallmentIds?.length ?? 0
+  const canPayAll = hasRole(CHARGE_PAYER_ROLES, role) && OPEN_STATUSES.includes(entry.status) && pendingCount > 1
   const renegotiateReason = renegotiateBlockedReason(entry.status)
   const isCancelled = entry.status === 'cancelled'
+
+  if (!canManage && !canSeeLedger && !canPayAll) return null
 
   return (
     <DropdownMenu>
@@ -82,33 +94,39 @@ export function ChargeRowMenu({
         }
       />
       <DropdownMenuContent align="end" className="w-60">
-        {canPay && (
-          <DropdownMenuItem className="min-h-11" onClick={() => onDialog('pay')}>
+        {canPayAll && (
+          <DropdownMenuItem className="min-h-11" onClick={onPayAll}>
             <BanknoteIcon />
-            Registrar pagamento
+            Receber todas as parcelas ({pendingCount})
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem className="min-h-11 flex-wrap" disabled={renegotiateReason !== null} onClick={onRenegotiate}>
-          <RefreshCwIcon />
-          Renegociar
-          {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
-        </DropdownMenuItem>
-        {isCancelled ? (
-          <DropdownMenuItem className="min-h-11" onClick={() => onDialog('uncancel')}>
-            <Undo2Icon />
-            Reativar
-          </DropdownMenuItem>
-        ) : (
-          <DropdownMenuItem className="min-h-11" variant="destructive" onClick={() => onDialog('cancel')}>
-            <XCircleIcon />
-            Cancelar
+        {canManage && (
+          <>
+            <DropdownMenuItem className="min-h-11 flex-wrap" disabled={renegotiateReason !== null} onClick={onRenegotiate}>
+              <RefreshCwIcon />
+              Renegociar
+              {renegotiateReason && <span className="basis-full pl-5.5 text-xs text-mid">{renegotiateReason}</span>}
+            </DropdownMenuItem>
+            {isCancelled ? (
+              <DropdownMenuItem className="min-h-11" onClick={() => onDialog('uncancel')}>
+                <Undo2Icon />
+                Reativar
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem className="min-h-11" variant="destructive" onClick={() => onDialog('cancel')}>
+                <XCircleIcon />
+                Cancelar
+              </DropdownMenuItem>
+            )}
+          </>
+        )}
+        {canManage && canSeeLedger && <DropdownMenuSeparator />}
+        {canSeeLedger && (
+          <DropdownMenuItem className="min-h-11" render={<Link href={ledgerHrefFor(entry)} />}>
+            <BookOpenIcon />
+            Ver no extrato
           </DropdownMenuItem>
         )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem className="min-h-11" render={<Link href={ledgerHrefFor(entry)} />}>
-          <BookOpenIcon />
-          Ver no extrato
-        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )

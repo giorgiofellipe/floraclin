@@ -6,7 +6,11 @@ import type { NfseIntake } from '@/types'
 
 /** A failed request, carrying the `code` a BusinessError response includes. */
 export class ApiError extends Error {
-  constructor(message: string, public readonly code?: string) {
+  constructor(
+    message: string,
+    public readonly code?: string,
+    public readonly details?: Record<string, unknown>,
+  ) {
     super(message)
     this.name = 'ApiError'
   }
@@ -20,7 +24,7 @@ async function mutateJson(url: string, method: string, data?: unknown) {
   })
   if (!res.ok) {
     const error = await res.json().catch(() => ({}))
-    throw new ApiError(error.error || `HTTP ${res.status}`, error.code)
+    throw new ApiError(error.error || `HTTP ${res.status}`, error.code, error.details)
   }
   return res.json()
 }
@@ -132,6 +136,7 @@ export function useBulkPay() {
       installmentIds: string[]
       paymentMethod: string
       paidAt?: string
+      expectedTotals?: Record<string, number>
       card?: CardPaymentPayload
       accountId?: string
     }) => mutateJson('/api/financial/bulk/pay', 'POST', data) as Promise<{ nfse?: NfseIntake }>,

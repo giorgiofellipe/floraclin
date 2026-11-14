@@ -17,9 +17,9 @@ function toColumns(data: CardTerminalInput) {
   return {
     name: data.name,
     isDefault: data.isDefault,
-    debitRate: data.debitRate.toFixed(2),
+    debitRate: data.debitRate?.toFixed(2) ?? null,
     debitPayoutDays: data.debitPayoutDays,
-    creditRates: data.creditRates.map((rate) => rate.toFixed(2)),
+    creditRates: data.creditRates.map((rate) => rate?.toFixed(2) ?? null),
     creditPayoutMode: data.creditPayoutMode,
     creditLumpSumDays: data.creditLumpSumDays,
     payoutAccountId: data.payoutAccountId ?? null,

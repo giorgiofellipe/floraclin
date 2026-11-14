@@ -17,6 +17,7 @@ import { resolveMovementAccountId, reversalAccountId } from './financial-account
 import {
   buildCardSchedule,
   cardInstallmentCountFor,
+  cardRateFor,
   toCardTerminalTerms,
   type CardMethod,
   type CardPaymentSummary,
@@ -98,6 +99,9 @@ export async function createCardPaymentTx(
   input: CardPaymentRequest & { gross: number; paidAt: Date; patientId: string; description: string },
 ): Promise<{ cardPaymentId: string }> {
   const terminal = await getCardTerminalTerms(tx, tenantId, input.terminalId)
+  if (cardRateFor(terminal.terms, input.method, cardInstallmentCountFor(input.method, input.installmentCount)) === null) {
+    throw new BusinessError('CARD_RATE_UNSET', 'Informe a taxa da maquininha para este tipo de venda e confirme novamente.')
+  }
   const schedule = buildCardSchedule({
     gross: input.gross,
     method: input.method,

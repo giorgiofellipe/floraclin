@@ -116,6 +116,11 @@ export const bulkPaySchema = z.object({
     message: 'Método de pagamento inválido',
   }),
   paidAt: paidAtField,
+  // Per installment, the total the dialog showed. Each one is checked behind
+  // the lock like expectedTotalDue on a single payment.
+  expectedTotals: z
+    .record(z.string().uuid(), z.number().min(0).refine(hasAtMostTwoDecimals, 'Valor deve ter no máximo duas casas decimais'))
+    .optional(),
   card: cardPaymentField,
   accountId: accountIdField,
 }).refine(cardMatchesMethod, { message: 'Selecione a maquininha', path: ['card'] })
@@ -132,8 +137,11 @@ export const bulkUncancelSchema = z.object({
 
 export const financialFilterSchema = z.object({
   patientId: z.string().uuid().optional(),
-  status: z.enum(financialStatuses as unknown as [string, ...string[]]).optional(),
+  // 'open' is every charge still to receive: pending, partial or overdue.
+  status: z.enum([...financialStatuses, 'open']).optional(),
   isOverdue: z.boolean().optional(),
+  dueSoon: z.boolean().optional(),
+  receivedThisMonth: z.boolean().optional(),
   isPartial: z.boolean().optional(),
   paymentMethod: z.enum(paymentMethods as [string, ...string[]]).optional(),
   dateFrom: z.string().optional(),

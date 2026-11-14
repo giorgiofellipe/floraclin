@@ -6,13 +6,14 @@ import { handleApiError } from '@/lib/api-error'
 import { BusinessError } from '@/lib/errors'
 import { processDocuments } from '@/lib/nfse/emission'
 import { sendPaymentConfirmations } from '@/lib/whatsapp-payment-confirmation'
+import { CHARGE_PAYER_ROLES } from '@/lib/financial/charge-roles'
 
 export async function PUT(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const { ctx, blocked } = await requireWrite('owner', 'receptionist', 'financial')
+    const { ctx, blocked } = await requireWrite(...CHARGE_PAYER_ROLES)
     if (blocked) return blocked
 
     const { id } = await params

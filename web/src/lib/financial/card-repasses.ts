@@ -4,10 +4,11 @@ import { formatCurrency, formatDate } from '@/lib/utils'
 export type CardMethod = 'credit_card' | 'debit_card'
 export type CardPayoutMode = 'per_installment' | 'lump_sum' | 'debit'
 
+/** A null rate is one the clinic has not told us yet. */
 export interface CardTerminalTerms {
-  debitRate: number
+  debitRate: number | null
   debitPayoutDays: number
-  creditRates: number[]
+  creditRates: (number | null)[]
   creditPayoutMode: 'per_installment' | 'lump_sum'
   creditLumpSumDays: number
 }
@@ -29,17 +30,24 @@ export function cardInstallmentCountFor(method: CardMethod, count: number): numb
   return method === 'debit_card' ? 1 : count
 }
 
+const toRate = (value: string | null) => (value === null ? null : Number(value))
+
+/** The rate this sale is priced at, or null when the terminal does not know it yet. */
+export function cardRateFor(terms: Pick<CardTerminalTerms, 'debitRate' | 'creditRates'>, method: CardMethod, installmentCount: number): number | null {
+  return method === 'debit_card' ? terms.debitRate : (terms.creditRates[installmentCount - 1] ?? null)
+}
+
 export function toCardTerminalTerms(row: {
-  debitRate: string
+  debitRate: string | null
   debitPayoutDays: number
-  creditRates: string[]
+  creditRates: (string | null)[]
   creditPayoutMode: 'per_installment' | 'lump_sum'
   creditLumpSumDays: number
 }): CardTerminalTerms {
   return {
-    debitRate: Number(row.debitRate),
+    debitRate: toRate(row.debitRate),
     debitPayoutDays: row.debitPayoutDays,
-    creditRates: row.creditRates.map(Number),
+    creditRates: row.creditRates.map(toRate),
     creditPayoutMode: row.creditPayoutMode,
     creditLumpSumDays: row.creditLumpSumDays,
   }
@@ -98,7 +106,8 @@ export function buildCardSchedule(input: {
   const { gross, method, terms, paymentYmd } = input
   const isDebit = method === 'debit_card'
   const installmentCount = isDebit ? 1 : input.installmentCount
-  const rate = isDebit ? terms.debitRate : terms.creditRates[installmentCount - 1]
+  const rate = cardRateFor(terms, method, installmentCount)
+  if (rate === null) throw new Error(`No ${method} rate for ${installmentCount}x on this terminal`)
 
   const grossCents = toCents(gross)
   const feeCents = Math.round((grossCents * rate) / 100)

@@ -1,15 +1,24 @@
-import { afterEach, describe, it, expect, vi } from 'vitest'
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent, { PointerEventsCheckLevel } from '@testing-library/user-event'
 import { BulkActionBar } from '../bulk-action-bar'
 import { useInstallmentQuote } from '@/hooks/queries/use-installment-quote'
 import { createWrapper } from '@/tests/test-utils'
 
+const access = vi.hoisted(() => ({ role: 'owner' }))
+vi.mock('@/components/layout/subscription-access', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/components/layout/subscription-access')>()),
+  useSubscriptionAccess: () => ({ role: access.role, readOnly: false }),
+}))
+
 vi.mock('@/hooks/queries/use-installment-quote', () => ({
   useInstallmentQuote: vi.fn(),
 }))
 
+const terminalRates = vi.hoisted(() => ({ credit: Array.from({ length: 12 }, () => '4.00') as (string | null)[] }))
 vi.mock('@/hooks/queries/use-card-terminals', () => ({
+  useCreateCardTerminal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateCardTerminal: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useCardTerminals: () => ({
     data: {
       data: [
@@ -19,7 +28,7 @@ vi.mock('@/hooks/queries/use-card-terminals', () => ({
           isDefault: true,
           debitRate: '1.50',
           debitPayoutDays: 1,
-          creditRates: Array.from({ length: 12 }, () => '4.00'),
+          creditRates: terminalRates.credit,
           creditPayoutMode: 'per_installment',
           creditLumpSumDays: 1,
         },
@@ -85,7 +94,12 @@ vi.mock('@/components/ui/date-picker', () => ({
   ),
 }))
 
+beforeEach(() => {
+  vi.mocked(useInstallmentQuote).mockReturnValue({ data: { totalDue: 100 }, error: null } as ReturnType<typeof useInstallmentQuote>)
+})
+
 afterEach(() => {
+  access.role = 'owner'
   mockBulkPay.mockClear()
   mockBulkCancel.mockClear()
   mockBulkUncancel.mockClear()
@@ -133,9 +147,27 @@ describe('BulkActionBar', () => {
       />,
       { wrapper: createWrapper() },
     )
-    expect(screen.getByText(/Marcar como pago \(2\)/)).toBeInTheDocument()
+    expect(screen.getByText(/Receber \(2\)/)).toBeInTheDocument()
     expect(screen.getByText(/Cancelar \(2\)/)).toBeInTheDocument()
     expect(screen.getByText(/Renegociar \(2\)/)).toBeInTheDocument()
+  })
+
+  it('gives a receptionist only Receber, since cancel and renegotiate answer 403 for that role', () => {
+    access.role = 'receptionist'
+    render(
+      <BulkActionBar
+        selectedCount={2}
+        selectedInstallmentIds={['a', 'b']}
+        selectedEntryIds={['e1', 'e2']}
+        canUncancel={true}
+        onClear={() => {}}
+        onRenegotiate={() => {}}
+      />,
+      { wrapper: createWrapper() },
+    )
+    expect(screen.getByText(/Receber \(2\)/)).toBeInTheDocument()
+    expect(screen.queryByText(/Cancelar|Renegociar|Reativar/)).not.toBeInTheDocument()
+    expect(screen.queryByTestId('bulk-more')).not.toBeInTheDocument()
   })
 
   it('holds Cancelar, Renegociar and Reativar behind "Mais" for phones, with the reason a disabled one is off', async () => {
@@ -262,9 +294,9 @@ describe('BulkActionBar', () => {
       { wrapper: createWrapper() },
     )
 
-    fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
+    fireEvent.click(screen.getByText(/Receber \(2\)/))
     fireEvent.change(screen.getByTestId('bulk-pay-date'), { target: { value: '2026-08-15' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }))
 
     await waitFor(() => {
       expect(mockBulkPay).toHaveBeenCalledWith(expect.objectContaining({ paidAt: '2026-08-15T15:00:00.000Z' }))
@@ -293,7 +325,7 @@ describe('BulkActionBar', () => {
         />,
         { wrapper: createWrapper() },
       )
-      fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
+      fireEvent.click(screen.getByText(/Receber \(2\)/))
       fireEvent.change(screen.getByTestId('method-select'), { target: { value: 'credit_card' } })
     }
 
@@ -302,17 +334,17 @@ describe('BulkActionBar', () => {
       openCardDialog()
 
       expect(screen.getByText('Calculando...')).toBeInTheDocument()
-      expect(screen.getByRole('button', { name: 'Confirmar' })).toBeDisabled()
+      expect(screen.getByRole('button', { name: 'Confirmar recebimento' })).toBeDisabled()
 
       quotes({ a: 500, b: 530.5 })
       fireEvent.change(screen.getByTestId('bulk-pay-date'), { target: { value: '2026-08-15' } })
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: 'Confirmar' })).not.toBeDisabled()
+        expect(screen.getByRole('button', { name: 'Confirmar recebimento' })).not.toBeDisabled()
       })
-      expect(screen.getByText('R$ 1.030,50', { exact: false })).toBeInTheDocument()
+      expect(screen.getAllByText('R$ 1.030,50', { exact: false }).length).toBeGreaterThan(0)
 
-      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }))
       await waitFor(() => {
         expect(mockBulkPay).toHaveBeenCalledWith(
           expect.objectContaining({
@@ -323,8 +355,19 @@ describe('BulkActionBar', () => {
       })
     })
 
-    it('sends no card for pix', async () => {
-      quotes({})
+    it('keeps confirm off while the terminal does not know this sale\'s rate', async () => {
+      terminalRates.credit = Array.from({ length: 12 }, () => null)
+      quotes({ a: 500, b: 530.5 })
+      openCardDialog()
+
+      // This mock's viewer cannot manage terminals, so the owner is asked for the rate.
+      expect(await screen.findByText('Peça ao responsável da clínica para informar a taxa no crédito em 1x da Stone.')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Confirmar recebimento' })).toBeDisabled()
+      terminalRates.credit = Array.from({ length: 12 }, () => '4.00')
+    })
+
+    it('sends no card for pix, and the totals it showed for each installment', async () => {
+      quotes({ a: 100, b: 200.5 })
       render(
         <BulkActionBar
           selectedCount={2}
@@ -335,13 +378,14 @@ describe('BulkActionBar', () => {
         />,
         { wrapper: createWrapper() },
       )
-      fireEvent.click(screen.getByText(/Marcar como pago \(2\)/))
-      fireEvent.click(screen.getByRole('button', { name: 'Confirmar' }))
+      fireEvent.click(screen.getByText(/Receber \(2\)/))
+      fireEvent.click(screen.getByRole('button', { name: 'Confirmar recebimento' }))
 
       await waitFor(() => {
         expect(mockBulkPay).toHaveBeenCalledTimes(1)
       })
       expect(mockBulkPay.mock.calls[0][0].card).toBeUndefined()
+      expect(mockBulkPay.mock.calls[0][0].expectedTotals).toEqual({ a: 100, b: 200.5 })
     })
   })
 })

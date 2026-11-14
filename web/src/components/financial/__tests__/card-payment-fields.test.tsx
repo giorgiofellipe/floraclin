@@ -4,11 +4,12 @@ import { CardPaymentFields, toCardPayload } from '../card-payment-fields'
 import { useCardTerminals } from '@/hooks/queries/use-card-terminals'
 
 const createMutateAsync = vi.fn()
+const updateMutateAsync = vi.fn()
 
 vi.mock('@/hooks/queries/use-card-terminals', () => ({
   useCardTerminals: vi.fn(),
   useCreateCardTerminal: () => ({ mutateAsync: createMutateAsync, isPending: false }),
-  useUpdateCardTerminal: () => ({ mutateAsync: vi.fn(), isPending: false }),
+  useUpdateCardTerminal: () => ({ mutateAsync: updateMutateAsync, isPending: false }),
 }))
 // The terminal dialog offers the clinic's accounts as payout destinations.
 vi.mock('@/hooks/queries/use-financial-accounts', () => ({
@@ -173,6 +174,52 @@ describe('CardPaymentFields', () => {
       expect(onChange).toHaveBeenCalledWith({ terminalId: 'new-term', installmentCount: 1, expectedRate: null }),
     )
     expect(screen.queryByText('Você recebe')).toBeNull()
+  })
+
+  it('records the first card sale with only a terminal name and this sale\'s rate, leaving the other rates unknown', async () => {
+    mockTerminals([], true)
+    createMutateAsync.mockResolvedValue({ success: true, data: terminal({ id: 'quick-term' }) })
+    const onChange = vi.fn()
+    render(<CardPaymentFields {...emptyProps} value={{ ...emptyProps.value, installmentCount: 3 }} onChange={onChange} />)
+
+    fireEvent.change(screen.getByLabelText('Maquininha'), { target: { value: 'Stone' } })
+    fireEvent.change(screen.getByLabelText('Taxa no crédito em 3x (%)'), { target: { value: '4,5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar maquininha' }))
+
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({ terminalId: 'quick-term', installmentCount: 3, expectedRate: null }),
+    )
+    const creditRates = Array(12).fill(null)
+    creditRates[2] = 4.5
+    expect(createMutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Stone', isDefault: true, debitRate: null, creditRates }),
+    )
+  })
+
+  it('asks for the rate of a slot the terminal does not know yet and saves only that slot', async () => {
+    const creditRates: (string | null)[] = rates(5, '8.99')
+    creditRates[2] = null
+    mockTerminals([terminal({ creditRates })], true)
+    updateMutateAsync.mockResolvedValue({ success: true })
+    render(
+      <CardPaymentFields
+        method="credit_card"
+        gross={300}
+        paymentYmd="2026-10-18"
+        value={{ terminalId: 'term-1', installmentCount: 3, expectedRate: null }}
+        onChange={vi.fn()}
+      />,
+    )
+
+    expect(screen.queryByText('Você recebe')).toBeNull()
+    fireEvent.change(screen.getByLabelText('Taxa no crédito em 3x (%)'), { target: { value: '5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar taxa' }))
+
+    const expected = rates(5, '8.99').map(Number) as (number | null)[]
+    expected[2] = 5
+    await waitFor(() =>
+      expect(updateMutateAsync).toHaveBeenCalledWith(expect.objectContaining({ id: 'term-1', debitRate: 1.5, creditRates: expected })),
+    )
   })
 
   it('tells a non-owner to ask the owner instead of offering the form', () => {
